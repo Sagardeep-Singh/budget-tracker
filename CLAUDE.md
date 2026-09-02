@@ -56,6 +56,18 @@ npm run db:setup                     # generate + migrate + seed in one step
 - `prisma/seed.ts` is destructive — local dev only.
 - After schema changes: run `npm run prisma:generate`.
 
+## Agent Workflow
+
+Subagents in `.claude/agents/` for non-trivial feature work, in order:
+
+1. **product-manager** — scope the feature, write user stories/acceptance criteria, flag open questions and non-goals. Invoke first for any non-trivial request.
+2. **software-architect** — design the change: file breakdown, service/validator contracts, schema impact (flag, don't assume authorization). Invoke after product-manager for anything touching schema, services, or cross-cutting concerns.
+3. **ui-designer** — component spec (tree, props/state, interaction states, accessibility) for any user-facing surface. Invoke after software-architect defines data contracts.
+4. **senior-developer** — implement file-by-file against the architect's plan (and UI spec, if any); writes tests for new service methods; runs `npm run format:fix && npm run lint` and the test suite.
+5. **tester** — reviews the implementation, runs lint/tests, checks for missing coverage, tries to break it (empty inputs, boundary values, malformed input).
+
+Skip steps for trivial changes (typo fixes, small copy edits) — go straight to editing.
+
 ## Rules
 
 **Always:**
