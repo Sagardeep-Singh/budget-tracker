@@ -9,11 +9,11 @@ Minimal personal budgeting app: track accounts, log transactions (manual or CSV 
 - Single user (no multi-tenant / team features in MVP). Auth exists only to gate a publicly-hosted deployment.
 - No live bank sync (e.g. Plaid) in MVP — CSV import covers bulk entry instead; noted as post-MVP.
 - Auto-categorization is rule-based (user-defined keyword → category rules), not ML/external API. Keeps MVP dependency-free and deterministic; smarter matching is post-MVP.
-- SQLite for local dev, Postgres for prod (swap via `DATABASE_URL`, Prisma provider stays portable).
+- Postgres for all environments, dev included (local instance via `DATABASE_URL`).
 
 ## Stack
 
-Next.js App Router, TypeScript, Prisma, NextAuth (credentials, single user), Tailwind CSS, Zod, Vitest.
+Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials, single user), Tailwind CSS, Zod, Vitest.
 
 ## MVP Feature Set
 
