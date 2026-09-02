@@ -1,0 +1,114 @@
+@import 'tailwindcss';
+
+:root {
+  --paper: #eef2ed;
+  --paper-raised: #ffffff;
+  --ink: #16231f;
+  --ink-muted: #55645c;
+  --teal: #1f5c58;
+  --teal-soft: #dbe9e7;
+  --moss: #2f6f4e;
+  --moss-soft: #e1efe6;
+  --brick: #a8443b;
+  --brick-soft: #f5e2df;
+  --line: #d8ded6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #101c17;
+    --paper-raised: #152521;
+    --ink: #e8ece6;
+    --ink-muted: #93a49a;
+    --teal: #56b0a5;
+    --teal-soft: #1c3733;
+    --moss: #79cf9b;
+    --moss-soft: #1e3527;
+    --brick: #e5897c;
+    --brick-soft: #3a221f;
+    --line: #24382f;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-moss: var(--moss);
+  --color-moss-soft: var(--moss-soft);
+  --color-brick: var(--brick);
+  --color-brick-soft: var(--brick-soft);
+  --color-line: var(--line);
+  --font-display: var(--font-space-grotesk);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes grow-bar {
+  from {
+    width: 0%;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+.font-money {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.ledger-row {
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger-row:last-child {
+  border-bottom: none;
+}
+
+dialog::backdrop {
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+dialog[open] {
+  animation: dialog-in 0.18s ease-out;
+}
