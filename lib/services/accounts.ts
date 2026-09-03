@@ -10,6 +10,7 @@ export type FrontendAccount = {
   startingBalance: string;
   balance: string;
   createdAt: string;
+  statementDay: number | null;
 };
 
 const toFrontendAccount = (account: {
@@ -18,6 +19,7 @@ const toFrontendAccount = (account: {
   type: string;
   startingBalance: unknown;
   createdAt: Date;
+  statementDay: number | null;
   transactions: { amount: unknown; type: string }[];
 }): FrontendAccount => {
   const starting = Number(account.startingBalance);
@@ -33,6 +35,7 @@ const toFrontendAccount = (account: {
     startingBalance: toSerializable(account.startingBalance) as string,
     createdAt: account.createdAt.toISOString(),
     balance: (starting + net).toFixed(2),
+    statementDay: account.statementDay,
   };
 };
 
@@ -55,6 +58,7 @@ export const createAccount = async (
       name: input.name,
       type: input.type,
       startingBalance: input.startingBalance,
+      statementDay: input.type === 'CREDIT_CARD' ? (input.statementDay ?? null) : null,
     },
     include: { transactions: { select: { amount: true, type: true } } },
   });
@@ -71,9 +75,17 @@ export const updateAccount = async (
     throw new ServiceValidationError('Account not found');
   }
 
+  const nextType = input.type ?? existing.type;
+  if (nextType !== 'CREDIT_CARD' && input.statementDay) {
+    throw new ServiceValidationError('statementDay only applies to credit card accounts');
+  }
+
   const account = await prisma.account.update({
     where: { id: accountId },
-    data: input,
+    data: {
+      ...input,
+      statementDay: nextType === 'CREDIT_CARD' ? input.statementDay : input.type ? null : undefined,
+    },
     include: { transactions: { select: { amount: true, type: true } } },
   });
   return toFrontendAccount(account);

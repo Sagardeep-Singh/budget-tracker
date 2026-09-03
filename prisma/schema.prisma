@@ -38,6 +38,8 @@ model Account {
   name            String
   type            AccountType
   startingBalance Decimal     @default(0) @db.Decimal(12, 2)
+  /// day of month (1-28) a credit card statement closes on; only meaningful when type is CREDIT_CARD
+  statementDay    Int?
   createdAt       DateTime    @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
