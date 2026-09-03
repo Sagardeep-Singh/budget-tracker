@@ -39,7 +39,7 @@ Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials, single
 ## Data Model (sketch)
 
 - `User` (id, email, passwordHash)
-- `Account` (id, userId, name, type, startingBalance)
+- `Account` (id, userId, name, type, startingBalance, statementDay — credit cards only, see `docs/feature-plans/credit-card-statement-cycle.md`)
 - `Category` (id, userId, name, isDefault)
 - `Transaction` (id, userId, accountId, categoryId, amount, type, date, note, payee, importBatchId?)
 - `Budget` (id, userId, categoryId, month, limitAmount)

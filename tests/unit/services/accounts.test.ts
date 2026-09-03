@@ -87,3 +87,53 @@ describe('updateAccount / deleteAccount', () => {
     await expect(deleteAccount('user-1', 'acc-x')).rejects.toThrow(ServiceValidationError);
   });
 });
+
+describe('updateAccount statementDay', () => {
+  it('rejects statementDay when the resulting type is not CREDIT_CARD', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1', type: 'SAVINGS' });
+
+    await expect(updateAccount('user-1', 'acc-1', { statementDay: 15 })).rejects.toThrow(
+      ServiceValidationError,
+    );
+    expect(prismaMock.account.update).not.toHaveBeenCalled();
+  });
+
+  it('clears statementDay when the type changes away from CREDIT_CARD', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1', type: 'CREDIT_CARD' });
+    prismaMock.account.update.mockResolvedValue({
+      id: 'acc-1',
+      name: 'Old Card',
+      type: 'CASH',
+      startingBalance: 0,
+      statementDay: null,
+      createdAt: new Date('2026-01-01'),
+      transactions: [],
+    });
+
+    await updateAccount('user-1', 'acc-1', { type: 'CASH' });
+
+    expect(prismaMock.account.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ statementDay: null }) }),
+    );
+  });
+
+  it('persists statementDay when the account is (or becomes) a CREDIT_CARD', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1', type: 'CREDIT_CARD' });
+    prismaMock.account.update.mockResolvedValue({
+      id: 'acc-1',
+      name: 'Visa',
+      type: 'CREDIT_CARD',
+      startingBalance: 0,
+      statementDay: 20,
+      createdAt: new Date('2026-01-01'),
+      transactions: [],
+    });
+
+    const result = await updateAccount('user-1', 'acc-1', { statementDay: 20 });
+
+    expect(prismaMock.account.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ statementDay: 20 }) }),
+    );
+    expect(result.statementDay).toBe(20);
+  });
+});
