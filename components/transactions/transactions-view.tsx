@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
@@ -9,9 +9,20 @@ import { Modal } from '@/components/ui/modal';
 import { Money } from '@/components/ui/money';
 import { Select } from '@/components/ui/field';
 import { TransactionForm } from '@/components/transactions/transaction-form';
+import { PeriodPicker, type PeriodMode } from '@/components/transactions/period-picker';
+import {
+  getCalendarMonthPeriod,
+  getNextStatementPeriod,
+  getPreviousStatementPeriod,
+  getStatementPeriod,
+  type Period,
+} from '@/lib/statement';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
+import { formatDate } from '@/lib/format';
+
+const toYyyymm = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 
 export const TransactionsView = ({
   initialTransactions,
@@ -28,6 +39,44 @@ export const TransactionsView = ({
   const [editing, setEditing] = useState<FrontendTransaction | undefined>(undefined);
   const [accountFilter, setAccountFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
+  const [periodAnchor, setPeriodAnchor] = useState(() => new Date());
+
+  const selectedAccount = accounts.find((a) => a.id === accountFilter);
+  const canUseStatementView =
+    selectedAccount?.type === 'CREDIT_CARD' && !!selectedAccount.statementDay;
+
+  const handleAccountFilterChange = (value: string): void => {
+    setAccountFilter(value);
+    setPeriodMode('ALL');
+    setPeriodAnchor(new Date());
+  };
+
+  const period: Period | null = useMemo(() => {
+    if (periodMode === 'ALL') return null;
+    if (periodMode === 'STATEMENT' && selectedAccount?.statementDay) {
+      return getStatementPeriod(selectedAccount.statementDay, periodAnchor);
+    }
+    if (periodMode === 'MONTH') {
+      return getCalendarMonthPeriod(toYyyymm(periodAnchor));
+    }
+    return null;
+  }, [periodMode, periodAnchor, selectedAccount]);
+
+  const shiftPeriod = (direction: 'prev' | 'next'): void => {
+    if (!period) return;
+    if (periodMode === 'STATEMENT' && selectedAccount?.statementDay) {
+      const next =
+        direction === 'prev'
+          ? getPreviousStatementPeriod(selectedAccount.statementDay, period)
+          : getNextStatementPeriod(selectedAccount.statementDay, period);
+      setPeriodAnchor(next.start);
+      return;
+    }
+    const anchor = new Date(periodAnchor);
+    anchor.setUTCMonth(anchor.getUTCMonth() + (direction === 'prev' ? -1 : 1));
+    setPeriodAnchor(anchor);
+  };
 
   const openCreate = (): void => {
     setEditing(undefined);
@@ -47,17 +96,40 @@ export const TransactionsView = ({
     router.refresh();
   };
 
-  const filtered = initialTransactions.filter(
-    (t) =>
-      (!accountFilter || t.accountId === accountFilter) &&
-      (!categoryFilter || t.categoryId === categoryFilter),
+  const filtered = initialTransactions.filter((t) => {
+    if (accountFilter && t.accountId !== accountFilter) return false;
+    if (categoryFilter && t.categoryId !== categoryFilter) return false;
+    if (period) {
+      const date = new Date(t.date);
+      if (date < period.start || date >= period.end) return false;
+    }
+    return true;
+  });
+
+  // Payments toward a credit card's balance settle the *previous* statement,
+  // so they're excluded from this period's credit/debit/net and shown
+  // separately instead.
+  const summary = filtered.reduce(
+    (acc, t) => {
+      const amount = Number(t.amount);
+      if (t.isPayment) {
+        acc.payments += amount;
+      } else if (t.type === 'INCOME') {
+        acc.credit += amount;
+      } else {
+        acc.debit += amount;
+      }
+      return acc;
+    },
+    { credit: 0, debit: 0, payments: 0 },
   );
+  const net = summary.credit - summary.debit;
 
   return (
     <div className="mt-6">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex gap-2">
-          <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+          <Select value={accountFilter} onChange={(e) => handleAccountFilterChange(e.target.value)}>
             <option value="">All accounts</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
@@ -82,6 +154,54 @@ export const TransactionsView = ({
         </div>
       </div>
 
+      {accountFilter && (
+        <div className="mb-3">
+          <PeriodPicker
+            mode={periodMode}
+            onModeChange={(m) => {
+              setPeriodMode(m);
+              setPeriodAnchor(new Date());
+            }}
+            period={period}
+            onPrev={() => shiftPeriod('prev')}
+            onNext={() => shiftPeriod('next')}
+            allowStatement={canUseStatementView}
+          />
+          {selectedAccount?.type === 'CREDIT_CARD' && !selectedAccount.statementDay && (
+            <p className="text-ink-muted mt-1 text-xs">
+              Set a statement day on this account to view by statement.
+            </p>
+          )}
+        </div>
+      )}
+
+      <Card className="mb-3 flex items-center justify-between gap-6 py-3">
+        <div className="text-ink-muted text-xs font-medium">
+          {filtered.length} transaction{filtered.length === 1 ? '' : 's'}
+          {period ? ' in this period' : ''}
+        </div>
+        <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-ink-muted text-xs">Credit</span>
+            <Money value={summary.credit} tone="income" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-ink-muted text-xs">Debit</span>
+            <Money value={summary.debit} tone="expense" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-ink-muted text-xs">Net</span>
+            <Money value={net} tone={net >= 0 ? 'income' : 'expense'} />
+          </div>
+          {summary.payments > 0 && (
+            <div className="border-line flex items-baseline gap-1.5 border-l pl-6">
+              <span className="text-ink-muted text-xs">Payments (excluded)</span>
+              <Money value={summary.payments} tone="neutral" />
+            </div>
+          )}
+        </div>
+      </Card>
+
       <Card className="p-0">
         {filtered.length === 0 ? (
           <p className="text-ink-muted p-6 text-sm">
@@ -95,8 +215,7 @@ export const TransactionsView = ({
                   {t.payee || t.categoryName || 'Transaction'}
                 </div>
                 <div className="text-ink-muted text-xs">
-                  {new Date(t.date).toLocaleDateString()} · {t.accountName} ·{' '}
-                  {t.categoryName ?? 'Uncategorized'}
+                  {formatDate(t.date)} · {t.accountName} · {t.categoryName ?? 'Uncategorized'}
                 </div>
               </div>
               <div className="flex items-center gap-4">

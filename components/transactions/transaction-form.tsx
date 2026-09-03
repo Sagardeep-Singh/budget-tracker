@@ -26,6 +26,12 @@ export const TransactionForm = ({
   const [pending, setPending] = useState(false);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? '');
   const [suggested, setSuggested] = useState(false);
+  const [type, setType] = useState(transaction?.type ?? 'EXPENSE');
+  const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? '');
+  const [isPayment, setIsPayment] = useState(transaction?.isPayment ?? false);
+
+  const selectedAccount = accounts.find((a) => a.id === accountId);
+  const canBePayment = type === 'INCOME' && selectedAccount?.type === 'CREDIT_CARD';
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const suggestFor = (payee: string, note: string): void => {
@@ -69,6 +75,7 @@ export const TransactionForm = ({
       date: form.get('date'),
       payee: form.get('payee') || undefined,
       note: form.get('note') || undefined,
+      isPayment: canBePayment && isPayment,
     };
 
     const res = await fetch(
@@ -95,7 +102,12 @@ export const TransactionForm = ({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label htmlFor="type">Type</Label>
-          <Select id="type" name="type" defaultValue={transaction?.type ?? 'EXPENSE'}>
+          <Select
+            id="type"
+            name="type"
+            value={type}
+            onChange={(e) => setType(e.target.value as 'INCOME' | 'EXPENSE')}
+          >
             <option value="EXPENSE">Expense</option>
             <option value="INCOME">Income</option>
           </Select>
@@ -126,7 +138,13 @@ export const TransactionForm = ({
         </div>
         <div>
           <Label htmlFor="accountId">Account</Label>
-          <Select id="accountId" name="accountId" defaultValue={transaction?.accountId} required>
+          <Select
+            id="accountId"
+            name="accountId"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            required
+          >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
@@ -135,6 +153,18 @@ export const TransactionForm = ({
           </Select>
         </div>
       </div>
+      {canBePayment && (
+        <label className="text-ink flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={isPayment}
+            onChange={(e) => setIsPayment(e.target.checked)}
+            className="accent-teal h-4 w-4"
+          />
+          This is a payment toward the card&apos;s balance
+          <span className="text-ink-muted text-xs">(excluded from the statement total)</span>
+        </label>
+      )}
       <div>
         <Label htmlFor="payee">Payee</Label>
         <Input

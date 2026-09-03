@@ -38,6 +38,8 @@ model Account {
   name            String
   type            AccountType
   startingBalance Decimal     @default(0) @db.Decimal(12, 2)
+  /// day of month (1-28) a credit card statement closes on; only meaningful when type is CREDIT_CARD
+  statementDay    Int?
   createdAt       DateTime    @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -72,6 +74,10 @@ model Transaction {
   payee         String?
   note          String?
   importBatchId String?
+  /// marks an INCOME transaction on a credit card account as a payment toward
+  /// the previous statement's balance, so it's excluded from the current
+  /// statement period's credit/debit/net totals
+  isPayment     Boolean         @default(false)
   createdAt     DateTime        @default(now())
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)

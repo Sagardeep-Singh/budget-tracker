@@ -23,6 +23,7 @@ export const AccountForm = ({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [type, setType] = useState(account?.type ?? 'CHECKING');
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -34,6 +35,7 @@ export const AccountForm = ({
       name: form.get('name'),
       type: form.get('type'),
       startingBalance: form.get('startingBalance'),
+      statementDay: type === 'CREDIT_CARD' ? form.get('statementDay') || null : null,
     };
 
     const res = await fetch(account ? `/api/accounts/${account.id}` : '/api/accounts', {
@@ -60,7 +62,7 @@ export const AccountForm = ({
       </div>
       <div>
         <Label htmlFor="type">Type</Label>
-        <Select id="type" name="type" defaultValue={account?.type ?? 'CHECKING'}>
+        <Select id="type" name="type" value={type} onChange={(e) => setType(e.target.value)}>
           {ACCOUNT_TYPES.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
@@ -78,6 +80,24 @@ export const AccountForm = ({
           defaultValue={account?.startingBalance ?? '0'}
         />
       </div>
+      {type === 'CREDIT_CARD' && (
+        <div>
+          <Label htmlFor="statementDay">Statement closes on (day of month)</Label>
+          <Input
+            id="statementDay"
+            name="statementDay"
+            type="number"
+            min={1}
+            max={28}
+            defaultValue={account?.statementDay ?? ''}
+            placeholder="e.g. 15"
+          />
+          <p className="text-ink-muted mt-1 text-xs">
+            1–28, to stay valid across every month. Lets you view transactions by statement period
+            instead of calendar month.
+          </p>
+        </div>
+      )}
       {error && (
         <p className="bg-brick-soft text-brick rounded-lg px-3 py-2 text-sm" role="alert">
           {error}

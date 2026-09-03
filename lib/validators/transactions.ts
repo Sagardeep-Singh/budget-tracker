@@ -10,6 +10,7 @@ export const createTransactionSchema = z.object({
   date: z.coerce.date(),
   payee: z.string().trim().max(120).optional(),
   note: z.string().trim().max(280).optional(),
+  isPayment: z.coerce.boolean().default(false),
 });
 
 export const updateTransactionSchema = createTransactionSchema.partial();
