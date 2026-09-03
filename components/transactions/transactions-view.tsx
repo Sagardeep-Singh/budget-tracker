@@ -105,6 +105,17 @@ export const TransactionsView = ({
     return true;
   });
 
+  const summary = filtered.reduce(
+    (acc, t) => {
+      const amount = Number(t.amount);
+      if (t.type === 'INCOME') acc.credit += amount;
+      else acc.debit += amount;
+      return acc;
+    },
+    { credit: 0, debit: 0 },
+  );
+  const net = summary.credit - summary.debit;
+
   return (
     <div className="mt-6">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -154,6 +165,27 @@ export const TransactionsView = ({
           )}
         </div>
       )}
+
+      <Card className="mb-3 flex items-center justify-between gap-6 py-3">
+        <div className="text-ink-muted text-xs font-medium">
+          {filtered.length} transaction{filtered.length === 1 ? '' : 's'}
+          {period ? ' in this period' : ''}
+        </div>
+        <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-ink-muted text-xs">Credit</span>
+            <Money value={summary.credit} tone="income" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-ink-muted text-xs">Debit</span>
+            <Money value={summary.debit} tone="expense" />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-ink-muted text-xs">Net</span>
+            <Money value={net} tone={net >= 0 ? 'income' : 'expense'} />
+          </div>
+        </div>
+      </Card>
 
       <Card className="p-0">
         {filtered.length === 0 ? (
