@@ -4,8 +4,13 @@ import { listBudgets } from '@/lib/services/budgets';
 import { Card } from '@/components/ui/card';
 import { Money } from '@/components/ui/money';
 import { BudgetBar } from '@/components/budgets/budget-bar';
+import { formatDate } from '@/lib/format';
 
-const MONTH_LABEL = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
+const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'long',
+  year: 'numeric',
+});
 
 const monthLabel = (month: number): string => {
   const date = new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1));
@@ -81,7 +86,7 @@ const DashboardPage = async (): Promise<React.ReactElement> => {
                       {t.payee || t.categoryName || 'Transaction'}
                     </div>
                     <div className="text-ink-muted text-xs">
-                      {new Date(t.date).toLocaleDateString()} · {t.categoryName ?? 'Uncategorized'}
+                      {formatDate(t.date)} · {t.categoryName ?? 'Uncategorized'}
                     </div>
                   </div>
                   <Money value={t.amount} tone={t.type === 'INCOME' ? 'income' : 'expense'} />

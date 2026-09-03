@@ -3,7 +3,11 @@
 import { cn } from '@/lib/cn';
 import type { Period } from '@/lib/statement';
 
-const DATE_LABEL = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const DATE_LABEL = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'short',
+  day: 'numeric',
+});
 
 const formatPeriod = (period: Period): string => {
   const inclusiveEnd = new Date(period.end.getTime() - 24 * 60 * 60 * 1000);

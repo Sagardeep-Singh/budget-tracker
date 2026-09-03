@@ -20,6 +20,7 @@ import {
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
+import { formatDate } from '@/lib/format';
 
 const toYyyymm = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 
@@ -214,8 +215,7 @@ export const TransactionsView = ({
                   {t.payee || t.categoryName || 'Transaction'}
                 </div>
                 <div className="text-ink-muted text-xs">
-                  {new Date(t.date).toLocaleDateString()} · {t.accountName} ·{' '}
-                  {t.categoryName ?? 'Uncategorized'}
+                  {formatDate(t.date)} · {t.accountName} · {t.categoryName ?? 'Uncategorized'}
                 </div>
               </div>
               <div className="flex items-center gap-4">
