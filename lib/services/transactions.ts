@@ -17,6 +17,7 @@ export type FrontendTransaction = {
   date: string;
   payee: string | null;
   note: string | null;
+  isPayment: boolean;
 };
 
 const toFrontend = (tx: {
@@ -28,6 +29,7 @@ const toFrontend = (tx: {
   date: Date;
   payee: string | null;
   note: string | null;
+  isPayment: boolean;
   account: { name: string };
   category: { name: string } | null;
 }): FrontendTransaction => ({
@@ -41,6 +43,7 @@ const toFrontend = (tx: {
   date: tx.date.toISOString(),
   payee: tx.payee,
   note: tx.note,
+  isPayment: tx.isPayment,
 });
 
 const include = {
@@ -101,6 +104,7 @@ export const createTransaction = async (
       date: input.date,
       payee: input.payee,
       note: input.note,
+      isPayment: input.isPayment,
     },
     include,
   });
@@ -134,6 +138,7 @@ export const updateTransaction = async (
       date: input.date,
       payee: input.payee,
       note: input.note,
+      isPayment: input.isPayment,
     },
     include,
   });

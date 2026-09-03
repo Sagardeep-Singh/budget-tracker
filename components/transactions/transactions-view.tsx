@@ -105,14 +105,22 @@ export const TransactionsView = ({
     return true;
   });
 
+  // Payments toward a credit card's balance settle the *previous* statement,
+  // so they're excluded from this period's credit/debit/net and shown
+  // separately instead.
   const summary = filtered.reduce(
     (acc, t) => {
       const amount = Number(t.amount);
-      if (t.type === 'INCOME') acc.credit += amount;
-      else acc.debit += amount;
+      if (t.isPayment) {
+        acc.payments += amount;
+      } else if (t.type === 'INCOME') {
+        acc.credit += amount;
+      } else {
+        acc.debit += amount;
+      }
       return acc;
     },
-    { credit: 0, debit: 0 },
+    { credit: 0, debit: 0, payments: 0 },
   );
   const net = summary.credit - summary.debit;
 
@@ -184,6 +192,12 @@ export const TransactionsView = ({
             <span className="text-ink-muted text-xs">Net</span>
             <Money value={net} tone={net >= 0 ? 'income' : 'expense'} />
           </div>
+          {summary.payments > 0 && (
+            <div className="border-line flex items-baseline gap-1.5 border-l pl-6">
+              <span className="text-ink-muted text-xs">Payments (excluded)</span>
+              <Money value={summary.payments} tone="neutral" />
+            </div>
+          )}
         </div>
       </Card>
 

@@ -74,6 +74,10 @@ model Transaction {
   payee         String?
   note          String?
   importBatchId String?
+  /// marks an INCOME transaction on a credit card account as a payment toward
+  /// the previous statement's balance, so it's excluded from the current
+  /// statement period's credit/debit/net totals
+  isPayment     Boolean         @default(false)
   createdAt     DateTime        @default(now())
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
