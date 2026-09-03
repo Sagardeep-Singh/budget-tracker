@@ -41,7 +41,7 @@ npm run db:setup                     # generate + migrate + seed in one step
 - `lib/db/`: Prisma client singleton and db helpers.
 - `prisma/`: schema, migrations, seed data.
 
-**Stack:** Next.js App Router, TypeScript, Prisma + SQLite (dev) / Postgres (prod), NextAuth (credentials, single user), Tailwind CSS, Zod, Vitest.
+**Stack:** Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials, single user), Tailwind CSS, Zod, Vitest.
 
 **Request flow:** route handler → Zod validator → service → Prisma via `lib/db/prisma.ts` singleton. No business logic in handlers.
 
@@ -55,6 +55,18 @@ npm run db:setup                     # generate + migrate + seed in one step
 - Prisma access only through `lib/db/prisma.ts` singleton.
 - `prisma/seed.ts` is destructive — local dev only.
 - After schema changes: run `npm run prisma:generate`.
+
+## Agent Workflow
+
+Subagents in `.claude/agents/` for non-trivial feature work, in order:
+
+1. **product-manager** — scope the feature, write user stories/acceptance criteria, flag open questions and non-goals. Invoke first for any non-trivial request.
+2. **software-architect** — design the change: file breakdown, service/validator contracts, schema impact (flag, don't assume authorization). Invoke after product-manager for anything touching schema, services, or cross-cutting concerns.
+3. **ui-designer** — component spec (tree, props/state, interaction states, accessibility) for any user-facing surface. Invoke after software-architect defines data contracts.
+4. **senior-developer** — implement file-by-file against the architect's plan (and UI spec, if any); writes tests for new service methods; runs `npm run format:fix && npm run lint` and the test suite.
+5. **tester** — reviews the implementation, runs lint/tests, checks for missing coverage, tries to break it (empty inputs, boundary values, malformed input).
+
+Skip steps for trivial changes (typo fixes, small copy edits) — go straight to editing.
 
 ## Rules
 
@@ -74,3 +86,13 @@ npm run db:setup                     # generate + migrate + seed in one step
 - Change `prisma/schema.prisma` or migrations unless the task explicitly requires it.
 - Run `git reset --hard` or `git checkout --` unless explicitly requested.
 - Rename or move files unless necessary.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

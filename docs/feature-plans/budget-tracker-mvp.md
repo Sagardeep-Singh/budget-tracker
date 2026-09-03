@@ -9,11 +9,11 @@ Minimal personal budgeting app: track accounts, log transactions (manual or CSV 
 - Single user (no multi-tenant / team features in MVP). Auth exists only to gate a publicly-hosted deployment.
 - No live bank sync (e.g. Plaid) in MVP — CSV import covers bulk entry instead; noted as post-MVP.
 - Auto-categorization is rule-based (user-defined keyword → category rules), not ML/external API. Keeps MVP dependency-free and deterministic; smarter matching is post-MVP.
-- SQLite for local dev, Postgres for prod (swap via `DATABASE_URL`, Prisma provider stays portable).
+- Postgres for all environments, dev included (local instance via `DATABASE_URL`).
 
 ## Stack
 
-Next.js App Router, TypeScript, Prisma, NextAuth (credentials, single user), Tailwind CSS, Zod, Vitest.
+Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials, single user), Tailwind CSS, Zod, Vitest.
 
 ## MVP Feature Set
 
@@ -47,23 +47,23 @@ Next.js App Router, TypeScript, Prisma, NextAuth (credentials, single user), Tai
 
 ## Implementation Checklist
 
-- [ ] Scaffold Next.js + TypeScript + Tailwind + ESLint + Prettier project
-- [ ] Add Prisma, define schema (User/Account/Category/Transaction/Budget/CategoryRule), initial migration
-- [ ] Wire NextAuth credentials provider + seeded single user + protected route group
-- [ ] `lib/db/prisma.ts` singleton
-- [ ] Zod validators: account, category, transaction, budget, category-rule, csv-import
-- [ ] Services: `accounts.ts`, `categories.ts`, `transactions.ts`, `budgets.ts`, `categoryRules.ts`, `csvImport.ts`
-- [ ] Categorization engine: `lib/services/categorize.ts` — apply ordered rules to payee/note, fallback "Other"; reused by manual-entry suggestion and CSV import
-- [ ] API routes under `app/api/` calling validators → services
-- [ ] Accounts UI: list/create/edit/delete
-- [ ] Categories UI: list/create/edit/delete, seed defaults on first run
-- [ ] Category rules UI: list/create/edit/delete/reorder rules
-- [ ] Transactions UI: list w/ filters, create/edit/delete form, category auto-suggested + overridable on entry
-- [ ] CSV import UI: upload → column mapping → preview (parsed rows, auto category, duplicate flags) → confirm/commit
-- [ ] CSV parsing: use a small, well-maintained parser lib (e.g. `papaparse`) rather than hand-rolled parsing
-- [ ] Budgets UI: set monthly limit per category
-- [ ] Dashboard page: income/expense/net summary + budget progress + recent transactions
-- [ ] Unit tests for all services (Prisma mocked), incl. categorization rule matching and CSV import parsing/dedupe
-- [ ] README: setup, scripts, screenshots
-- [ ] LICENSE (GPLv3)
-- [ ] CI: lint + test on push (GitHub Actions)
+- [x] Scaffold Next.js + TypeScript + Tailwind + ESLint + Prettier project
+- [x] Add Prisma, define schema (User/Account/Category/Transaction/Budget/CategoryRule), initial migration
+- [x] Wire NextAuth credentials provider + seeded single user + protected route group
+- [x] `lib/db/prisma.ts` singleton
+- [x] Zod validators: account, category, transaction, budget, category-rule, csv-import
+- [x] Services: `accounts.ts`, `categories.ts`, `transactions.ts`, `budgets.ts`, `categoryRules.ts`, `csvImport.ts`
+- [x] Categorization engine: `lib/services/categorize.ts` — apply ordered rules to payee/note, fallback uncategorized; reused by manual-entry suggestion and CSV import
+- [x] API routes under `app/api/` calling validators → services
+- [x] Accounts UI: list/create/edit/delete
+- [x] Categories UI: list/create/edit/delete, seed defaults on first run
+- [x] Category rules UI: list/create/edit/delete with numeric priority (drag-to-reorder not built — numeric priority input covers the MVP need)
+- [x] Transactions UI: list w/ filters, create/edit/delete form, category auto-suggested + overridable on entry
+- [x] CSV import UI: upload → column mapping → preview (parsed rows, auto category, duplicate flags) → confirm/commit
+- [x] CSV parsing: `papaparse`
+- [x] Budgets UI: set monthly limit per category
+- [x] Dashboard page: income/expense/net summary + budget progress + recent transactions
+- [x] Unit tests for all services (Prisma mocked), incl. categorization rule matching and CSV import parsing/dedupe
+- [x] README: setup, scripts
+- [x] LICENSE (GPLv3)
+- [x] CI: lint + test on push (GitHub Actions)

@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+  CASH
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  accounts      Account[]
+  categories    Category[]
+  transactions  Transaction[]
+  budgets       Budget[]
+  categoryRules CategoryRule[]
+}
+
+model Account {
+  id              String      @id @default(cuid())
+  userId          String
+  name            String
+  type            AccountType
+  startingBalance Decimal     @default(0) @db.Decimal(12, 2)
+  createdAt       DateTime    @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  budgets       Budget[]
+  categoryRules CategoryRule[]
+
+  @@unique([userId, name])
+}
+
+model Transaction {
+  id            String          @id @default(cuid())
+  userId        String
+  accountId     String
+  categoryId    String?
+  amount        Decimal         @db.Decimal(12, 2)
+  type          TransactionType
+  date          DateTime
+  payee         String?
+  note          String?
+  importBatchId String?
+  createdAt     DateTime        @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([importBatchId])
+}
+
+/// month stored as YYYYMM (e.g. 202603) to keep budgets sortable and
+/// unambiguous without carrying a day-of-month
+model Budget {
+  id          String  @id @default(cuid())
+  userId      String
+  categoryId  String
+  month       Int
+  limitAmount Decimal @db.Decimal(12, 2)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, categoryId, month])
+}
+
+/// ordered keyword rule for auto-categorization: lower priority value wins
+/// when a payee/note contains matchText (case-insensitive)
+model CategoryRule {
+  id         String @id @default(cuid())
+  userId     String
+  categoryId String
+  matchText  String
+  priority   Int    @default(0)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, priority])
+}
