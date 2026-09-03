@@ -16,6 +16,7 @@ const { ServiceValidationError } = await import('@/lib/services/common');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.transaction.findMany.mockResolvedValue([]);
 });
 
 describe('previewImport', () => {
@@ -40,12 +41,30 @@ describe('previewImport', () => {
     expect(result[0].include).toBe(false);
   });
 
+  it('flags the second of two identical rows within the same file as a duplicate', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.category.findMany.mockResolvedValue([]);
+
+    const row = {
+      accountId: 'acc-1',
+      date: '2026-03-01',
+      amount: 42,
+      type: 'EXPENSE' as const,
+      payee: 'Coffee Shop',
+    };
+    const result = await previewImport('user-1', [row, { ...row }]);
+
+    expect(result[0].duplicate).toBe(false);
+    expect(result[0].include).toBe(true);
+    expect(result[1].duplicate).toBe(true);
+    expect(result[1].include).toBe(false);
+  });
+
   it('suggests a category from matching rules and includes non-duplicate rows', async () => {
     prismaMock.categoryRule.findMany.mockResolvedValue([
       { categoryId: 'cat-1', matchText: 'coffee', priority: 0 },
     ]);
     prismaMock.category.findMany.mockResolvedValue([{ id: 'cat-1', name: 'Dining' }]);
-    prismaMock.transaction.findMany.mockResolvedValue([]);
 
     const result = await previewImport('user-1', [
       {
@@ -97,6 +116,50 @@ describe('commitImport', () => {
       expect.objectContaining({ data: expect.arrayContaining([expect.anything()]) }),
     );
     expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
-    expect(result).toEqual({ imported: 1 });
+    expect(result).toEqual({ imported: 1, skippedDuplicates: 0 });
+  });
+
+  it('re-checks against the database and skips rows that already exist, even if included', async () => {
+    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
+    ]);
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 0 });
+
+    const result = await commitImport('user-1', {
+      rows: [
+        {
+          accountId: 'acc-1',
+          date: new Date('2026-03-01'),
+          amount: 42,
+          type: 'EXPENSE',
+          payee: 'Coffee Shop',
+          include: true,
+        },
+      ],
+    });
+
+    // simulates a resubmitted/stale preview: the row looks includable to the
+    // client, but a matching transaction already landed in the database
+    expect(prismaMock.transaction.createMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ imported: 0, skippedDuplicates: 1 });
+  });
+
+  it('skips a second identical row within the same commit batch', async () => {
+    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+
+    const row = {
+      accountId: 'acc-1',
+      date: new Date('2026-03-01'),
+      amount: 42,
+      type: 'EXPENSE' as const,
+      payee: 'Coffee Shop',
+      include: true,
+    };
+    const result = await commitImport('user-1', { rows: [row, { ...row }] });
+
+    expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
+    expect(result).toEqual({ imported: 1, skippedDuplicates: 1 });
   });
 });

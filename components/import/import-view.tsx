@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Papa from 'papaparse';
 import { Card } from '@/components/ui/card';
@@ -35,6 +35,7 @@ export const ImportView = ({
   categories: FrontendCategory[];
 }): React.ReactElement => {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<CsvRow[]>([]);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
@@ -44,7 +45,11 @@ export const ImportView = ({
   const [noteCol, setNoteCol] = useState('');
   const [preview, setPreview] = useState<PreviewRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [committed, setCommitted] = useState<number | null>(null);
+  const [committing, setCommitting] = useState(false);
+  const [committed, setCommitted] = useState<{
+    imported: number;
+    skippedDuplicates: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -117,7 +122,8 @@ export const ImportView = ({
   };
 
   const handleCommit = async (): Promise<void> => {
-    if (!preview) return;
+    if (!preview || committing) return;
+    setCommitting(true);
     setLoading(true);
     setError(null);
     const res = await fetch('/api/import/commit', {
@@ -127,11 +133,26 @@ export const ImportView = ({
     });
     setLoading(false);
     if (!res.ok) {
+      setCommitting(false);
       setError('Import failed.');
       return;
     }
     const data = await res.json();
-    setCommitted(data.imported);
+    setCommitted(data);
+
+    // Reset everything so this file can't be re-submitted: another click on
+    // "Import" after a successful commit was silently re-importing the same
+    // rows, since the preview (and its duplicate flags) went stale the
+    // moment the first commit landed.
+    setHeaders([]);
+    setRawRows([]);
+    setPreview(null);
+    setDateCol('');
+    setAmountCol('');
+    setPayeeCol('');
+    setNoteCol('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
     router.refresh();
   };
 
@@ -140,6 +161,7 @@ export const ImportView = ({
       <Card>
         <Label htmlFor="csvfile">CSV file</Label>
         <input
+          ref={fileInputRef}
           id="csvfile"
           type="file"
           accept=".csv,text/csv"
@@ -274,7 +296,9 @@ export const ImportView = ({
 
       {committed !== null && (
         <p className="bg-moss-soft text-moss rounded-lg px-4 py-3 text-sm">
-          Imported {committed} transaction{committed === 1 ? '' : 's'}.
+          Imported {committed.imported} transaction{committed.imported === 1 ? '' : 's'}.
+          {committed.skippedDuplicates > 0 &&
+            ` Skipped ${committed.skippedDuplicates} duplicate${committed.skippedDuplicates === 1 ? '' : 's'}.`}
         </p>
       )}
     </div>
