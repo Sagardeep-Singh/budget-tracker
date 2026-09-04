@@ -288,7 +288,7 @@ const DashboardPage = async ({
                 <h2 className="font-display text-base font-semibold">
                   {triage.total} need{triage.total === 1 ? 's' : ''} a category
                 </h2>
-                <Link href="/categories" className="text-iris text-[13px] font-semibold">
+                <Link href="/categorize" className="text-iris text-[13px] font-semibold">
                   Open queue →
                 </Link>
               </div>
