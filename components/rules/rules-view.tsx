@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
 import type { FrontendCategory } from '@/lib/services/categories';
@@ -46,63 +44,99 @@ export const RulesView = ({
   };
 
   return (
-    <div className="mt-6">
-      <Card className="mb-4">
-        <form onSubmit={handleAdd} className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2">
-          <div>
-            <label className="text-ink-muted mb-1 block text-xs font-medium">Contains</label>
-            <Input
-              value={matchText}
-              onChange={(e) => setMatchText(e.target.value)}
-              placeholder="e.g. STARBUCKS"
-              required
-            />
-          </div>
-          <div>
-            <label className="text-ink-muted mb-1 block text-xs font-medium">Category</label>
-            <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="w-20">
-            <label className="text-ink-muted mb-1 block text-xs font-medium">Priority</label>
-            <Input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} />
-          </div>
-          <Button type="submit" disabled={pending}>
-            Add rule
-          </Button>
-        </form>
-        {error && <p className="text-rose mt-2 text-sm">{error}</p>}
-      </Card>
+    <div className="mt-6.5">
+      <form
+        onSubmit={handleAdd}
+        className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-4.5"
+      >
+        <div className="flex-1">
+          <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+            When the description contains
+          </label>
+          <Input
+            className="rounded-[9px]"
+            value={matchText}
+            onChange={(e) => setMatchText(e.target.value)}
+            placeholder="e.g. superstore"
+            required
+          />
+        </div>
+        <div className="w-[200px]">
+          <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+            Categorize as
+          </label>
+          <Select
+            className="rounded-[9px]"
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+            required
+          >
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="w-20">
+          <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+            Priority
+          </label>
+          <Input
+            className="rounded-[9px] font-mono"
+            type="number"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={pending}
+          className="bg-iris text-paper-raised rounded-full px-4.5 py-2.5 text-sm font-semibold disabled:opacity-50"
+        >
+          Add rule
+        </button>
+      </form>
+      {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
-      <Card className="p-0">
-        {initialRules.length === 0 ? (
-          <p className="text-ink-muted p-6 text-sm">
-            No rules yet. Everything falls back to no category.
-          </p>
-        ) : (
-          initialRules.map((rule) => (
-            <div key={rule.id} className="ledger-row flex items-center justify-between px-6 py-3">
-              <div className="text-ink text-sm">
-                <span className="font-money text-ink-muted">#{rule.priority}</span>{' '}
-                <span className="font-medium">&ldquo;{rule.matchText}&rdquo;</span> →{' '}
-                {rule.categoryName}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleDelete(rule.id)}
-                className="text-ink-muted hover:text-rose text-xs"
-              >
-                Delete
-              </button>
+      {initialRules.length === 0 ? (
+        <p className="text-ink-muted mt-6 text-sm">
+          No rules yet. Everything falls back to no category.
+        </p>
+      ) : (
+        <div className="border-line bg-paper-raised mt-4.5 rounded-2xl border px-6">
+          <div className="border-line text-ink-muted flex items-center gap-5 border-b py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
+            <span className="flex-1">Match</span>
+            <span className="w-[150px]">Category</span>
+            <span className="w-[110px] text-right">Applied</span>
+            <span className="w-[60px]" />
+          </div>
+          {initialRules.map((rule) => (
+            <div key={rule.id} className="ledger-row flex items-center gap-5 py-3.5">
+              <span className="min-w-0 flex-1 font-mono text-[13px]">
+                contains &ldquo;{rule.matchText}&rdquo;
+              </span>
+              <span className="w-[150px]">
+                <span className="border-line text-ink-muted rounded-full border px-2.5 py-1 text-[12.5px]">
+                  {rule.categoryName}
+                </span>
+              </span>
+              <span className="text-ink-muted w-[110px] text-right font-mono text-[13px] tabular-nums">
+                {rule.appliedCount}
+              </span>
+              <span className="w-[60px] text-right">
+                <button
+                  type="button"
+                  onClick={() => handleDelete(rule.id)}
+                  className="text-ink-muted text-[12.5px]"
+                >
+                  Delete
+                </button>
+              </span>
             </div>
-          ))
-        )}
-      </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
