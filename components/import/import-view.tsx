@@ -166,7 +166,7 @@ export const ImportView = ({
           type="file"
           accept=".csv,text/csv"
           onChange={handleFile}
-          className="text-ink-muted file:bg-teal-soft file:text-teal mt-1 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+          className="text-ink-muted file:bg-iris-soft file:text-iris mt-1 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
         />
 
         {headers.length > 0 && (
@@ -242,7 +242,7 @@ export const ImportView = ({
         </p>
       </Card>
 
-      {error && <p className="text-brick text-sm">{error}</p>}
+      {error && <p className="text-rose text-sm">{error}</p>}
 
       {preview && (
         <Card className="p-0">
@@ -265,7 +265,7 @@ export const ImportView = ({
                 type="checkbox"
                 checked={row.include}
                 onChange={() => toggleInclude(i)}
-                className="accent-teal h-4 w-4"
+                className="accent-iris h-4 w-4"
               />
               <div className="min-w-0">
                 <div className="text-ink truncate text-sm">
@@ -295,7 +295,7 @@ export const ImportView = ({
       )}
 
       {committed !== null && (
-        <p className="bg-moss-soft text-moss rounded-lg px-4 py-3 text-sm">
+        <p className="bg-sky-soft text-sky rounded-lg px-4 py-3 text-sm">
           Imported {committed.imported} transaction{committed.imported === 1 ? '' : 's'}.
           {committed.skippedDuplicates > 0 &&
             ` Skipped ${committed.skippedDuplicates} duplicate${committed.skippedDuplicates === 1 ? '' : 's'}.`}

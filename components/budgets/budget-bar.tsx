@@ -21,12 +21,12 @@ export const BudgetBar = ({ budget }: { budget: FrontendBudget }): React.ReactEl
         <div
           className={cn(
             'h-full origin-left [animation:grow-bar_0.6s_ease-out] rounded-full',
-            over ? 'bg-brick' : 'bg-teal',
+            over ? 'bg-rose' : 'bg-iris',
           )}
           style={{ width: `${pct}%` }}
         />
       </div>
-      {over && <div className="text-brick mt-1 text-xs">Over budget</div>}
+      {over && <div className="text-rose mt-1 text-xs">Over budget</div>}
     </div>
   );
 };

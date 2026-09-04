@@ -1,46 +1,163 @@
 @import 'tailwindcss';
 
-:root {
-  --paper: #eef2ed;
+/*
+ * Palette tokens: accent family via [data-pal] ("clay" default, "cobalt",
+ * "iris"), theme via [data-theme] or prefers-color-scheme. `--iris` is the
+ * accent token name in every palette (kept from the source design system
+ * for continuity — read it as "accent", not literally iris-colored).
+ * See docs/feature-plans/ledger-redesign.md for the source spec.
+ */
+:root,
+[data-pal='clay'] {
+  --paper: #f6f2ee;
   --paper-raised: #ffffff;
-  --ink: #16231f;
-  --ink-muted: #55645c;
-  --teal: #1f5c58;
-  --teal-soft: #dbe9e7;
-  --moss: #2f6f4e;
-  --moss-soft: #e1efe6;
-  --brick: #a8443b;
-  --brick-soft: #f5e2df;
-  --line: #d8ded6;
+  --paper-sunk: #efe8e1;
+  --ink: #231c17;
+  --ink-muted: #6b5d53;
+  --line: #e5dcd3;
+  --iris: #a8622a;
+  --iris-soft: #f7e9dc;
+  --sky: #2e6c96;
+  --sky-soft: #e3eef6;
+  --rose: #b04a45;
+  --rose-soft: #f8e4e2;
+}
+
+[data-pal='cobalt'] {
+  --paper: #f4f3f8;
+  --paper-raised: #ffffff;
+  --paper-sunk: #eae8f2;
+  --ink: #191826;
+  --ink-muted: #5f5d72;
+  --line: #dedbea;
+  --iris: #2b58d0;
+  --iris-soft: #e5ebfd;
+  --sky: #1a7f96;
+  --sky-soft: #e0f1f5;
+  --rose: #c25a3f;
+  --rose-soft: #fbe8e2;
+}
+
+[data-pal='iris'] {
+  --paper: #f4f3f8;
+  --paper-raised: #ffffff;
+  --paper-sunk: #eae8f2;
+  --ink: #191826;
+  --ink-muted: #5f5d72;
+  --line: #dedbea;
+  --iris: #5b46c4;
+  --iris-soft: #ebe7fb;
+  --sky: #1f6bb5;
+  --sky-soft: #e4eefb;
+  --rose: #c04a58;
+  --rose-soft: #fbe6e8;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #101c17;
-    --paper-raised: #152521;
-    --ink: #e8ece6;
-    --ink-muted: #93a49a;
-    --teal: #56b0a5;
-    --teal-soft: #1c3733;
-    --moss: #79cf9b;
-    --moss-soft: #1e3527;
-    --brick: #e5897c;
-    --brick-soft: #3a221f;
-    --line: #24382f;
+  :root:not([data-theme='light']),
+  [data-pal='clay']:not([data-theme='light']) {
+    --paper: #1a1614;
+    --paper-raised: #241f1c;
+    --paper-sunk: #120f0e;
+    --ink: #f1ebe6;
+    --ink-muted: #a89a92;
+    --line: #332b27;
+    --iris: #dc9048;
+    --iris-soft: #3a2718;
+    --sky: #7fb0d8;
+    --sky-soft: #1d2a33;
+    --rose: #d1685c;
+    --rose-soft: #3a211e;
   }
+
+  [data-pal='cobalt']:not([data-theme='light']) {
+    --paper: #14141c;
+    --paper-raised: #1c1c26;
+    --paper-sunk: #0e0e15;
+    --ink: #ecebf3;
+    --ink-muted: #9997ab;
+    --line: #2a2a37;
+    --iris: #5b8dff;
+    --iris-soft: #16233f;
+    --sky: #7ad3e8;
+    --sky-soft: #132d33;
+    --rose: #f08a72;
+    --rose-soft: #3a2320;
+  }
+
+  [data-pal='iris']:not([data-theme='light']) {
+    --paper: #14141c;
+    --paper-raised: #1c1c26;
+    --paper-sunk: #0e0e15;
+    --ink: #ecebf3;
+    --ink-muted: #9997ab;
+    --line: #2a2a37;
+    --iris: #8b7cf0;
+    --iris-soft: #252044;
+    --sky: #6fb0f2;
+    --sky-soft: #182739;
+    --rose: #ef7f8d;
+    --rose-soft: #39202a;
+  }
+}
+
+[data-theme='dark'][data-pal='clay'] {
+  --paper: #1a1614;
+  --paper-raised: #241f1c;
+  --paper-sunk: #120f0e;
+  --ink: #f1ebe6;
+  --ink-muted: #a89a92;
+  --line: #332b27;
+  --iris: #dc9048;
+  --iris-soft: #3a2718;
+  --sky: #7fb0d8;
+  --sky-soft: #1d2a33;
+  --rose: #d1685c;
+  --rose-soft: #3a211e;
+}
+
+[data-theme='dark'][data-pal='cobalt'] {
+  --paper: #14141c;
+  --paper-raised: #1c1c26;
+  --paper-sunk: #0e0e15;
+  --ink: #ecebf3;
+  --ink-muted: #9997ab;
+  --line: #2a2a37;
+  --iris: #5b8dff;
+  --iris-soft: #16233f;
+  --sky: #7ad3e8;
+  --sky-soft: #132d33;
+  --rose: #f08a72;
+  --rose-soft: #3a2320;
+}
+
+[data-theme='dark'][data-pal='iris'] {
+  --paper: #14141c;
+  --paper-raised: #1c1c26;
+  --paper-sunk: #0e0e15;
+  --ink: #ecebf3;
+  --ink-muted: #9997ab;
+  --line: #2a2a37;
+  --iris: #8b7cf0;
+  --iris-soft: #252044;
+  --sky: #6fb0f2;
+  --sky-soft: #182739;
+  --rose: #ef7f8d;
+  --rose-soft: #39202a;
 }
 
 @theme inline {
   --color-paper: var(--paper);
   --color-paper-raised: var(--paper-raised);
+  --color-paper-sunk: var(--paper-sunk);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
-  --color-teal: var(--teal);
-  --color-teal-soft: var(--teal-soft);
-  --color-moss: var(--moss);
-  --color-moss-soft: var(--moss-soft);
-  --color-brick: var(--brick);
-  --color-brick-soft: var(--brick-soft);
+  --color-iris: var(--iris);
+  --color-iris-soft: var(--iris-soft);
+  --color-sky: var(--sky);
+  --color-sky-soft: var(--sky-soft);
+  --color-rose: var(--rose);
+  --color-rose-soft: var(--rose-soft);
   --color-line: var(--line);
   --font-display: var(--font-space-grotesk);
   --font-sans: var(--font-inter);

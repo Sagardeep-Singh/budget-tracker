@@ -30,7 +30,7 @@ export const Sidebar = (): React.ReactElement => {
             href={link.href}
             className={cn(
               'rounded-full px-3 py-2 text-sm font-medium transition-colors',
-              active ? 'bg-teal text-paper-raised' : 'text-ink-muted hover:bg-paper',
+              active ? 'bg-iris text-paper-raised' : 'text-ink-muted hover:bg-paper',
             )}
           >
             {link.label}
@@ -38,7 +38,7 @@ export const Sidebar = (): React.ReactElement => {
         );
       })}
       <form action={signOutAction} className="mt-auto px-2 pt-6">
-        <button type="submit" className="text-ink-muted hover:text-brick text-xs">
+        <button type="submit" className="text-ink-muted hover:text-rose text-xs">
           Sign out
         </button>
       </form>

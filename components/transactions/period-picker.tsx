@@ -40,7 +40,7 @@ export const PeriodPicker = ({
           onClick={() => onModeChange(m)}
           className={cn(
             'rounded-full px-3 py-1 font-medium transition-colors',
-            mode === m ? 'bg-teal text-paper-raised' : 'text-ink-muted hover:text-ink',
+            mode === m ? 'bg-iris text-paper-raised' : 'text-ink-muted hover:text-ink',
           )}
         >
           {m === 'ALL' ? 'All time' : m === 'MONTH' ? 'By month' : 'By statement'}
