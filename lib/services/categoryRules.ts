@@ -11,29 +11,52 @@ export type FrontendCategoryRule = {
   categoryName: string;
   matchText: string;
   priority: number;
+  /** Count of the user's current transactions this rule's match text and
+   * category both agree with — an approximation of "applied", since a
+   * transaction's category isn't tagged with which rule (if any) set it. */
+  appliedCount: number;
 };
 
-const toFrontend = (rule: {
-  id: string;
-  categoryId: string;
-  matchText: string;
-  priority: number;
-  category: { name: string };
-}): FrontendCategoryRule => ({
+const toFrontend = (
+  rule: {
+    id: string;
+    categoryId: string;
+    matchText: string;
+    priority: number;
+    category: { name: string };
+  },
+  appliedCount: number,
+): FrontendCategoryRule => ({
   id: rule.id,
   categoryId: rule.categoryId,
   categoryName: rule.category.name,
   matchText: rule.matchText,
   priority: rule.priority,
+  appliedCount,
 });
 
 export const listCategoryRules = async (userId: string): Promise<FrontendCategoryRule[]> => {
-  const rules = await prisma.categoryRule.findMany({
-    where: { userId },
-    include: { category: { select: { name: true } } },
-    orderBy: [{ priority: 'asc' }, { matchText: 'asc' }],
+  const [rules, transactions] = await Promise.all([
+    prisma.categoryRule.findMany({
+      where: { userId },
+      include: { category: { select: { name: true } } },
+      orderBy: [{ priority: 'asc' }, { matchText: 'asc' }],
+    }),
+    prisma.transaction.findMany({
+      where: { userId, categoryId: { not: null } },
+      select: { categoryId: true, payee: true, note: true },
+    }),
+  ]);
+
+  return rules.map((rule) => {
+    const matchText = rule.matchText.toLowerCase();
+    const appliedCount = transactions.filter(
+      (t) =>
+        t.categoryId === rule.categoryId &&
+        `${t.payee ?? ''} ${t.note ?? ''}`.toLowerCase().includes(matchText),
+    ).length;
+    return toFrontend(rule, appliedCount);
   });
-  return rules.map(toFrontend);
 };
 
 export const createCategoryRule = async (
@@ -56,7 +79,7 @@ export const createCategoryRule = async (
     },
     include: { category: { select: { name: true } } },
   });
-  return toFrontend(rule);
+  return toFrontend(rule, 0);
 };
 
 export const updateCategoryRule = async (
@@ -74,7 +97,7 @@ export const updateCategoryRule = async (
     data: input,
     include: { category: { select: { name: true } } },
   });
-  return toFrontend(rule);
+  return toFrontend(rule, 0);
 };
 
 export const deleteCategoryRule = async (userId: string, ruleId: string): Promise<void> => {
