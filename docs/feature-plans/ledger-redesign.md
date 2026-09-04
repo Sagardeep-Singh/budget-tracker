@@ -27,7 +27,7 @@ Mapping design screen -> existing route:
   makes it a modal overlay from any screen. Flagged below.
 
 **Correction (found while building Stage 3):** `app/(protected)/categories`
-is plain category CRUD (add/rename/delete a category name) — it is *not*
+is plain category CRUD (add/rename/delete a category name) — it is _not_
 the design's Categorize triage queue (payee/amount/rule-reason, accept-all,
 confirm-or-skip). The design has no screen for bare category-name
 management at all. Decision: Stage 5 builds the triage queue at a new
@@ -77,11 +77,20 @@ those stages land):
       design shows the numbers but not the formula. Triage promo card only
       renders when there's a queue (design doesn't show an empty variant for
       it). Cycle card shows the first credit-card account with a
-      `statementDay` set; progress bar is *time elapsed in the cycle*, not
+      `statementDay` set; progress bar is _time elapsed in the cycle_, not
       spend-vs-limit — accounts have no credit-limit field. Removed the
       now-unused `lib/services/dashboard.ts` (folded into `overview.ts`).
-- [ ] **Stage 4 — Transactions**: filter chips + period stepper, summary bar,
-      day-grouped transaction cards, detail drawer overlay.
+- [x] **Stage 4 — Transactions**: summary bar, day-grouped transaction cards
+      with category chips (rose outline when uncategorized) and a running
+      balance across the filtered set, restyled account/category filters
+      and Add-transaction/Import-CSV actions. Kept the existing
+      account/category `Select` dropdowns rather than the design's filter
+      chips, and kept the existing `PeriodPicker` (month/statement toggle)
+      as-is — both are functional deviations from the mockup, not just
+      restyles, so reworking them into true chips/stepper is left for a
+      later pass rather than folded into this stage silently. Detail
+      drawer overlay is still Stage 10 — rows open the existing edit modal
+      for now.
 - [ ] **Stage 5 — Categorize**: action bar (accept-all, review one-by-one),
       suggestion table/queue with rule explanation.
 - [ ] **Stage 6 — Budgets**: form row + 2-up ring cards.
