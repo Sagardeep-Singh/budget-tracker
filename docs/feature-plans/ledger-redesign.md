@@ -108,8 +108,13 @@ those stages land):
       size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       text per card. Removed the now-unused `components/budgets/budget-bar.tsx`
       (only consumer was the old dashboard page, gone since Stage 3).
-- [ ] **Stage 7 — Accounts**: 2-up account cards, connect tile, error/needs-
-      attention variant.
+- [x] **Stage 7 — Accounts**: 2-up account cards + dashed "Add an account"
+      tile. This app has no live bank sync (accounts are manual + CSV
+      import), so the design's status chip/"Sync now"/"Needs attention"/
+      "Reconnect" concepts don't map to anything real — rather than fabricate
+      a fake sync status, the status chip is a static "Active" and the card
+      actions are the real ones (Edit/Delete). No error variant for the
+      same reason; Stage 11's data states won't invent one either.
 - [ ] **Stage 8 — Rules**: new-rule form + rules table.
 - [ ] **Stage 9 — Settings**: new screen, scoped per the flag above.
 - [ ] **Stage 10 — Overlays**: period popover, add-transaction modal, import

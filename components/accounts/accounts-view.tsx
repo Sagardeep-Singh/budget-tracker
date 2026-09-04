@@ -2,11 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { Money } from '@/components/ui/money';
 import { AccountForm } from '@/components/accounts/account-form';
+import { formatDate } from '@/lib/format';
 import type { FrontendAccount } from '@/lib/services/accounts';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -45,46 +43,62 @@ export const AccountsView = ({
   };
 
   return (
-    <div className="mt-6">
-      <div className="mb-3 flex justify-end">
-        <Button onClick={openCreate}>Add account</Button>
-      </div>
-      <Card className="p-0">
-        {initialAccounts.length === 0 ? (
-          <p className="text-ink-muted p-6 text-sm">
-            No accounts yet. Add one to start logging transactions.
-          </p>
-        ) : (
-          initialAccounts.map((account) => (
-            <div
-              key={account.id}
-              className="ledger-row flex items-center justify-between px-6 py-4"
-            >
+    <div className="mt-6.5">
+      {initialAccounts.length === 0 && (
+        <p className="text-ink-muted mb-4 text-sm">
+          No accounts yet. Add one to start logging transactions.
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-4">
+        {initialAccounts.map((account) => (
+          <div key={account.id} className="border-line bg-paper-raised rounded-2xl border p-5.5">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-ink font-medium">{account.name}</div>
-                <div className="text-ink-muted text-xs">{TYPE_LABELS[account.type]}</div>
+                <div className="font-display text-[17px] font-semibold">{account.name}</div>
+                <div className="text-ink-muted mt-0.5 text-[12.5px]">
+                  {TYPE_LABELS[account.type]}
+                  {account.type === 'CREDIT_CARD' &&
+                    account.statementDay &&
+                    ` · statement day ${account.statementDay}`}
+                </div>
               </div>
-              <div className="flex items-center gap-4">
-                <Money value={account.balance} tone="neutral" className="text-base" />
-                <button
-                  type="button"
-                  onClick={() => openEdit(account)}
-                  className="text-ink-muted hover:text-iris text-xs"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(account.id)}
-                  className="text-ink-muted hover:text-rose text-xs"
-                >
-                  Delete
-                </button>
-              </div>
+              <span className="bg-sky-soft text-sky rounded-full px-2.5 py-1 text-[11.5px] font-semibold">
+                Active
+              </span>
             </div>
-          ))
-        )}
-      </Card>
+            <div className="mt-4 font-mono text-[28px] tracking-[-0.03em] tabular-nums">
+              ${Number(account.balance).toFixed(2)}
+            </div>
+            <div className="text-ink-muted mt-1 text-[12.5px]">
+              Added {formatDate(account.createdAt)}
+            </div>
+            <div className="border-line mt-4.5 flex gap-2 border-t pt-4">
+              <button
+                type="button"
+                onClick={() => openEdit(account)}
+                className="border-line text-ink rounded-full border px-3.5 py-2 text-[13px]"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(account.id)}
+                className="text-ink-muted px-1 py-2 text-[13px]"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={openCreate}
+          className="border-line flex min-h-[190px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed"
+        >
+          <span className="text-ink-muted text-[26px] leading-none">+</span>
+          <span className="text-ink-muted text-sm font-medium">Add an account</span>
+        </button>
+      </div>
 
       <Modal
         key={dialogKey}
