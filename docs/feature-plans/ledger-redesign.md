@@ -135,8 +135,37 @@ size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       `useSyncExternalStore`, not an effect-driven `setState`, so there's
       no hydration mismatch and no cascading-render lint violation). Sidebar
       now has the `Settings` nav item deferred since Stage 2.
-- [ ] **Stage 10 — Overlays**: period popover, add-transaction modal, import
-      CSV modal, undo toast, sign-in screen redesign.
+- [x] **Stage 10 — Overlays**: shipped —
+      - **Sign-in**: full-screen 50/50 redesign (`app/(auth)/login`,
+        `components/auth/login-form.tsx`). Omits "Email me a sign-in link"
+        and "Create one" — this app is credentials-only, single-user, no
+        magic-link or sign-up flow exists, so those aren't fabricated.
+      - **Global add-transaction overlay**: `?overlay=add`, rendered from
+        `app/(protected)/layout.tsx` (`components/transactions/add-
+        transaction-overlay.tsx`), reachable from the sidebar and Overview
+        from any screen — no context provider, consistent with the
+        `?day=N` precedent. `TransactionForm` restyled to match (mono
+        amount + Spend/Income pill toggle, category chips instead of a
+        select).
+      - **Transaction detail drawer**: new `components/ui/drawer.tsx`
+        (right-side, 420px, no scrim per the design — matches the drawer's
+        z=40 vs the modal's z=50). Transactions rows now open the drawer
+        instead of the centered modal; reuses `TransactionForm` inside it
+        rather than a separate read/edit split, so Save doubles as
+        Cancel-via-`onDone`.
+      - **Period popover**: `components/dashboard/period-popover.tsx` —
+        presets (This month / Last month) + a 12-month grid, wired to
+        `?month=YYYYMM` (already supported by `getOverviewData`).
+        **Custom date-range picking is not included** — the service is
+        calendar-month only; a real range picker needs broader service
+        changes than this stage's scope.
+      - **Undo toast**: `components/ui/toast.tsx`, wired to Categorize's
+        Accept-all with *real* undo (re-PATCHes the accepted rows'
+        `categoryId` back to `null`), not just a dismiss button.
+      - **Import CSV modal**: not converted — still the `/import` route,
+        as flagged since Stage 4/the plan's original open question. Left
+        as-is rather than adding modal-from-any-screen plumbing on top of
+        everything else in this stage.
 - [ ] **Stage 11 — Data states**: loading skeleton (`om-pulse`), empty,
       error banners across the above screens.
 - [ ] **Stage 12 — Mobile**: responsive reflow (single column, bottom nav) + mobile-only screens (Day, Period sheet, Log-a-spend w/ keypad,
