@@ -105,7 +105,7 @@ those stages land):
       `/categories` ("Manage categories") since that's no longer reachable
       from nav otherwise. Undo toast on Accept all is still Stage 10.
 - [x] **Stage 6 — Budgets**: pill form row + 2-up ring cards (`Ring
-    size="budget"`, matches the design's 96/40/9 geometry exactly), pace
+size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       text per card. Removed the now-unused `components/budgets/budget-bar.tsx`
       (only consumer was the old dashboard page, gone since Stage 3).
 - [x] **Stage 7 — Accounts**: 2-up account cards + dashed "Add an account"
@@ -123,7 +123,18 @@ those stages land):
       transactions whose category and match text both agree with the rule
       — an approximation, since a transaction isn't tagged with which rule
       (if any) actually set its category.
-- [ ] **Stage 9 — Settings**: new screen, scoped per the flag above.
+- [x] **Stage 9 — Settings**: new `/settings` route, scoped after asking —
+      user chose "Preferences only, rest omitted." Account group shows
+      email read-only from the session; no password change, no Delete
+      account (this app has no self-service auth changes today, and
+      Delete would cascade-wipe everything per the schema — not something
+      to ship disabled). Preferences group is real: accent
+      (clay/cobalt/iris) and appearance (system/light/dark) pickers,
+      backed by `lib/preferences.ts` + `localStorage`, applied globally via
+      a `ThemeInit` component mounted in the root layout (uses
+      `useSyncExternalStore`, not an effect-driven `setState`, so there's
+      no hydration mismatch and no cascading-render lint violation). Sidebar
+      now has the `Settings` nav item deferred since Stage 2.
 - [ ] **Stage 10 — Overlays**: period popover, add-transaction modal, import
       CSV modal, undo toast, sign-in screen redesign.
 - [ ] **Stage 11 — Data states**: loading skeleton (`om-pulse`), empty,
