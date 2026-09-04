@@ -26,6 +26,16 @@ Mapping design screen -> existing route:
 - Import CSV modal -> currently a full route `app/(protected)/import`, design
   makes it a modal overlay from any screen. Flagged below.
 
+**Correction (found while building Stage 3):** `app/(protected)/categories`
+is plain category CRUD (add/rename/delete a category name) — it is *not*
+the design's Categorize triage queue (payee/amount/rule-reason, accept-all,
+confirm-or-skip). The design has no screen for bare category-name
+management at all. Decision: Stage 5 builds the triage queue at a new
+`/categorize` route; `/categories` stays as-is (out of design scope, still
+linked from wherever it's useful, e.g. Budgets' category picker). Until
+Stage 5 lands, the sidebar's "Categorize" link and the Overview triage
+card's "Open queue" link point at `/categories` as an interim stand-in.
+
 Open questions / flags (not decided by design, need product call before
 those stages land):
 
@@ -56,9 +66,20 @@ those stages land):
       links to `/transactions` rather than opening a global modal — that's
       Stage 10 (Add transaction overlay) work. No `Settings` nav item yet —
       waiting on Stage 9.
-- [ ] **Stage 3 — Overview**: hero ring card, budgets card (4 category
+- [x] **Stage 3 — Overview**: hero ring card, budgets card (4 category
       rings), "by day" bar chart + day panel, triage promo card, account
-      cycle card.
+      cycle card. New `lib/services/overview.ts` computes everything from a
+      calendar-month period (period picker overlay is Stage 10, so month is
+      fixed to "this month" for now); day selection is a plain `?day=N`
+      link, no client state. Pace/pace-note math (daily pace = total budget
+      limit / days in month, "pacing under/over" compares spent-so-far to
+      expected-by-now) is this implementation's own interpretation — the
+      design shows the numbers but not the formula. Triage promo card only
+      renders when there's a queue (design doesn't show an empty variant for
+      it). Cycle card shows the first credit-card account with a
+      `statementDay` set; progress bar is *time elapsed in the cycle*, not
+      spend-vs-limit — accounts have no credit-limit field. Removed the
+      now-unused `lib/services/dashboard.ts` (folded into `overview.ts`).
 - [ ] **Stage 4 — Transactions**: filter chips + period stepper, summary bar,
       day-grouped transaction cards, detail drawer overlay.
 - [ ] **Stage 5 — Categorize**: action bar (accept-all, review one-by-one),
