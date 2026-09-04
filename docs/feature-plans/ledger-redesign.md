@@ -105,7 +105,7 @@ those stages land):
       `/categories` ("Manage categories") since that's no longer reachable
       from nav otherwise. Undo toast on Accept all is still Stage 10.
 - [x] **Stage 6 — Budgets**: pill form row + 2-up ring cards (`Ring
-      size="budget"`, matches the design's 96/40/9 geometry exactly), pace
+    size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       text per card. Removed the now-unused `components/budgets/budget-bar.tsx`
       (only consumer was the old dashboard page, gone since Stage 3).
 - [x] **Stage 7 — Accounts**: 2-up account cards + dashed "Add an account"
@@ -119,7 +119,7 @@ those stages land):
       columns. `CategoryRule` has no `createdAt` column, so the "Created"
       column is dropped rather than fabricated (schema changes are out of
       scope unless the task explicitly needs them). "Applied" is computed
-      (new `listCategoryRules` logic) as the count of the user's *current*
+      (new `listCategoryRules` logic) as the count of the user's _current_
       transactions whose category and match text both agree with the rule
       — an approximation, since a transaction isn't tagged with which rule
       (if any) actually set its category.
