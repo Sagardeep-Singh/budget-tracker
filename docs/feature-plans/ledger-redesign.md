@@ -51,7 +51,7 @@ those stages land):
 ## Stack
 
 - [x] **Stage 0 — plan** (this doc)
-- [ ] **Stage 1 — foundation**: palette tokens (Clay default, Cobalt, Iris) x
+- [x] **Stage 1 — foundation**: palette tokens (Clay default, Cobalt, Iris) x
       light/dark via `data-pal`/`data-theme` in `app/globals.css`; Space
       Grotesk / Inter / IBM Plex Mono via `next/font/google`; `Ring` SVG
       component (`components/ui/ring.tsx`, covers all 7 size variants from
@@ -135,39 +135,44 @@ size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       `useSyncExternalStore`, not an effect-driven `setState`, so there's
       no hydration mismatch and no cascading-render lint violation). Sidebar
       now has the `Settings` nav item deferred since Stage 2.
-- [x] **Stage 10 — Overlays**: shipped —
-      - **Sign-in**: full-screen 50/50 redesign (`app/(auth)/login`,
-        `components/auth/login-form.tsx`). Omits "Email me a sign-in link"
-        and "Create one" — this app is credentials-only, single-user, no
-        magic-link or sign-up flow exists, so those aren't fabricated.
-      - **Global add-transaction overlay**: `?overlay=add`, rendered from
-        `app/(protected)/layout.tsx` (`components/transactions/add-
-        transaction-overlay.tsx`), reachable from the sidebar and Overview
-        from any screen — no context provider, consistent with the
-        `?day=N` precedent. `TransactionForm` restyled to match (mono
-        amount + Spend/Income pill toggle, category chips instead of a
-        select).
-      - **Transaction detail drawer**: new `components/ui/drawer.tsx`
-        (right-side, 420px, no scrim per the design — matches the drawer's
-        z=40 vs the modal's z=50). Transactions rows now open the drawer
-        instead of the centered modal; reuses `TransactionForm` inside it
-        rather than a separate read/edit split, so Save doubles as
-        Cancel-via-`onDone`.
-      - **Period popover**: `components/dashboard/period-popover.tsx` —
-        presets (This month / Last month) + a 12-month grid, wired to
-        `?month=YYYYMM` (already supported by `getOverviewData`).
-        **Custom date-range picking is not included** — the service is
-        calendar-month only; a real range picker needs broader service
-        changes than this stage's scope.
-      - **Undo toast**: `components/ui/toast.tsx`, wired to Categorize's
-        Accept-all with *real* undo (re-PATCHes the accepted rows'
-        `categoryId` back to `null`), not just a dismiss button.
-      - **Import CSV modal**: not converted — still the `/import` route,
-        as flagged since Stage 4/the plan's original open question. Left
-        as-is rather than adding modal-from-any-screen plumbing on top of
-        everything else in this stage.
-- [ ] **Stage 11 — Data states**: loading skeleton (`om-pulse`), empty,
-      error banners across the above screens.
+- [x] **Stage 10 — Overlays**: shipped — - **Sign-in**: full-screen 50/50 redesign (`app/(auth)/login`,
+      `components/auth/login-form.tsx`). Omits "Email me a sign-in link"
+      and "Create one" — this app is credentials-only, single-user, no
+      magic-link or sign-up flow exists, so those aren't fabricated. - **Global add-transaction overlay**: `?overlay=add`, rendered from
+      `app/(protected)/layout.tsx` (`components/transactions/add-
+    transaction-overlay.tsx`), reachable from the sidebar and Overview
+      from any screen — no context provider, consistent with the
+      `?day=N` precedent. `TransactionForm` restyled to match (mono
+      amount + Spend/Income pill toggle, category chips instead of a
+      select). - **Transaction detail drawer**: new `components/ui/drawer.tsx`
+      (right-side, 420px, no scrim per the design — matches the drawer's
+      z=40 vs the modal's z=50). Transactions rows now open the drawer
+      instead of the centered modal; reuses `TransactionForm` inside it
+      rather than a separate read/edit split, so Save doubles as
+      Cancel-via-`onDone`. - **Period popover**: `components/dashboard/period-popover.tsx` —
+      presets (This month / Last month) + a 12-month grid, wired to
+      `?month=YYYYMM` (already supported by `getOverviewData`).
+      **Custom date-range picking is not included** — the service is
+      calendar-month only; a real range picker needs broader service
+      changes than this stage's scope. - **Undo toast**: `components/ui/toast.tsx`, wired to Categorize's
+      Accept-all with _real_ undo (re-PATCHes the accepted rows'
+      `categoryId` back to `null`), not just a dismiss button. - **Import CSV modal**: not converted — still the `/import` route,
+      as flagged since Stage 4/the plan's original open question. Left
+      as-is rather than adding modal-from-any-screen plumbing on top of
+      everything else in this stage.
+- [x] **Stage 11 — Data states**: `om-pulse` keyframe added to
+      `globals.css`. `loading.tsx` per data-fetching route via Next's
+      Suspense-boundary convention — a bespoke skeleton for Overview
+      matching the design's exact shapes (ring outlines, text bars, 4
+      category-ring outlines, two filled blocks), a shared
+      `components/ui/screen-loading.tsx` for the rest (design doesn't spec
+      their skeletons beyond the Overview example). Overview gets a real
+      empty state (dashed card, matches the design) when there's no budget
+      and no transaction activity for the month. Every other screen's
+      empty state was already covered incidentally by earlier stages'
+      "No X yet" copy. No error banners — Stage 7 already established
+      there's no live sync to fail, so nothing to bind one to; fabricating
+      one would misrepresent the app.
 - [ ] **Stage 12 — Mobile**: responsive reflow (single column, bottom nav) + mobile-only screens (Day, Period sheet, Log-a-spend w/ keypad,
       mobile Categorize/Transactions/Budgets/Accounts/Settings variants).
 
