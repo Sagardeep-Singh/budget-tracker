@@ -104,7 +104,10 @@ those stages land):
       card now point at `/categorize`; `/categorize` itself links out to
       `/categories` ("Manage categories") since that's no longer reachable
       from nav otherwise. Undo toast on Accept all is still Stage 10.
-- [ ] **Stage 6 — Budgets**: form row + 2-up ring cards.
+- [x] **Stage 6 — Budgets**: pill form row + 2-up ring cards (`Ring
+      size="budget"`, matches the design's 96/40/9 geometry exactly), pace
+      text per card. Removed the now-unused `components/budgets/budget-bar.tsx`
+      (only consumer was the old dashboard page, gone since Stage 3).
 - [ ] **Stage 7 — Accounts**: 2-up account cards, connect tile, error/needs-
       attention variant.
 - [ ] **Stage 8 — Rules**: new-rule form + rules table.
