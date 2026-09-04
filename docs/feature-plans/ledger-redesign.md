@@ -115,7 +115,14 @@ those stages land):
       a fake sync status, the status chip is a static "Active" and the card
       actions are the real ones (Edit/Delete). No error variant for the
       same reason; Stage 11's data states won't invent one either.
-- [ ] **Stage 8 — Rules**: new-rule form + rules table.
+- [x] **Stage 8 — Rules**: new-rule form + rules table matching the design's
+      columns. `CategoryRule` has no `createdAt` column, so the "Created"
+      column is dropped rather than fabricated (schema changes are out of
+      scope unless the task explicitly needs them). "Applied" is computed
+      (new `listCategoryRules` logic) as the count of the user's *current*
+      transactions whose category and match text both agree with the rule
+      — an approximation, since a transaction isn't tagged with which rule
+      (if any) actually set its category.
 - [ ] **Stage 9 — Settings**: new screen, scoped per the flag above.
 - [ ] **Stage 10 — Overlays**: period popover, add-transaction modal, import
       CSV modal, undo toast, sign-in screen redesign.
