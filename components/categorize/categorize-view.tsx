@@ -31,8 +31,14 @@ export const CategorizeView = ({
   const matched = queue.filter((r) => r.suggestedCategoryId);
 
   const removeRow = (id: string): void => {
-    setQueue((q) => q.filter((r) => r.id !== id));
-    setIndex((i) => Math.min(i, Math.max(queue.length - 2, 0)));
+    setQueue((q) => {
+      const next = q.filter((r) => r.id !== id);
+      // Removing the current row shifts the next one into the same index,
+      // so only clamp when the index now overflows the shrunk queue —
+      // don't step back a position on every removal.
+      setIndex((i) => Math.min(i, Math.max(next.length - 1, 0)));
+      return next;
+    });
   };
 
   const confirm = async (row: CategorizeQueueRow, categoryId: string): Promise<void> => {
