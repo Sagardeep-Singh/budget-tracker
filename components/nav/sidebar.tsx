@@ -17,6 +17,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
     { href: '/budgets', label: 'Budgets', badge: counts.budgets },
     { href: '/accounts', label: 'Accounts', badge: counts.accounts },
     { href: '/rules', label: 'Rules', badge: counts.rules },
+    { href: '/settings', label: 'Settings' },
   ];
 
   return (
