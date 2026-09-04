@@ -47,8 +47,15 @@ those stages land):
       component (`components/ui/ring.tsx`, covers all 7 size variants from
       the geometry table); base primitives (pill button, chip, card) if not
       already present in `components/ui`.
-- [ ] **Stage 2 — shell**: sidebar nav redesign (`components/nav/sidebar.tsx`) + shared screen header pattern (title + description + period pill +
-      actions).
+- [x] **Stage 2 — shell**: sidebar nav redesign (`components/nav/sidebar.tsx`,
+      `components/nav/sidebar-nav.tsx`) with live badge counts
+      (`lib/services/nav.ts`) + `components/nav/screen-header.tsx` shared
+      header pattern, built but not yet adopted by any screen (lands with
+      each screen's own stage). Protected layout content width matches the
+      design's `1120px`/`960px` bounds. Sidebar's "+ Log a transaction"
+      links to `/transactions` rather than opening a global modal — that's
+      Stage 10 (Add transaction overlay) work. No `Settings` nav item yet —
+      waiting on Stage 9.
 - [ ] **Stage 3 — Overview**: hero ring card, budgets card (4 category
       rings), "by day" bar chart + day panel, triage promo card, account
       cycle card.
