@@ -2,12 +2,30 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
-import { BudgetBar } from '@/components/budgets/budget-bar';
+import { Ring } from '@/components/ui/ring';
+import { cn } from '@/lib/cn';
 import type { FrontendBudget } from '@/lib/services/budgets';
 import type { FrontendCategory } from '@/lib/services/categories';
+
+const daysInMonth = (month: number): number => {
+  const year = Math.floor(month / 100);
+  const monthIndex = (month % 100) - 1;
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+};
+
+const paceText = (limit: number, spent: number, month: number): string => {
+  const now = new Date();
+  const isCurrentMonth = month === now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
+  const total = daysInMonth(month);
+  const elapsed = isCurrentMonth ? now.getUTCDate() : total;
+  const remaining = Math.max(total - elapsed, 0);
+  if (remaining === 0) return spent > limit ? 'Over for the month' : 'On track for the month';
+  const perDay = Math.max(limit - spent, 0) / remaining;
+  return spent > limit
+    ? `${remaining} ${remaining === 1 ? 'day' : 'days'} left, already over`
+    : `$${perDay.toFixed(2)}/day left to stay on track`;
+};
 
 export const BudgetsView = ({
   initialBudgets,
@@ -51,56 +69,103 @@ export const BudgetsView = ({
   };
 
   return (
-    <div className="mt-6">
+    <div className="mt-6.5">
       {available.length > 0 && (
-        <Card className="mb-4">
-          <form onSubmit={handleAdd} className="grid grid-cols-[1fr_auto_auto] items-end gap-2">
-            <div>
-              <label className="text-ink-muted mb-1 block text-xs font-medium">Category</label>
-              <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-                {available.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="w-32">
-              <label className="text-ink-muted mb-1 block text-xs font-medium">Monthly limit</label>
-              <Input
-                type="number"
-                step="0.01"
-                value={limitAmount}
-                onChange={(e) => setLimitAmount(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" disabled={pending}>
-              Set budget
-            </Button>
-          </form>
-          {error && <p className="text-rose mt-2 text-sm">{error}</p>}
-        </Card>
+        <form
+          onSubmit={handleAdd}
+          className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-5"
+        >
+          <div className="flex-1">
+            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+              Category
+            </label>
+            <Select
+              className="rounded-[9px]"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              required
+            >
+              {available.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="w-[150px]">
+            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+              Monthly limit
+            </label>
+            <Input
+              className="rounded-[9px] font-mono"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={limitAmount}
+              onChange={(e) => setLimitAmount(e.target.value)}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="bg-iris text-paper-raised rounded-full px-4.5 py-2.5 text-sm font-semibold disabled:opacity-50"
+          >
+            Set budget
+          </button>
+        </form>
       )}
+      {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
       {initialBudgets.length === 0 ? (
-        <Card>
-          <p className="text-ink-muted text-sm">No budgets set for this month yet.</p>
-        </Card>
+        <p className="text-ink-muted mt-6 text-sm">No budgets set for this month yet.</p>
       ) : (
-        <div className="flex flex-col gap-4">
-          {initialBudgets.map((budget) => (
-            <Card key={budget.id}>
-              <BudgetBar budget={budget} />
-              <button
-                type="button"
-                onClick={() => handleDelete(budget.id)}
-                className="text-ink-muted hover:text-rose mt-3 text-xs"
+        <div className="mt-4.5 grid grid-cols-2 gap-4">
+          {initialBudgets.map((budget) => {
+            const limit = Number(budget.limitAmount);
+            const spent = Number(budget.spent);
+            const fraction = limit > 0 ? spent / limit : 0;
+            const over = spent > limit;
+            return (
+              <div
+                key={budget.id}
+                className="border-line bg-paper-raised flex items-center gap-5.5 rounded-2xl border p-5.5"
               >
-                Remove budget
-              </button>
-            </Card>
-          ))}
+                <Ring size="budget" fraction={fraction}>
+                  <span className="font-mono text-[15px]">
+                    {Math.round(Math.min(fraction, 1) * 100)}%
+                  </span>
+                </Ring>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2.5">
+                    <span className="font-display text-base font-semibold">
+                      {budget.categoryName}
+                    </span>
+                    <span
+                      className={cn('font-mono text-[12.5px]', over ? 'text-rose' : 'text-sky')}
+                    >
+                      {over
+                        ? `Over by $${(spent - limit).toFixed(2)}`
+                        : `$${(limit - spent).toFixed(2)} left`}
+                    </span>
+                  </div>
+                  <div className="mt-2.5 font-mono text-[19px] tracking-[-0.02em] whitespace-nowrap">
+                    ${spent.toFixed(2)} of ${limit.toFixed(2)}
+                  </div>
+                  <div className="mt-2.5 flex items-baseline justify-between">
+                    <span className="text-ink-muted text-xs">{paceText(limit, spent, month)}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(budget.id)}
+                      className="text-ink-muted text-xs"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
