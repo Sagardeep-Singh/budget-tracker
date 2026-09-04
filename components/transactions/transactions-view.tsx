@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
+import { Drawer } from '@/components/ui/drawer';
 import { Money } from '@/components/ui/money';
 import { Select } from '@/components/ui/field';
 import { TransactionForm } from '@/components/transactions/transaction-form';
@@ -38,7 +39,8 @@ export const TransactionsView = ({
   const router = useRouter();
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<FrontendTransaction | undefined>(undefined);
+  const [drawerKey, setDrawerKey] = useState(0);
+  const [detail, setDetail] = useState<FrontendTransaction | null>(null);
   const [accountFilter, setAccountFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
@@ -81,20 +83,19 @@ export const TransactionsView = ({
   };
 
   const openCreate = (): void => {
-    setEditing(undefined);
     setDialogKey((k) => k + 1);
     setOpen(true);
   };
 
-  const openEdit = (tx: FrontendTransaction): void => {
-    setEditing(tx);
-    setDialogKey((k) => k + 1);
-    setOpen(true);
+  const openDetail = (tx: FrontendTransaction): void => {
+    setDetail(tx);
+    setDrawerKey((k) => k + 1);
   };
 
   const handleDelete = async (id: string): Promise<void> => {
     if (!confirm('Delete this transaction?')) return;
     await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    setDetail(null);
     router.refresh();
   };
 
@@ -270,7 +271,7 @@ export const TransactionsView = ({
                 {[...rows].reverse().map((t) => (
                   <div
                     key={t.id}
-                    onClick={() => openEdit(t)}
+                    onClick={() => openDetail(t)}
                     className="ledger-row flex cursor-pointer items-center gap-5 py-3.5"
                   >
                     <div className="min-w-0 flex-1">
@@ -301,16 +302,6 @@ export const TransactionsView = ({
                     <span className="text-ink-muted w-[86px] shrink-0 text-right font-mono text-xs tabular-nums">
                       {(runningBalance.get(t.id) ?? 0).toFixed(2)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(t.id);
-                      }}
-                      className="text-ink-muted hover:text-rose shrink-0 text-xs"
-                    >
-                      Delete
-                    </button>
                   </div>
                 ))}
               </div>
@@ -319,19 +310,38 @@ export const TransactionsView = ({
         })
       )}
 
-      <Modal
-        key={dialogKey}
-        open={open}
-        onClose={() => setOpen(false)}
-        title={editing ? 'Edit transaction' : 'Add transaction'}
-      >
+      <Modal key={dialogKey} open={open} onClose={() => setOpen(false)} title="Add transaction">
         <TransactionForm
-          transaction={editing}
           accounts={accounts}
           categories={categories}
           onDone={() => setOpen(false)}
         />
       </Modal>
+
+      <Drawer key={drawerKey} open={!!detail} onClose={() => setDetail(null)} title="Transaction">
+        {detail && (
+          <>
+            <div className="font-display mt-4 text-[22px] font-semibold tracking-[-0.02em]">
+              {detail.payee || detail.categoryName || 'Transaction'}
+            </div>
+            <div className="mt-4.5">
+              <TransactionForm
+                transaction={detail}
+                accounts={accounts}
+                categories={categories}
+                onDone={() => setDetail(null)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => handleDelete(detail.id)}
+              className="border-line text-rose mt-2 w-full rounded-full border py-3 text-[14px]"
+            >
+              Delete
+            </button>
+          </>
+        )}
+      </Drawer>
     </div>
   );
 };

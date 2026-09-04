@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Select } from '@/components/ui/field';
+import { Toast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import type { CategorizeQueueRow } from '@/lib/services/categorize';
 import type { FrontendCategory } from '@/lib/services/categories';
 
-const patchCategory = (id: string, categoryId: string): Promise<Response> =>
+const patchCategory = (id: string, categoryId: string | null): Promise<Response> =>
   fetch(`/api/transactions/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -27,6 +28,7 @@ export const CategorizeView = ({
   const [index, setIndex] = useState(0);
   const [changing, setChanging] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null);
 
   const matched = queue.filter((r) => r.suggestedCategoryId);
 
@@ -50,19 +52,35 @@ export const CategorizeView = ({
   };
 
   const acceptAll = async (): Promise<void> => {
+    const accepted = matched;
     setPending(true);
-    await Promise.all(matched.map((r) => patchCategory(r.id, r.suggestedCategoryId!)));
+    await Promise.all(accepted.map((r) => patchCategory(r.id, r.suggestedCategoryId!)));
     setPending(false);
     setQueue((q) => q.filter((r) => !r.suggestedCategoryId));
     router.refresh();
+    setToast({
+      message: `Categorized ${accepted.length} transaction${accepted.length === 1 ? '' : 's'}`,
+      undo: () => {
+        void Promise.all(accepted.map((r) => patchCategory(r.id, null))).then(() => {
+          setQueue((q) => [...accepted, ...q]);
+          router.refresh();
+        });
+        setToast(null);
+      },
+    });
   };
 
   const visibleRows = reviewOne ? queue.slice(index, index + 1) : queue;
 
   if (queue.length === 0) {
     return (
-      <div className="border-line bg-paper-raised mt-6 rounded-[18px] border p-10 text-center">
-        <p className="text-ink-muted text-sm">Nothing left to categorize. Nice.</p>
+      <div className="mt-6">
+        <div className="border-line bg-paper-raised rounded-[18px] border p-10 text-center">
+          <p className="text-ink-muted text-sm">Nothing left to categorize. Nice.</p>
+        </div>
+        {toast && (
+          <Toast message={toast.message} onUndo={toast.undo} onDismiss={() => setToast(null)} />
+        )}
       </div>
     );
   }
@@ -170,6 +188,10 @@ export const CategorizeView = ({
           </div>
         ))}
       </div>
+
+      {toast && (
+        <Toast message={toast.message} onUndo={toast.undo} onDismiss={() => setToast(null)} />
+      )}
     </div>
   );
 };

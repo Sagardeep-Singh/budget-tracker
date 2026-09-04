@@ -3,18 +3,8 @@ import { getServerAuthSession } from '@/lib/auth/session';
 import { getOverviewData } from '@/lib/services/overview';
 import { ScreenHeader } from '@/components/nav/screen-header';
 import { Ring } from '@/components/ui/ring';
+import { PeriodPopover } from '@/components/dashboard/period-popover';
 import { cn } from '@/lib/cn';
-
-const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'UTC',
-  month: 'long',
-  year: 'numeric',
-});
-
-const monthLabel = (month: number): string => {
-  const date = new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1));
-  return MONTH_LABEL.format(date);
-};
 
 const money = (value: string): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
@@ -22,13 +12,19 @@ const money = (value: string): string =>
 const DashboardPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string }>;
+  searchParams: Promise<{ day?: string; month?: string }>;
 }): Promise<React.ReactElement> => {
-  const { day } = await searchParams;
+  const { day, month } = await searchParams;
   const session = await getServerAuthSession();
   const userId = session!.user.id;
-  const data = await getOverviewData(userId, { day: day ? Number(day) : undefined });
+  const data = await getOverviewData(userId, {
+    day: day ? Number(day) : undefined,
+    month: month ? Number(month) : undefined,
+  });
   const { hero, budgetRings, dayBars, selectedDay, triage, cycleCard, dailyPace } = data;
+
+  const dayHref = (d: number): string =>
+    month ? `/dashboard?month=${month}&day=${d}` : `/dashboard?day=${d}`;
 
   const maxBar = Math.max(1, ...dayBars.flatMap((d) => [d.income, d.expense]));
   const barScale = (amount: number): number => Math.round((amount / maxBar) * 100);
@@ -38,12 +34,7 @@ const DashboardPage = async ({
       <ScreenHeader
         title="Overview"
         description="Here's where things stand this month."
-        periodSlot={
-          <span className="border-line bg-paper-raised text-ink flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium">
-            {monthLabel(data.month)}
-            <span className="text-ink-muted text-[9px]">▼</span>
-          </span>
-        }
+        periodSlot={<PeriodPopover month={data.month} />}
         actions={
           <>
             <Link
@@ -53,7 +44,7 @@ const DashboardPage = async ({
               Import CSV
             </Link>
             <Link
-              href="/transactions"
+              href="?overlay=add"
               className="bg-iris text-paper-raised rounded-full px-4 py-2 text-sm font-semibold"
             >
               Add transaction
@@ -174,7 +165,7 @@ const DashboardPage = async ({
                 return (
                   <Link
                     key={d.day}
-                    href={`/dashboard?day=${d.day}`}
+                    href={dayHref(d.day)}
                     title={`Sep ${d.day} · in ${money(d.income.toFixed(2))} · out ${money(d.expense.toFixed(2))}`}
                     className="flex h-full flex-1 flex-col justify-end gap-[3px]"
                   >
@@ -213,13 +204,13 @@ const DashboardPage = async ({
               </div>
               <div className="flex shrink-0 gap-1">
                 <Link
-                  href={`/dashboard?day=${Math.max(selectedDay.day - 1, 1)}`}
+                  href={dayHref(Math.max(selectedDay.day - 1, 1))}
                   className="border-line text-ink-muted flex size-7.5 items-center justify-center rounded-full border text-sm"
                 >
                   ‹
                 </Link>
                 <Link
-                  href={`/dashboard?day=${Math.min(selectedDay.day + 1, data.daysInMonth)}`}
+                  href={dayHref(Math.min(selectedDay.day + 1, data.daysInMonth))}
                   className="border-line text-ink-muted flex size-7.5 items-center justify-center rounded-full border text-sm"
                 >
                   ›

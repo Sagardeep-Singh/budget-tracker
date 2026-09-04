@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 import { Input, Label, Select } from '@/components/ui/field';
+import { cn } from '@/lib/cn';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
@@ -99,30 +99,42 @@ export const TransactionForm = ({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="type">Type</Label>
-          <Select
-            id="type"
-            name="type"
-            value={type}
-            onChange={(e) => setType(e.target.value as 'INCOME' | 'EXPENSE')}
+      <input type="hidden" name="type" value={type} />
+      <div className="border-line flex items-baseline gap-2 border-b pb-3.5">
+        <span className="text-ink-muted font-mono text-[26px]">$</span>
+        <Input
+          id="amount"
+          name="amount"
+          type="number"
+          step="0.01"
+          min="0.01"
+          defaultValue={transaction?.amount}
+          required
+          className="border-0 bg-transparent p-0 font-mono text-[30px] tracking-[-0.03em] tabular-nums shadow-none outline-none focus:border-0"
+        />
+        <div className="flex shrink-0 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setType('EXPENSE')}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-[12.5px] font-semibold',
+              type === 'EXPENSE'
+                ? 'bg-iris text-paper-raised'
+                : 'border-line text-ink-muted border',
+            )}
           >
-            <option value="EXPENSE">Expense</option>
-            <option value="INCOME">Income</option>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="amount">Amount</Label>
-          <Input
-            id="amount"
-            name="amount"
-            type="number"
-            step="0.01"
-            min="0.01"
-            defaultValue={transaction?.amount}
-            required
-          />
+            Spend
+          </button>
+          <button
+            type="button"
+            onClick={() => setType('INCOME')}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-[12.5px] font-semibold',
+              type === 'INCOME' ? 'bg-iris text-paper-raised' : 'border-line text-ink-muted border',
+            )}
+          >
+            Income
+          </button>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -187,30 +199,48 @@ export const TransactionForm = ({
         <Label htmlFor="categoryId">
           Category{suggested && <span className="text-iris ml-1">(suggested)</span>}
         </Label>
-        <Select
-          id="categoryId"
-          value={categoryId}
-          onChange={(e) => {
-            setCategoryId(e.target.value);
-            setSuggested(false);
-          }}
-        >
-          <option value="">Uncategorized</option>
+        <div id="categoryId" className="flex flex-wrap gap-1.5">
           {categories.map((c) => (
-            <option key={c.id} value={c.id}>
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => {
+                setCategoryId(c.id === categoryId ? '' : c.id);
+                setSuggested(false);
+              }}
+              className={cn(
+                'rounded-full px-3.5 py-2 text-[13px] font-medium',
+                c.id === categoryId
+                  ? 'bg-iris text-paper-raised'
+                  : 'border-line text-ink-muted border',
+              )}
+            >
               {c.name}
-            </option>
+            </button>
           ))}
-        </Select>
+        </div>
       </div>
       {error && (
         <p className="bg-rose-soft text-rose rounded-lg px-3 py-2 text-sm" role="alert">
           {error}
         </p>
       )}
-      <Button type="submit" disabled={pending}>
-        {pending ? 'Saving…' : transaction ? 'Save changes' : 'Add transaction'}
-      </Button>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="bg-iris text-paper-raised flex-1 rounded-full py-3 text-[15px] font-semibold disabled:opacity-50"
+        >
+          {pending ? 'Saving…' : transaction ? 'Save changes' : 'Save transaction'}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="border-line text-ink-muted rounded-full border px-4.5 py-3 text-[15px]"
+        >
+          Cancel
+        </button>
+      </div>
     </form>
   );
 };

@@ -1,5 +1,5 @@
 const AuthLayout = ({ children }: { children: React.ReactNode }): React.ReactElement => (
-  <div className="bg-paper flex min-h-screen items-center justify-center px-4">{children}</div>
+  <div className="bg-paper grid min-h-screen grid-cols-[1fr_1fr]">{children}</div>
 );
 
 export default AuthLayout;

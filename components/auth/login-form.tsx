@@ -2,7 +2,6 @@
 
 import { useActionState } from 'react';
 import { signInAction } from '@/lib/auth/actions';
-import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 
 export const LoginForm = (): React.ReactElement => {
@@ -12,7 +11,16 @@ export const LoginForm = (): React.ReactElement => {
     <form action={formAction} className="flex flex-col gap-4">
       <div>
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required autoFocus autoComplete="email" />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoFocus
+          autoComplete="email"
+          className="rounded-[10px]"
+          placeholder="you@example.com"
+        />
       </div>
       <div>
         <Label htmlFor="password">Password</Label>
@@ -22,6 +30,7 @@ export const LoginForm = (): React.ReactElement => {
           type="password"
           required
           autoComplete="current-password"
+          className="rounded-[10px]"
         />
       </div>
       {error && (
@@ -29,9 +38,13 @@ export const LoginForm = (): React.ReactElement => {
           {error}
         </p>
       )}
-      <Button type="submit" disabled={pending} className="mt-2 w-full">
-        {pending ? 'Signing in…' : 'Sign in'}
-      </Button>
+      <button
+        type="submit"
+        disabled={pending}
+        className="bg-iris text-paper-raised mt-2 w-full rounded-full py-3.5 text-[15px] font-semibold disabled:opacity-50"
+      >
+        {pending ? 'Signing in…' : 'Continue'}
+      </button>
     </form>
   );
 };
