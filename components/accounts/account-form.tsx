@@ -99,7 +99,7 @@ export const AccountForm = ({
         </div>
       )}
       {error && (
-        <p className="bg-brick-soft text-brick rounded-lg px-3 py-2 text-sm" role="alert">
+        <p className="bg-rose-soft text-rose rounded-lg px-3 py-2 text-sm" role="alert">
           {error}
         </p>
       )}

@@ -69,14 +69,14 @@ export const AccountsView = ({
                 <button
                   type="button"
                   onClick={() => openEdit(account)}
-                  className="text-ink-muted hover:text-teal text-xs"
+                  className="text-ink-muted hover:text-iris text-xs"
                 >
                   Edit
                 </button>
                 <button
                   type="button"
                   onClick={() => handleDelete(account.id)}
-                  className="text-ink-muted hover:text-brick text-xs"
+                  className="text-ink-muted hover:text-rose text-xs"
                 >
                   Delete
                 </button>

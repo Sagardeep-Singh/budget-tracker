@@ -19,11 +19,7 @@ export const Money = ({
   const negative = Number(value) < 0;
   const resolvedTone = tone ?? (negative ? 'expense' : 'neutral');
   const toneClass =
-    resolvedTone === 'income'
-      ? 'text-moss'
-      : resolvedTone === 'expense'
-        ? 'text-brick'
-        : 'text-ink';
+    resolvedTone === 'income' ? 'text-sky' : resolvedTone === 'expense' ? 'text-rose' : 'text-ink';
 
   return (
     <span className={cn('font-money tabular-nums', toneClass, className)}>

@@ -76,7 +76,7 @@ export const RulesView = ({
             Add rule
           </Button>
         </form>
-        {error && <p className="text-brick mt-2 text-sm">{error}</p>}
+        {error && <p className="text-rose mt-2 text-sm">{error}</p>}
       </Card>
 
       <Card className="p-0">
@@ -95,7 +95,7 @@ export const RulesView = ({
               <button
                 type="button"
                 onClick={() => handleDelete(rule.id)}
-                className="text-ink-muted hover:text-brick text-xs"
+                className="text-ink-muted hover:text-rose text-xs"
               >
                 Delete
               </button>

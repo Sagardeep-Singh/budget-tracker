@@ -54,7 +54,7 @@ export const CategoriesView = ({
           Add
         </Button>
       </form>
-      {error && <p className="text-brick mb-4 text-sm">{error}</p>}
+      {error && <p className="text-rose mb-4 text-sm">{error}</p>}
 
       <Card className="p-0">
         {initialCategories.map((category) => (
@@ -63,7 +63,7 @@ export const CategoriesView = ({
             <button
               type="button"
               onClick={() => handleDelete(category.id)}
-              className="text-ink-muted hover:text-brick text-xs"
+              className="text-ink-muted hover:text-rose text-xs"
             >
               Delete
             </button>

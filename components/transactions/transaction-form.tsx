@@ -159,7 +159,7 @@ export const TransactionForm = ({
             type="checkbox"
             checked={isPayment}
             onChange={(e) => setIsPayment(e.target.checked)}
-            className="accent-teal h-4 w-4"
+            className="accent-iris h-4 w-4"
           />
           This is a payment toward the card&apos;s balance
           <span className="text-ink-muted text-xs">(excluded from the statement total)</span>
@@ -185,7 +185,7 @@ export const TransactionForm = ({
       </div>
       <div>
         <Label htmlFor="categoryId">
-          Category{suggested && <span className="text-teal ml-1">(suggested)</span>}
+          Category{suggested && <span className="text-iris ml-1">(suggested)</span>}
         </Label>
         <Select
           id="categoryId"
@@ -204,7 +204,7 @@ export const TransactionForm = ({
         </Select>
       </div>
       {error && (
-        <p className="bg-brick-soft text-brick rounded-lg px-3 py-2 text-sm" role="alert">
+        <p className="bg-rose-soft text-rose rounded-lg px-3 py-2 text-sm" role="alert">
           {error}
         </p>
       )}

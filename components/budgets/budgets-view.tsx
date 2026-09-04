@@ -79,7 +79,7 @@ export const BudgetsView = ({
               Set budget
             </Button>
           </form>
-          {error && <p className="text-brick mt-2 text-sm">{error}</p>}
+          {error && <p className="text-rose mt-2 text-sm">{error}</p>}
         </Card>
       )}
 
@@ -95,7 +95,7 @@ export const BudgetsView = ({
               <button
                 type="button"
                 onClick={() => handleDelete(budget.id)}
-                className="text-ink-muted hover:text-brick mt-3 text-xs"
+                className="text-ink-muted hover:text-rose mt-3 text-xs"
               >
                 Remove budget
               </button>

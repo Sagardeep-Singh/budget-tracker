@@ -27,6 +27,7 @@ export const metadata: Metadata = {
 const RootLayout = ({ children }: { children: React.ReactNode }): React.ReactElement => (
   <html
     lang="en"
+    data-pal="clay"
     className={`${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable} h-full`}
   >
     <body className="flex min-h-full flex-col antialiased">{children}</body>
