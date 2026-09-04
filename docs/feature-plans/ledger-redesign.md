@@ -91,8 +91,19 @@ those stages land):
       later pass rather than folded into this stage silently. Detail
       drawer overlay is still Stage 10 — rows open the existing edit modal
       for now.
-- [ ] **Stage 5 — Categorize**: action bar (accept-all, review one-by-one),
-      suggestion table/queue with rule explanation.
+- [x] **Stage 5 — Categorize**: new `/categorize` route (real triage queue,
+      distinct from `/categories` CRUD — see the correction above). Action
+      bar ("N of M have a confident rule match", Accept all, Review one by
+      one), queue rows with why-text, Confirm/Change/Skip. New
+      `getCategorizeQueue` in `lib/services/categorize.ts`. Reuses the
+      existing `PATCH /api/transactions/[id]` for confirm/change (no new
+      endpoint needed). "Skip" and the per-row confirm are client-only
+      state changes (no server-side "skipped" concept) — a skipped row
+      just comes back next visit, which matches the design (nothing
+      suggests skip should be sticky). Sidebar and the Overview triage
+      card now point at `/categorize`; `/categorize` itself links out to
+      `/categories` ("Manage categories") since that's no longer reachable
+      from nav otherwise. Undo toast on Accept all is still Stage 10.
 - [ ] **Stage 6 — Budgets**: form row + 2-up ring cards.
 - [ ] **Stage 7 — Accounts**: 2-up account cards, connect tile, error/needs-
       attention variant.
