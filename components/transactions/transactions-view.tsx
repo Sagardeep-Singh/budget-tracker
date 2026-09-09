@@ -310,7 +310,12 @@ export const TransactionsView = ({
         })
       )}
 
-      <Modal key={dialogKey} open={open} onClose={() => setOpen(false)} title="Add transaction">
+      <Modal
+        key={`dialog-${dialogKey}`}
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Add transaction"
+      >
         <TransactionForm
           accounts={accounts}
           categories={categories}
@@ -318,7 +323,12 @@ export const TransactionsView = ({
         />
       </Modal>
 
-      <Drawer key={drawerKey} open={!!detail} onClose={() => setDetail(null)} title="Transaction">
+      <Drawer
+        key={`drawer-${drawerKey}`}
+        open={!!detail}
+        onClose={() => setDetail(null)}
+        title="Transaction"
+      >
         {detail && (
           <>
             <div className="font-display mt-4 text-[22px] font-semibold tracking-[-0.02em]">
