@@ -84,7 +84,7 @@ const DashboardPage = async ({
         </div>
       ) : (
         <div className="mt-6.5 grid grid-cols-[1.5fr_1fr] items-start gap-5">
-          <div className="flex flex-col gap-5">
+          <div className="flex min-w-0 flex-col gap-5">
             <div className="border-line bg-paper-raised rounded-[18px] border p-6.5">
               <div className="flex items-center gap-7.5">
                 <Ring size="hero" fraction={hero.usedFraction}>
@@ -226,7 +226,7 @@ const DashboardPage = async ({
             </div>
           </div>
 
-          <div className="flex flex-col gap-5">
+          <div className="flex min-w-0 flex-col gap-5">
             <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">
               <div className="flex items-start justify-between gap-3">
                 <div>
