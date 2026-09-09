@@ -4,6 +4,7 @@ import { getNavCounts } from '@/lib/services/nav';
 import { listAccounts } from '@/lib/services/accounts';
 import { signOutAction } from '@/lib/auth/actions';
 import { SidebarNav, type SidebarNavItem } from '@/components/nav/sidebar-nav';
+import { LogoMark } from '@/components/ui/logo-mark';
 
 export const Sidebar = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
@@ -22,7 +23,8 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
 
   return (
     <nav className="border-line bg-paper-raised flex w-60 shrink-0 flex-col border-r px-4 py-6.5">
-      <div className="font-display text-ink mb-5.5 px-2 text-lg font-semibold tracking-tight">
+      <div className="font-display text-ink mb-5.5 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight">
+        <LogoMark size={22} />
         Ledger
       </div>
       <Link
