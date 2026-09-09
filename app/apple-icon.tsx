@@ -5,41 +5,54 @@ export const contentType = 'image/png';
 
 const AppleIcon = (): ImageResponse =>
   new ImageResponse(
-    <svg width="180" height="180" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#e2793f" />
-          <stop offset="1" stopColor="#a8622a" />
-        </linearGradient>
-        <linearGradient id="coin" x1="0" y1="0" x2="0" y2="48" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#ffe9c7" />
-          <stop offset="1" stopColor="#f6c675" />
-        </linearGradient>
-      </defs>
+    <svg width="180" height="180" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="100" height="100" fill="#1a1614" />
 
-      <rect width="64" height="64" fill="url(#bg)" />
-
-      <path
-        d="M50 9 L52 14 L57 16 L52 18 L50 23 L48 18 L43 16 L48 14 Z"
-        fill="#ffe9c7"
-        opacity="0.9"
-      />
-
-      <circle cx="30" cy="35" r="18" fill="#c98a3d" />
-      <circle cx="30" cy="33" r="18" fill="url(#coin)" stroke="#a8622a" strokeWidth="2" />
-
-      <circle cx="24" cy="31" r="2.4" fill="#231c17" />
-      <circle cx="36" cy="31" r="2.4" fill="#231c17" />
-      <path
-        d="M22 39c2.8 3.2 11.2 3.2 16 0"
-        stroke="#231c17"
-        strokeWidth="2.6"
-        strokeLinecap="round"
+      <circle
+        cx="50"
+        cy="50"
+        r="25.83"
         fill="none"
+        stroke="#3a2718"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeDasharray="162.35 162.35"
+        transform="rotate(-90 50 50)"
+      />
+      <circle
+        cx="50"
+        cy="50"
+        r="25.83"
+        fill="none"
+        stroke="#dc9048"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeDasharray="116.89 162.35"
+        transform="rotate(-90 50 50)"
       />
 
-      <circle cx="19" cy="35" r="2.2" fill="#e2793f" opacity="0.55" />
-      <circle cx="41" cy="35" r="2.2" fill="#e2793f" opacity="0.55" />
+      <circle
+        cx="50"
+        cy="50"
+        r="11.685"
+        fill="none"
+        stroke="#3a2718"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeDasharray="73.42 73.42"
+        transform="rotate(-90 50 50)"
+      />
+      <circle
+        cx="50"
+        cy="50"
+        r="11.685"
+        fill="none"
+        stroke="#dc9048"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeDasharray="30.84 73.42"
+        transform="rotate(30 50 50)"
+      />
     </svg>,
     { ...size },
   );
