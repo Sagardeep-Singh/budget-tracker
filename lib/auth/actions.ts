@@ -7,6 +7,10 @@ export const signOutAction = async (): Promise<void> => {
   await signOut({ redirectTo: '/login' });
 };
 
+export const signOutAfterPasswordChange = async (): Promise<void> => {
+  await signOut({ redirectTo: '/login?passwordChanged=1' });
+};
+
 export const signInAction = async (
   _prevState: string | undefined,
   formData: FormData,

@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { cn } from '@/lib/cn';
+import { ChangePasswordForm } from '@/components/settings/change-password-form';
 import {
   APPEARANCES,
   PALETTES,
@@ -96,6 +97,11 @@ export const SettingsView = ({ email }: { email: string }): React.ReactElement =
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="border-line bg-paper-raised rounded-2xl border p-5">
+        <h2 className="font-display text-[15px] font-semibold">Change password</h2>
+        <ChangePasswordForm />
       </div>
     </div>
   );
