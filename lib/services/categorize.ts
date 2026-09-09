@@ -26,6 +26,43 @@ export const suggestCategoryId = async (userId: string, text: string): Promise<s
   return matchCategoryRule(rules, text);
 };
 
+export type CategorizeQueueRow = {
+  id: string;
+  payee: string;
+  meta: string;
+  amount: string;
+  suggestedCategoryId: string | null;
+  suggestedCategoryName: string | null;
+  why: string | null;
+};
+
+export const getCategorizeQueue = async (userId: string): Promise<CategorizeQueueRow[]> => {
+  const rules = await prisma.categoryRule.findMany({
+    where: { userId },
+    include: { category: { select: { name: true } } },
+    orderBy: { priority: 'asc' },
+  });
+  const transactions = await prisma.transaction.findMany({
+    where: { userId, categoryId: null },
+    include: { account: { select: { name: true } } },
+    orderBy: { date: 'desc' },
+  });
+
+  return transactions.map((tx) => {
+    const haystack = `${tx.payee ?? ''} ${tx.note ?? ''}`.toLowerCase();
+    const rule = rules.find((r) => haystack.includes(r.matchText.toLowerCase()));
+    return {
+      id: tx.id,
+      payee: tx.payee || tx.note || 'Transaction',
+      meta: `${tx.account.name} · ${tx.date.toISOString().slice(0, 10)}`,
+      amount: Number(tx.amount).toFixed(2),
+      suggestedCategoryId: rule?.categoryId ?? null,
+      suggestedCategoryName: rule?.category.name ?? null,
+      why: rule ? `A rule matches "${rule.matchText}" in this transaction.` : null,
+    };
+  });
+};
+
 export type CategorizeQueueStats = { total: number; matched: number };
 
 export const getCategorizeQueueStats = async (userId: string): Promise<CategorizeQueueStats> => {

@@ -13,7 +13,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
   const navItems: SidebarNavItem[] = [
     { href: '/dashboard', label: 'Overview' },
     { href: '/transactions', label: 'Transactions', badge: counts.transactions },
-    { href: '/categories', label: 'Categorize', badge: counts.categorize, alert: true },
+    { href: '/categorize', label: 'Categorize', badge: counts.categorize, alert: true },
     { href: '/budgets', label: 'Budgets', badge: counts.budgets },
     { href: '/accounts', label: 'Accounts', badge: counts.accounts },
     { href: '/rules', label: 'Rules', badge: counts.rules },
