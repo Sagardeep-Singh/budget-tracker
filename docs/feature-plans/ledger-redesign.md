@@ -140,7 +140,7 @@ size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       and "Create one" — this app is credentials-only, single-user, no
       magic-link or sign-up flow exists, so those aren't fabricated. - **Global add-transaction overlay**: `?overlay=add`, rendered from
       `app/(protected)/layout.tsx` (`components/transactions/add-
-      transaction-overlay.tsx`), reachable from the sidebar and Overview
+    transaction-overlay.tsx`), reachable from the sidebar and Overview
       from any screen — no context provider, consistent with the
       `?day=N` precedent. `TransactionForm` restyled to match (mono
       amount + Spend/Income pill toggle, category chips instead of a
