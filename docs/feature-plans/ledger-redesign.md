@@ -80,8 +80,17 @@ those stages land):
       `statementDay` set; progress bar is _time elapsed in the cycle_, not
       spend-vs-limit — accounts have no credit-limit field. Removed the
       now-unused `lib/services/dashboard.ts` (folded into `overview.ts`).
-- [ ] **Stage 4 — Transactions**: filter chips + period stepper, summary bar,
-      day-grouped transaction cards, detail drawer overlay.
+- [x] **Stage 4 — Transactions**: summary bar, day-grouped transaction cards
+      with category chips (rose outline when uncategorized) and a running
+      balance across the filtered set, restyled account/category filters
+      and Add-transaction/Import-CSV actions. Kept the existing
+      account/category `Select` dropdowns rather than the design's filter
+      chips, and kept the existing `PeriodPicker` (month/statement toggle)
+      as-is — both are functional deviations from the mockup, not just
+      restyles, so reworking them into true chips/stepper is left for a
+      later pass rather than folded into this stage silently. Detail
+      drawer overlay is still Stage 10 — rows open the existing edit modal
+      for now.
 - [ ] **Stage 5 — Categorize**: action bar (accept-all, review one-by-one),
       suggestion table/queue with rule explanation.
 - [ ] **Stage 6 — Budgets**: form row + 2-up ring cards.
