@@ -1,4 +1,5 @@
 import { LoginForm } from '@/components/auth/login-form';
+import { LogoMark } from '@/components/ui/logo-mark';
 import { Ring } from '@/components/ui/ring';
 
 const LoginPage = async ({
@@ -11,7 +12,10 @@ const LoginPage = async ({
   return (
     <>
       <div className="bg-iris-soft flex flex-col justify-between p-14">
-        <div className="font-display text-[19px] font-semibold">Ledger</div>
+        <div className="font-display flex items-center gap-2 text-[19px] font-semibold">
+          <LogoMark size={24} variant="bare" />
+          Ledger
+        </div>
         <div>
           <Ring size="hero" fraction={0.56} />
           <h1 className="font-display mt-7 max-w-[400px] text-[34px] leading-[1.15] font-semibold tracking-[-0.025em]">
