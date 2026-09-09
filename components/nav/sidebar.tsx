@@ -26,7 +26,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
         Ledger
       </div>
       <Link
-        href="/transactions"
+        href="?overlay=add"
         className="bg-iris text-paper-raised mb-5 flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
       >
         <span className="text-base leading-none">+</span> Log a transaction
