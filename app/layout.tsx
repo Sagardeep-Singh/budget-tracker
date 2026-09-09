@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from 'next/font/google';
+import { ThemeInit } from '@/components/settings/theme-init';
 import './globals.css';
 
 const spaceGrotesk = Space_Grotesk({
@@ -30,7 +31,10 @@ const RootLayout = ({ children }: { children: React.ReactNode }): React.ReactEle
     data-pal="clay"
     className={`${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable} h-full`}
   >
-    <body className="flex min-h-full flex-col antialiased">{children}</body>
+    <body className="flex min-h-full flex-col antialiased">
+      <ThemeInit />
+      {children}
+    </body>
   </html>
 );
 
