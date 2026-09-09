@@ -105,7 +105,7 @@ those stages land):
       `/categories` ("Manage categories") since that's no longer reachable
       from nav otherwise. Undo toast on Accept all is still Stage 10.
 - [x] **Stage 6 — Budgets**: pill form row + 2-up ring cards (`Ring
-  size="budget"`, matches the design's 96/40/9 geometry exactly), pace
+size="budget"`, matches the design's 96/40/9 geometry exactly), pace
       text per card. Removed the now-unused `components/budgets/budget-bar.tsx`
       (only consumer was the old dashboard page, gone since Stage 3).
 - [x] **Stage 7 — Accounts**: 2-up account cards + dashed "Add an account"
