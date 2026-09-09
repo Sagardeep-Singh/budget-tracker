@@ -27,7 +27,7 @@ Mapping design screen -> existing route:
   makes it a modal overlay from any screen. Flagged below.
 
 **Correction (found while building Stage 3):** `app/(protected)/categories`
-is plain category CRUD (add/rename/delete a category name) — it is *not*
+is plain category CRUD (add/rename/delete a category name) — it is _not_
 the design's Categorize triage queue (payee/amount/rule-reason, accept-all,
 confirm-or-skip). The design has no screen for bare category-name
 management at all. Decision: Stage 5 builds the triage queue at a new
@@ -77,7 +77,7 @@ those stages land):
       design shows the numbers but not the formula. Triage promo card only
       renders when there's a queue (design doesn't show an empty variant for
       it). Cycle card shows the first credit-card account with a
-      `statementDay` set; progress bar is *time elapsed in the cycle*, not
+      `statementDay` set; progress bar is _time elapsed in the cycle_, not
       spend-vs-limit — accounts have no credit-limit field. Removed the
       now-unused `lib/services/dashboard.ts` (folded into `overview.ts`).
 - [ ] **Stage 4 — Transactions**: filter chips + period stepper, summary bar,
