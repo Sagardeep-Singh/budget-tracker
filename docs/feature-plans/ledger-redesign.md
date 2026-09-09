@@ -51,7 +51,7 @@ those stages land):
 ## Stack
 
 - [x] **Stage 0 — plan** (this doc)
-- [ ] **Stage 1 — foundation**: palette tokens (Clay default, Cobalt, Iris) x
+- [x] **Stage 1 — foundation**: palette tokens (Clay default, Cobalt, Iris) x
       light/dark via `data-pal`/`data-theme` in `app/globals.css`; Space
       Grotesk / Inter / IBM Plex Mono via `next/font/google`; `Ring` SVG
       component (`components/ui/ring.tsx`, covers all 7 size variants from
@@ -160,8 +160,19 @@ transaction-overlay.tsx`), reachable from the sidebar and Overview
       as flagged since Stage 4/the plan's original open question. Left
       as-is rather than adding modal-from-any-screen plumbing on top of
       everything else in this stage.
-- [ ] **Stage 11 — Data states**: loading skeleton (`om-pulse`), empty,
-      error banners across the above screens.
+- [x] **Stage 11 — Data states**: `om-pulse` keyframe added to
+      `globals.css`. `loading.tsx` per data-fetching route via Next's
+      Suspense-boundary convention — a bespoke skeleton for Overview
+      matching the design's exact shapes (ring outlines, text bars, 4
+      category-ring outlines, two filled blocks), a shared
+      `components/ui/screen-loading.tsx` for the rest (design doesn't spec
+      their skeletons beyond the Overview example). Overview gets a real
+      empty state (dashed card, matches the design) when there's no budget
+      and no transaction activity for the month. Every other screen's
+      empty state was already covered incidentally by earlier stages'
+      "No X yet" copy. No error banners — Stage 7 already established
+      there's no live sync to fail, so nothing to bind one to; fabricating
+      one would misrepresent the app.
 - [ ] **Stage 12 — Mobile**: responsive reflow (single column, bottom nav) + mobile-only screens (Day, Period sheet, Log-a-spend w/ keypad,
       mobile Categorize/Transactions/Budgets/Accounts/Settings variants).
 
