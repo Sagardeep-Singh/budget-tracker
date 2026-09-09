@@ -14,19 +14,19 @@
 
 ## Call sites to migrate (already have a `window.confirm`, just need the dialog swap)
 
-| File | Line | Current message |
-|---|---|---|
-| `components/transactions/transactions-view.tsx` | 96 | "Delete this transaction?" |
-| `components/categories/categories-view.tsx` | 39 | "Delete this category? Transactions using it become uncategorized." |
-| `components/accounts/accounts-view.tsx` | 40 | "Delete this account and all its transactions?" |
+| File                                            | Line | Current message                                                     |
+| ----------------------------------------------- | ---- | ------------------------------------------------------------------- |
+| `components/transactions/transactions-view.tsx` | 96   | "Delete this transaction?"                                          |
+| `components/categories/categories-view.tsx`     | 39   | "Delete this category? Transactions using it become uncategorized." |
+| `components/accounts/accounts-view.tsx`         | 40   | "Delete this account and all its transactions?"                     |
 
 Note: `categorize-view.tsx` has a local function literally named `confirm` (lines 143, 163) — this is **not** `window.confirm`, it's the categorization-accept handler. Not in scope; do not touch.
 
 ## Destructive actions with **zero** confirmation today (must gain one, not just migrate one)
 
-| File | Line | Action |
-|---|---|---|
-| `components/rules/rules-view.tsx` | 42 (`handleDelete`) | `DELETE /api/rules/:id` fires immediately on click, no prompt at all |
+| File                                  | Line                | Action                                                                 |
+| ------------------------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `components/rules/rules-view.tsx`     | 42 (`handleDelete`) | `DELETE /api/rules/:id` fires immediately on click, no prompt at all   |
 | `components/budgets/budgets-view.tsx` | 67 (`handleDelete`) | `DELETE /api/budgets/:id` fires immediately on click, no prompt at all |
 
 Both are one-click, undo-less deletes today — highest-priority gap, arguably a bug independent of this feature.
@@ -45,9 +45,9 @@ type ConfirmDialogProps = {
   title: string;
   description: string;
   confirmLabel?: string; // default "Delete"
-  cancelLabel?: string;  // default "Cancel"
-  danger?: boolean;      // default true — styles confirm button with variant="danger"
-  pending?: boolean;     // disables buttons + shows loading state on confirm button while the request is in flight
+  cancelLabel?: string; // default "Cancel"
+  danger?: boolean; // default true — styles confirm button with variant="danger"
+  pending?: boolean; // disables buttons + shows loading state on confirm button while the request is in flight
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -74,12 +74,12 @@ If a 6th call site appears later and the duplication becomes real, revisit a sha
 
 ## Checklist
 
-- [ ] Build `components/ui/confirm-dialog.tsx` per the design above, using `Modal` + `Button`
-- [ ] Migrate `transactions-view.tsx` delete flow off `window.confirm` to `ConfirmDialog`
-- [ ] Migrate `categories-view.tsx` delete flow off `window.confirm` to `ConfirmDialog` (keep the "transactions become uncategorized" copy in the description)
-- [ ] Migrate `accounts-view.tsx` delete flow off `window.confirm` to `ConfirmDialog` (keep the "and all its transactions" copy)
-- [ ] Add a `ConfirmDialog` to `rules-view.tsx`'s `handleDelete` (currently no confirmation at all)
-- [ ] Add a `ConfirmDialog` to `budgets-view.tsx`'s `handleDelete` (currently no confirmation at all)
-- [ ] Add `pending` state wiring so the confirm button shows a loading state and disables while the delete request is in flight
-- [ ] Unit/e2e test plan from tester (per updated CLAUDE.md workflow) before implementation, covering: cancel leaves data untouched, confirm fires exactly one delete request, dialog is keyboard-dismissible (Escape)
-- [ ] `npm run format:fix && npm run lint` and full test suite (`npm run test`, `npm run test:e2e`) green
+- [x] Build `components/ui/confirm-dialog.tsx` per the design above, using `Modal` + `Button`
+- [x] Migrate `transactions-view.tsx` delete flow off `window.confirm` to `ConfirmDialog`
+- [x] Migrate `categories-view.tsx` delete flow off `window.confirm` to `ConfirmDialog` (keep the "transactions become uncategorized" copy in the description)
+- [x] Migrate `accounts-view.tsx` delete flow off `window.confirm` to `ConfirmDialog` (keep the "and all its transactions" copy)
+- [x] Add a `ConfirmDialog` to `rules-view.tsx`'s `handleDelete` (currently no confirmation at all)
+- [x] Add a `ConfirmDialog` to `budgets-view.tsx`'s `handleDelete` (currently no confirmation at all)
+- [x] Add `pending` state wiring so the confirm button shows a loading state and disables while the delete request is in flight
+- [x] Unit/e2e test plan from tester (per updated CLAUDE.md workflow) before implementation, covering: cancel leaves data untouched, confirm fires exactly one delete request, dialog is keyboard-dismissible (Escape)
+- [x] `npm run format:fix && npm run lint` and full test suite (`npm run test`, `npm run test:e2e`) green
