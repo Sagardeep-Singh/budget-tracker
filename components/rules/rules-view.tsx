@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Input, Select } from '@/components/ui/field';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
 import type { FrontendCategory } from '@/lib/services/categories';
 
@@ -19,6 +20,8 @@ export const RulesView = ({
   const [priority, setPriority] = useState('0');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -39,7 +42,10 @@ export const RulesView = ({
   };
 
   const handleDelete = async (id: string): Promise<void> => {
+    setDeletePending(true);
     await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+    setDeletePending(false);
+    setConfirmDeleteId(null);
     router.refresh();
   };
 
@@ -127,7 +133,7 @@ export const RulesView = ({
               <span className="w-[60px] text-right">
                 <button
                   type="button"
-                  onClick={() => handleDelete(rule.id)}
+                  onClick={() => setConfirmDeleteId(rule.id)}
                   className="text-ink-muted text-[12.5px]"
                 >
                   Delete
@@ -137,6 +143,14 @@ export const RulesView = ({
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete rule"
+        description="Delete this categorization rule? Transactions won't be recategorized automatically anymore for this match."
+        pending={deletePending}
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   );
 };

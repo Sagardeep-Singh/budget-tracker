@@ -16,7 +16,8 @@ const { prismaMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
-const { createTransaction, updateTransaction } = await import('@/lib/services/transactions');
+const { createTransaction, updateTransaction, skipTransaction } =
+  await import('@/lib/services/transactions');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -83,5 +84,29 @@ describe('updateTransaction isPayment', () => {
     expect(prismaMock.transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ isPayment: true }) }),
     );
+  });
+});
+
+describe('skipTransaction', () => {
+  it('sets skippedAt to a server-generated timestamp, not a client-supplied one', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue({ id: 'tx-1', accountId: 'acc-1' });
+    prismaMock.transaction.update.mockResolvedValue(baseTx);
+
+    await skipTransaction('user-1', 'tx-1');
+
+    expect(prismaMock.transaction.findFirst).toHaveBeenCalledWith({
+      where: { id: 'tx-1', userId: 'user-1' },
+    });
+    expect(prismaMock.transaction.update).toHaveBeenCalledWith({
+      where: { id: 'tx-1' },
+      data: { skippedAt: expect.any(Date) },
+    });
+  });
+
+  it('throws when the transaction does not belong to the user', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(null);
+
+    await expect(skipTransaction('user-1', 'tx-missing')).rejects.toThrow('Transaction not found');
+    expect(prismaMock.transaction.update).not.toHaveBeenCalled();
   });
 });

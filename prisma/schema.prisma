@@ -78,6 +78,7 @@ model Transaction {
   /// the previous statement's balance, so it's excluded from the current
   /// statement period's credit/debit/net totals
   isPayment     Boolean         @default(false)
+  skippedAt     DateTime?
   createdAt     DateTime        @default(now())
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
