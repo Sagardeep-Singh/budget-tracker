@@ -86,6 +86,10 @@ export const RulesView = ({
       setEditError('Priority is required.');
       return;
     }
+    if (Number(editPriority) < 0) {
+      setEditError('Priority cannot be negative.');
+      return;
+    }
     setEditPending(true);
     setEditError(null);
     const res = await fetch(`/api/rules/${id}`, {
@@ -158,6 +162,7 @@ export const RulesView = ({
             <Input
               className="rounded-[9px] font-mono"
               type="number"
+              min="0"
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
             />
@@ -220,6 +225,7 @@ export const RulesView = ({
                         <Input
                           className="w-14 shrink-0 rounded-[9px] px-2 py-1 text-right font-mono text-[13px]"
                           type="number"
+                          min="0"
                           autoFocus
                           value={editPriority}
                           onChange={(e) => setEditPriority(e.target.value)}
