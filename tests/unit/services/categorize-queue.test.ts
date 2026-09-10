@@ -67,7 +67,22 @@ describe('getCategorizeQueue', () => {
       },
     ]);
     expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 'user-1', categoryId: null } }),
+      expect.objectContaining({
+        where: { userId: 'user-1', categoryId: null, skippedAt: null },
+      }),
+    );
+  });
+
+  it('excludes transactions that have been skipped', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await getCategorizeQueue('user-1');
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ skippedAt: null }),
+      }),
     );
   });
 });
