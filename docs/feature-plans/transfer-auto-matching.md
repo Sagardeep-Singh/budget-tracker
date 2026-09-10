@@ -33,6 +33,14 @@ and matching pairs should be detected automatically rather than hand-flagged.
 - **`cycleSpend` gates on `isTransfer`.** It is labelled cycle _spend_, so a transfer out of
   the card is not spending. (`isPayment` has no gate there today because payments are INCOME
   and the sum is EXPENSE-only — it was never reachable.)
+- **`isPayment` is checked before `isTransfer` in the transactions summary.** A card payment is
+  both once matching runs; keeping `isPayment` first means the existing "Payments (excluded)" chip
+  behaves exactly as it does today, and "Transfers (excluded)" picks up only the non-payment
+  transfers (e.g. checking -> savings). Both buckets are excluded from credit/debit/net either way.
+- **Budget spend gates on `isTransfer` too.** `listBudgets`' `groupBy` sums categorized EXPENSE
+  rows; a categorized transfer leg would otherwise inflate `hero.spent` and the budget rings while
+  `hero.expense` excluded it — same dashboard, contradicting numbers. (`isPayment` needs no gate
+  there: payments are INCOME and the sum is EXPENSE-only.)
 - **Un-marking is single-row and can orphan a partner.** `PATCH /api/transactions/:id` with
   `isTransfer: false` clears the row's flag and its `transferMatchId`. The partner stays
   flagged, so it remains excluded while its counterpart is not, and a re-run of
@@ -59,6 +67,13 @@ would have produced (additive `ADD COLUMN` + index, no backfill); `prisma genera
 client and types are current. Apply it with `npm run prisma:migrate` (or `prisma migrate deploy`)
 once the branches are on a common migration history.
 
+**Consequence while the migration is unapplied:** `prisma generate` writes into the repo-root
+`node_modules`, which every worktree shares, and the generated client now selects the two new
+columns on any `Transaction` query. Until the SQL above is applied, transaction queries fail with
+`column Transaction.isTransfer does not exist` — in this branch _and_ in any other checkout using
+that `node_modules`. Remedy: apply the migration, or run `npm run prisma:generate` from the other
+checkout to roll its client back.
+
 ## Implementation
 
 ### Schema — `prisma/schema.prisma`, `Transaction`
@@ -74,8 +89,10 @@ once the branches are on a common migration history.
   falls within 5 days. Each side is consumed at most once per run. A match writes
   `isTransfer: true` plus a shared `randomUUID()` `transferMatchId` to both rows in one
   `prisma.$transaction([...])`.
-- Runs at the end of `commitImport` (best-effort for freshly imported rows) and on demand via
-  `POST /api/transactions/match-transfers`.
+- Runs at the end of `commitImport` and on demand via `POST /api/transactions/match-transfers`.
+  The `commitImport` call is wrapped in try/catch: the rows are already committed by then and
+  matching can be re-run from the transactions screen, so a matching failure must not surface as
+  an import failure.
 
 ### Aggregate gates — `lib/services/overview.ts`
 
@@ -102,8 +119,11 @@ they happened, they just are not spending.
 - [x] `commitImport` calls `matchTransfers`
 - [x] `POST /api/transactions/match-transfers` route
 - [x] `overview.ts` aggregate gates
+- [x] `budgets.ts` spend `groupBy` gates on `isTransfer: false`
 - [x] `transaction-form.tsx` checkbox
 - [x] `transactions-view.tsx` button + transfers summary bucket
 - [x] Unit tests: `tests/unit/services/transfers.test.ts`, extend `overview.test.ts`,
       `transactions.test.ts`, `csvImport.test.ts`
-- [x] `npm run format:fix && npm run lint && npm run test` and `npx tsc --noEmit`
+- [x] `npm run format:fix && npm run lint && npm run test`, `npx tsc --noEmit`, `npm run build`
+- [ ] Apply the migration once branch histories converge, then verify end-to-end by hand
+      (no e2e spec added: the existing Playwright suite needs a running app and database)

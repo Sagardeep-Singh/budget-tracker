@@ -126,7 +126,13 @@ export const commitImport = async (
 
   // Freshly imported rows are the common case for a transfer pair landing in
   // the ledger (both sides come off statements), so pair them up immediately.
-  await matchTransfers(userId);
+  // Best-effort: the rows are already committed, and matching can be re-run
+  // from the transactions screen, so a failure here must not fail the import.
+  try {
+    await matchTransfers(userId);
+  } catch {
+    // swallowed deliberately — see above
+  }
 
   return { imported: result.count, skippedDuplicates };
 };

@@ -142,10 +142,12 @@ export const TransactionsView = ({
   const summary = filtered.reduce(
     (acc, t) => {
       const amount = Number(t.amount);
-      if (t.isTransfer) {
-        acc.transfers += amount;
-      } else if (t.isPayment) {
+      // isPayment is checked first so a card payment keeps its existing
+      // "Payments (excluded)" treatment once transfer matching also flags it
+      if (t.isPayment) {
         acc.payments += amount;
+      } else if (t.isTransfer) {
+        acc.transfers += amount;
       } else if (t.type === 'INCOME') {
         acc.credit += amount;
       } else {

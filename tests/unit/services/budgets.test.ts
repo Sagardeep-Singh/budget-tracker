@@ -52,6 +52,12 @@ describe('listBudgets', () => {
         spent: '75.50',
       },
     ]);
+    // a transfer leg isn't spending, even when it carries a category
+    expect(prismaMock.transaction.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ isTransfer: false }),
+      }),
+    );
   });
 
   it('carries a budget forward into later months until a newer one overrides it', async () => {
