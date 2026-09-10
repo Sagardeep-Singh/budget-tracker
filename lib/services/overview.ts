@@ -38,6 +38,7 @@ export type OverviewData = {
   hero: {
     usedFraction: number;
     over: boolean;
+    hasBudget: boolean;
     leftLabel: string;
     leftAmount: string;
     limit: string;
@@ -210,13 +211,14 @@ export const getOverviewData = async (
     hero: {
       usedFraction,
       over,
+      hasBudget: limit > 0,
       leftLabel: over ? 'Over budget by' : 'Left to spend',
       leftAmount: Math.abs(limit - spent).toFixed(2),
       limit: limit.toFixed(2),
       spent: spent.toFixed(2),
       metaLine: `${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} left`,
       paceAmount: paceAmount.toFixed(2),
-      paceTail: over ? 'over pace' : 'left to spend per day',
+      paceTail: limit === 0 ? 'no budget set' : over ? 'over pace' : 'left to spend per day',
       paceNote,
       paceTone: limit === 0 ? 'neutral' : pacedUnder ? 'sky' : 'rose',
       income: income.toFixed(2),

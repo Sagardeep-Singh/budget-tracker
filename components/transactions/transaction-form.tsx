@@ -110,9 +110,10 @@ export const TransactionForm = ({
           type="number"
           step="0.01"
           min="0.01"
+          placeholder="0.00"
           defaultValue={transaction?.amount}
           required
-          className="border-0 bg-transparent p-0 font-mono text-[30px] tracking-[-0.03em] tabular-nums shadow-none outline-none focus:border-0"
+          className="placeholder:text-ink-muted/50 border-0 bg-transparent p-0 font-mono text-[30px] tracking-[-0.03em] tabular-nums shadow-none outline-none focus:border-0"
         />
         <div className="flex shrink-0 gap-1.5">
           <button

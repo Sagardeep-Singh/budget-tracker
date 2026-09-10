@@ -100,12 +100,20 @@ const DashboardPage = async ({
                     {hero.leftLabel}
                   </div>
                   <div className="mt-2 font-mono text-[40px] leading-none font-medium tracking-[-0.03em]">
-                    {money(hero.leftAmount)}
+                    {hero.hasBudget ? money(hero.leftAmount) : '—'}
                   </div>
                   <div className="text-ink-muted mt-2 text-[13.5px]">
-                    {hero.metaLine} ·{' '}
-                    <span className="text-ink font-mono">{money(hero.paceAmount)}</span>{' '}
-                    {hero.paceTail}
+                    {hero.hasBudget ? (
+                      <>
+                        {hero.metaLine} ·{' '}
+                        <span className="text-ink font-mono">{money(hero.paceAmount)}</span>{' '}
+                        {hero.paceTail}
+                      </>
+                    ) : (
+                      <>
+                        {hero.metaLine} · {hero.paceTail}
+                      </>
+                    )}
                   </div>
                   <div className="border-line mt-4.5 flex gap-6.5 border-t pt-4">
                     <div>

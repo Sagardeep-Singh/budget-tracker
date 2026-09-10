@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Plus, Trash2 } from 'lucide-react';
+import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -25,6 +25,24 @@ export const RulesView = ({
   const [pending, setPending] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
+  const [search, setSearch] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPriority, setEditPriority] = useState('0');
+  const [editPending, setEditPending] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const query = search.trim().toLowerCase();
+  const visibleRules = useMemo(
+    () =>
+      query
+        ? initialRules.filter(
+            (r) =>
+              r.matchText.toLowerCase().includes(query) ||
+              r.categoryName.toLowerCase().includes(query),
+          )
+        : initialRules,
+    [initialRules, query],
+  );
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -49,6 +67,38 @@ export const RulesView = ({
     await fetch(`/api/rules/${id}`, { method: 'DELETE' });
     setDeletePending(false);
     setConfirmDeleteId(null);
+    router.refresh();
+  };
+
+  const startEditPriority = (rule: FrontendCategoryRule): void => {
+    setEditingId(rule.id);
+    setEditPriority(String(rule.priority));
+    setEditError(null);
+  };
+
+  const cancelEditPriority = (): void => {
+    setEditingId(null);
+    setEditError(null);
+  };
+
+  const saveEditPriority = async (id: string): Promise<void> => {
+    if (editPriority.trim() === '') {
+      setEditError('Priority is required.');
+      return;
+    }
+    setEditPending(true);
+    setEditError(null);
+    const res = await fetch(`/api/rules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priority: editPriority }),
+    });
+    setEditPending(false);
+    if (!res.ok) {
+      setEditError('Could not update priority.');
+      return;
+    }
+    setEditingId(null);
     router.refresh();
   };
 
@@ -126,39 +176,104 @@ export const RulesView = ({
           </p>
         )
       ) : (
-        <div className="border-line bg-paper-raised mt-4.5 rounded-2xl border px-6">
-          <div className="border-line text-ink-muted flex items-center gap-5 border-b py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
-            <span className="flex-1">Match</span>
-            <span className="w-[150px]">Category</span>
-            <span className="w-[110px] text-right">Applied</span>
-            <span className="w-[60px]" />
-          </div>
-          {initialRules.map((rule) => (
-            <div key={rule.id} className="ledger-row flex items-center gap-5 py-3.5">
-              <span className="min-w-0 flex-1 font-mono text-[13px]">
-                contains &ldquo;{rule.matchText}&rdquo;
-              </span>
-              <span className="w-[150px]">
-                <span className="border-line text-ink-muted rounded-full border px-2.5 py-1 text-[12.5px]">
-                  {rule.categoryName}
-                </span>
-              </span>
-              <span className="text-ink-muted w-[110px] text-right font-mono text-[13px] tabular-nums">
-                {rule.appliedCount}
-              </span>
-              <span className="w-[60px] text-right">
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteId(rule.id)}
-                  className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-[12.5px]"
-                >
-                  <Trash2 size={13} />
-                  Delete
-                </button>
-              </span>
+        <>
+          {initialRules.length > 10 && (
+            <div className="relative mt-4.5">
+              <Search
+                size={15}
+                className="text-ink-muted pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2"
+              />
+              <Input
+                className="bg-paper-raised rounded-full pl-9"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by match text or category"
+              />
             </div>
-          ))}
-        </div>
+          )}
+          <div className="border-line bg-paper-raised mt-4.5 rounded-2xl border px-6">
+            <div className="border-line text-ink-muted flex items-center gap-5 border-b py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
+              <span className="flex-1">Match</span>
+              <span className="w-[150px]">Category</span>
+              <span className="w-[70px] text-right">Priority</span>
+              <span className="w-[90px] text-right">Applied</span>
+              <span className="w-[60px]" />
+            </div>
+            {visibleRules.length === 0 ? (
+              <p className="text-ink-muted py-6 text-center text-sm">
+                No rules match &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              visibleRules.map((rule) => (
+                <div key={rule.id} className="ledger-row flex items-center gap-5 py-3.5">
+                  <span className="min-w-0 flex-1 font-mono text-[13px]">
+                    contains &ldquo;{rule.matchText}&rdquo;
+                  </span>
+                  <span className="w-[150px]">
+                    <span className="border-line text-ink-muted rounded-full border px-2.5 py-1 text-[12.5px]">
+                      {rule.categoryName}
+                    </span>
+                  </span>
+                  <span className="w-[70px] text-right">
+                    {editingId === rule.id ? (
+                      <span className="flex items-center justify-end gap-1">
+                        <Input
+                          className="w-14 rounded-[9px] px-2 py-1 text-right font-mono text-[13px]"
+                          type="number"
+                          autoFocus
+                          value={editPriority}
+                          onChange={(e) => setEditPriority(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveEditPriority(rule.id)}
+                          disabled={editPending}
+                          className="text-sky hover:text-ink inline-flex items-center p-1 disabled:opacity-50"
+                          aria-label="Save priority"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditPriority}
+                          disabled={editPending}
+                          className="text-ink-muted hover:text-ink inline-flex items-center p-1 disabled:opacity-50"
+                          aria-label="Cancel edit"
+                        >
+                          <X size={14} />
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startEditPriority(rule)}
+                        className="text-ink-muted hover:text-iris inline-flex items-center gap-1 font-mono text-[13px] tabular-nums"
+                        title="Lower number wins when more than one rule matches"
+                      >
+                        {rule.priority}
+                        <Pencil size={11} />
+                      </button>
+                    )}
+                  </span>
+                  <span className="text-ink-muted w-[90px] text-right font-mono text-[13px] tabular-nums">
+                    {rule.appliedCount}
+                  </span>
+                  <span className="w-[60px] text-right">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(rule.id)}
+                      className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-[12.5px]"
+                    >
+                      <Trash2 size={13} />
+                      Delete
+                    </button>
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          {editError && <p className="text-rose mt-2 text-sm">{editError}</p>}
+        </>
       )}
       <ConfirmDialog
         open={confirmDeleteId !== null}

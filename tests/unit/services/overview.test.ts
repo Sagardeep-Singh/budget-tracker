@@ -61,6 +61,7 @@ describe('getOverviewData', () => {
     const result = await getOverviewData('user-1', { month: 202603, day: 5 });
 
     expect(result.hero.usedFraction).toBeCloseTo(0.75);
+    expect(result.hero.hasBudget).toBe(true);
     expect(result.hero.leftLabel).toBe('Left to spend');
     expect(result.hero.leftAmount).toBe('50.00');
     expect(result.hero.income).toBe('500.00');
@@ -75,5 +76,18 @@ describe('getOverviewData', () => {
 
     expect(result.triage).toEqual({ total: 1, matched: 0 });
     expect(result.cycleCard).toBeNull();
+  });
+
+  it('flags hasBudget false when no budget exists, instead of a misleading $0.00', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+    prismaMock.account.findFirst.mockResolvedValue(null);
+    prismaMock.transaction.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+
+    const result = await getOverviewData('user-1', { month: 202603 });
+
+    expect(result.hero.hasBudget).toBe(false);
+    expect(result.hero.leftAmount).toBe('0.00');
   });
 });
