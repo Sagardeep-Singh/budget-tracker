@@ -9,7 +9,12 @@ const { prismaMock } = vi.hoisted(() => ({
   },
 }));
 
+const { matchTransfersMock } = vi.hoisted(() => ({
+  matchTransfersMock: vi.fn(async () => ({ matched: 0 })),
+}));
+
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+vi.mock('@/lib/services/transfers', () => ({ matchTransfers: matchTransfersMock }));
 
 const { previewImport, commitImport } = await import('@/lib/services/csvImport');
 const { ServiceValidationError } = await import('@/lib/services/common');
@@ -161,5 +166,26 @@ describe('commitImport', () => {
 
     expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
     expect(result).toEqual({ imported: 1, skippedDuplicates: 1 });
+  });
+
+  it('runs transfer matching after inserting the imported rows', async () => {
+    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+
+    await commitImport('user-1', {
+      rows: [{ accountId: 'acc-1', date: new Date(), amount: 10, type: 'EXPENSE', include: true }],
+    });
+
+    expect(matchTransfersMock).toHaveBeenCalledWith('user-1');
+  });
+
+  it('does not run transfer matching when nothing was imported', async () => {
+    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+
+    await commitImport('user-1', {
+      rows: [{ accountId: 'acc-1', date: new Date(), amount: 10, type: 'EXPENSE', include: false }],
+    });
+
+    expect(matchTransfersMock).not.toHaveBeenCalled();
   });
 });

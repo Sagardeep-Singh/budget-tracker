@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
 import { matchCategoryRule } from '@/lib/services/categorize';
+import { matchTransfers } from '@/lib/services/transfers';
 import type { CommitImportInput, ImportRowInput } from '@/lib/validators/csv-import';
 
 export type PreviewRow = ImportRowInput & { categoryName: string | null; duplicate: boolean };
@@ -122,6 +123,10 @@ export const commitImport = async (
       importBatchId,
     })),
   });
+
+  // Freshly imported rows are the common case for a transfer pair landing in
+  // the ledger (both sides come off statements), so pair them up immediately.
+  await matchTransfers(userId);
 
   return { imported: result.count, skippedDuplicates };
 };

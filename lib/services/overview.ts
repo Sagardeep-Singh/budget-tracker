@@ -116,11 +116,14 @@ export const getOverviewData = async (
   const usedFraction = limit > 0 ? spent / limit : 0;
   const over = spent > limit && limit > 0;
 
+  // Both legs of a transfer between the user's own accounts are excluded from
+  // every income/spending aggregate — the money never left the ledger. Balance
+  // math further down deliberately still counts them.
   const income = transactions
-    .filter((t) => t.type === 'INCOME' && !t.isPayment)
+    .filter((t) => t.type === 'INCOME' && !t.isPayment && !t.isTransfer)
     .reduce((sum, t) => sum + Number(t.amount), 0);
   const expense = transactions
-    .filter((t) => t.type === 'EXPENSE')
+    .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const daysRemaining = Math.max(daysInMonth - todayOfMonth, 0);
@@ -142,8 +145,8 @@ export const getOverviewData = async (
   for (const t of transactions) {
     const d = t.date.getUTCDate();
     const bucket = dayMap.get(d)!;
-    if (t.type === 'INCOME' && !t.isPayment) bucket.income += Number(t.amount);
-    if (t.type === 'EXPENSE') bucket.expense += Number(t.amount);
+    if (t.type === 'INCOME' && !t.isPayment && !t.isTransfer) bucket.income += Number(t.amount);
+    if (t.type === 'EXPENSE' && !t.isTransfer) bucket.expense += Number(t.amount);
   }
   const dayBars: OverviewDayBar[] = Array.from(dayMap.entries()).map(([day, v]) => ({
     day,
@@ -157,7 +160,7 @@ export const getOverviewData = async (
   );
   const dayTransactions = transactions.filter((t) => t.date.getUTCDate() === selectedDayNum);
   const daySpent = dayTransactions
-    .filter((t) => t.type === 'EXPENSE')
+    .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
     .reduce((sum, t) => sum + Number(t.amount), 0);
   const dayFraction = dailyPace > 0 ? daySpent / dailyPace : 0;
   const dayOver = dailyPace > 0 && daySpent > dailyPace;
@@ -174,8 +177,10 @@ export const getOverviewData = async (
       prisma.transaction.findMany({ where: { accountId: cardAccount.id } }),
     ]);
     const cycleSpend = cycleTransactions
-      .filter((t) => t.type === 'EXPENSE')
+      .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
       .reduce((sum, t) => sum + Number(t.amount), 0);
+    // `net` (and so `balance`) intentionally counts transfers: money really did
+    // move on and off this card, and the displayed balance has to reflect that.
     const net = allTransactions.reduce(
       (sum, t) => sum + (t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount)),
       0,
