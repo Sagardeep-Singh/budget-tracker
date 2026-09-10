@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label, Select } from '@/components/ui/field';
 import { Money } from '@/components/ui/money';
+import { resolveImportedTransactionType } from '@/lib/import';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 
@@ -77,6 +78,13 @@ export const ImportView = ({
     });
   };
 
+  // Bank/checking/savings CSVs use the debit convention: negative = money
+  // out (expense), positive = money in (income). Credit card/line-of-credit
+  // exports are inverted: a positive amount is a charge (expense), a
+  // negative one is a payment or refund credited back (income).
+  const selectedAccount = accounts.find((a) => a.id === accountId);
+  const isCreditAccount = selectedAccount?.type === 'CREDIT_CARD';
+
   const handlePreview = async (): Promise<void> => {
     if (!dateCol || !amountCol || !accountId) return;
     setLoading(true);
@@ -88,7 +96,7 @@ export const ImportView = ({
         accountId,
         date: row[dateCol],
         amount: Math.abs(amount),
-        type: (amount < 0 ? 'EXPENSE' : 'INCOME') as 'INCOME' | 'EXPENSE',
+        type: resolveImportedTransactionType(amount, selectedAccount?.type ?? ''),
         payee: payeeCol ? row[payeeCol] : undefined,
         note: noteCol ? row[noteCol] : undefined,
       };
@@ -241,8 +249,10 @@ export const ImportView = ({
           </div>
         )}
         <p className="text-ink-muted mt-2 text-xs">
-          Negative amounts are treated as expenses, positive as income — flip the sign in your CSV
-          if your bank exports it the other way.
+          {isCreditAccount
+            ? 'This is a credit card account: positive amounts are treated as charges (expenses), negative as payments or refunds (income).'
+            : 'Negative amounts are treated as expenses, positive as income.'}{' '}
+          Flip the sign in your CSV first if your export uses the opposite convention.
         </p>
       </Card>
 
