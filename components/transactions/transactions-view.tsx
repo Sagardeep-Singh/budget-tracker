@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
 import { Drawer } from '@/components/ui/drawer';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
 import { Select } from '@/components/ui/field';
 import { TransactionForm } from '@/components/transactions/transaction-form';
@@ -41,6 +42,8 @@ export const TransactionsView = ({
   const [open, setOpen] = useState(false);
   const [drawerKey, setDrawerKey] = useState(0);
   const [detail, setDetail] = useState<FrontendTransaction | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
   const [accountFilter, setAccountFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
@@ -93,8 +96,10 @@ export const TransactionsView = ({
   };
 
   const handleDelete = async (id: string): Promise<void> => {
-    if (!confirm('Delete this transaction?')) return;
+    setDeletePending(true);
     await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    setDeletePending(false);
+    setConfirmDeleteId(null);
     setDetail(null);
     router.refresh();
   };
@@ -344,7 +349,7 @@ export const TransactionsView = ({
             </div>
             <button
               type="button"
-              onClick={() => handleDelete(detail.id)}
+              onClick={() => setConfirmDeleteId(detail.id)}
               className="border-line text-rose mt-2 w-full rounded-full border py-3 text-[14px]"
             >
               Delete
@@ -352,6 +357,14 @@ export const TransactionsView = ({
           </>
         )}
       </Drawer>
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete transaction"
+        description="Delete this transaction? This can't be undone."
+        pending={deletePending}
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   );
 };
