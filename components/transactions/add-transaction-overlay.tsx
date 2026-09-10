@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Modal } from '@/components/ui/modal';
+import { Drawer } from '@/components/ui/drawer';
 import { TransactionForm } from '@/components/transactions/transaction-form';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
@@ -28,8 +28,8 @@ export const AddTransactionOverlay = ({
   };
 
   return (
-    <Modal open={open} onClose={close} title="Log a transaction" className="max-w-[520px]">
+    <Drawer open={open} onClose={close} title="Log a transaction">
       {open && <TransactionForm accounts={accounts} categories={categories} onDone={close} />}
-    </Modal>
+    </Drawer>
   );
 };

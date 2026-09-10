@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AccountForm } from '@/components/accounts/account-form';
 import { formatDate } from '@/lib/format';
 import type { FrontendAccount } from '@/lib/services/accounts';
@@ -23,6 +24,8 @@ export const AccountsView = ({
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FrontendAccount | undefined>(undefined);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   const openCreate = (): void => {
     setEditing(undefined);
@@ -37,8 +40,10 @@ export const AccountsView = ({
   };
 
   const handleDelete = async (id: string): Promise<void> => {
-    if (!confirm('Delete this account and all its transactions?')) return;
+    setDeletePending(true);
     await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+    setDeletePending(false);
+    setConfirmDeleteId(null);
     router.refresh();
   };
 
@@ -82,7 +87,7 @@ export const AccountsView = ({
               </button>
               <button
                 type="button"
-                onClick={() => handleDelete(account.id)}
+                onClick={() => setConfirmDeleteId(account.id)}
                 className="text-ink-muted px-1 py-2 text-[13px]"
               >
                 Delete
@@ -108,6 +113,14 @@ export const AccountsView = ({
       >
         <AccountForm account={editing} onDone={() => setOpen(false)} />
       </Modal>
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete account"
+        description="Delete this account and all its transactions? This can't be undone."
+        pending={deletePending}
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   );
 };

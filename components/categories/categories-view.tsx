@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { FrontendCategory } from '@/lib/services/categories';
 
 export const CategoriesView = ({
@@ -16,6 +17,8 @@ export const CategoriesView = ({
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -36,8 +39,10 @@ export const CategoriesView = ({
   };
 
   const handleDelete = async (id: string): Promise<void> => {
-    if (!confirm('Delete this category? Transactions using it become uncategorized.')) return;
+    setDeletePending(true);
     await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+    setDeletePending(false);
+    setConfirmDeleteId(null);
     router.refresh();
   };
 
@@ -62,7 +67,7 @@ export const CategoriesView = ({
             <span className="text-ink text-sm">{category.name}</span>
             <button
               type="button"
-              onClick={() => handleDelete(category.id)}
+              onClick={() => setConfirmDeleteId(category.id)}
               className="text-ink-muted hover:text-rose text-xs"
             >
               Delete
@@ -70,6 +75,14 @@ export const CategoriesView = ({
           </div>
         ))}
       </Card>
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete category"
+        description="Delete this category? Transactions using it become uncategorized."
+        pending={deletePending}
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   );
 };
