@@ -23,11 +23,12 @@ npm run dev
 
 Create an account at `/signup` (name, email, password) or sign in at `/login`. "Continue with
 Google" appears once `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` are set — see `.env.example` for how
-to obtain them.
+to obtain them. A new sign-up starts with an empty dashboard — no starter categories, rules, or
+accounts — you add your own.
 
 For local development, `npm run db:setup` also seeds a known dev account from `ADMIN_EMAIL` /
-`ADMIN_PASSWORD` in `.env` as a convenience — this isn't required for real usage, anyone can sign
-up from `/signup`.
+`ADMIN_PASSWORD` in `.env`, prepopulated with sample categories/rules/an account for convenience
+when testing — this isn't required for real usage, anyone can sign up from `/signup`.
 
 For a production deploy: run `npm run prisma:deploy` to apply migrations. `npm run
 prisma:bootstrap-admin` is optional — it seeds/updates one known account by email, useful for an

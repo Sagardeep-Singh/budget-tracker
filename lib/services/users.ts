@@ -1,7 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
-import { provisionDefaultsForUser } from '@/lib/services/defaults';
 import type { SignUpInput } from '@/lib/validators/signup';
 
 const BCRYPT_ROUNDS = 12;
@@ -17,14 +16,20 @@ export const createUser = async (input: SignUpInput): Promise<{ id: string }> =>
     data: { email: input.email, name: input.name, passwordHash },
   });
 
-  await provisionDefaultsForUser(user.id);
-
   return { id: user.id };
+};
+
+export const userHasPassword = async (userId: string): Promise<boolean> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+  return !!user?.passwordHash;
 };
 
 /**
  * Finds the user for a Google sign-in by email, provisioning a new
- * password-less account (plus starter data) on first sign-in.
+ * password-less account on first sign-in.
  */
 export const findOrCreateGoogleUser = async (
   email: string,
@@ -36,6 +41,5 @@ export const findOrCreateGoogleUser = async (
   }
 
   const user = await prisma.user.create({ data: { email, name } });
-  await provisionDefaultsForUser(user.id);
   return { id: user.id };
 };

@@ -21,8 +21,8 @@ export const DEFAULT_RULES: Record<string, string[]> = {
 
 /**
  * Provisions the starter categories, category rules, and checking account
- * for a brand-new user, shared by the dev seed script and real sign-up
- * (both credentials and Google) so nobody lands on an empty dashboard.
+ * for a brand-new user. Used only by the dev seed script — real sign-ups
+ * (credentials and Google) intentionally start with no prepopulated data.
  */
 export const provisionDefaultsForUser = async (userId: string): Promise<void> => {
   await prisma.category.createMany({

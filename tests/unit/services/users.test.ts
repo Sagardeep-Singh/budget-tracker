@@ -21,7 +21,8 @@ const { prismaMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
-const { createUser, findOrCreateGoogleUser } = await import('@/lib/services/users');
+const { createUser, findOrCreateGoogleUser, userHasPassword } =
+  await import('@/lib/services/users');
 const { ServiceValidationError } = await import('@/lib/services/common');
 const { DEFAULT_CATEGORIES } = await import('@/lib/services/defaults');
 
@@ -42,7 +43,7 @@ describe('createUser', () => {
     expect(prismaMock.user.create).not.toHaveBeenCalled();
   });
 
-  it('hashes the password and provisions default categories/rules/account', async () => {
+  it('hashes the password and creates the user with no prepopulated data', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.create.mockResolvedValue({ id: 'user-1' });
 
@@ -59,18 +60,14 @@ describe('createUser', () => {
     expect(createArg.data.name).toBe('Jane');
     expect(createArg.data.passwordHash).not.toBe('a-long-enough-password');
 
-    expect(prismaMock.category.createMany).toHaveBeenCalledWith({
-      data: expect.arrayContaining([expect.objectContaining({ userId: 'user-1' })]),
-    });
-    expect(prismaMock.categoryRule.createMany).toHaveBeenCalled();
-    expect(prismaMock.account.create).toHaveBeenCalledWith({
-      data: { userId: 'user-1', name: 'Checking', type: 'CHECKING', startingBalance: 0 },
-    });
+    expect(prismaMock.category.createMany).not.toHaveBeenCalled();
+    expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
+    expect(prismaMock.account.create).not.toHaveBeenCalled();
   });
 });
 
 describe('findOrCreateGoogleUser', () => {
-  it('returns the existing user without provisioning defaults again', async () => {
+  it('returns the existing user', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1' });
 
     const result = await findOrCreateGoogleUser('jane@example.com', 'Jane');
@@ -80,7 +77,7 @@ describe('findOrCreateGoogleUser', () => {
     expect(prismaMock.account.create).not.toHaveBeenCalled();
   });
 
-  it('creates a password-less user and provisions defaults on first sign-in', async () => {
+  it('creates a password-less user on first sign-in with no prepopulated data', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.create.mockResolvedValue({ id: 'user-2' });
 
@@ -90,6 +87,28 @@ describe('findOrCreateGoogleUser', () => {
     expect(prismaMock.user.create).toHaveBeenCalledWith({
       data: { email: 'new@example.com', name: 'New Person' },
     });
-    expect(prismaMock.account.create).toHaveBeenCalled();
+    expect(prismaMock.category.createMany).not.toHaveBeenCalled();
+    expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
+    expect(prismaMock.account.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('userHasPassword', () => {
+  it('returns true when the user has a passwordHash', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ passwordHash: 'hashed' });
+
+    await expect(userHasPassword('user-1')).resolves.toBe(true);
+  });
+
+  it('returns false for a Google-only user with no passwordHash', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ passwordHash: null });
+
+    await expect(userHasPassword('user-1')).resolves.toBe(false);
+  });
+
+  it('returns false when the user does not exist', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null);
+
+    await expect(userHasPassword('missing')).resolves.toBe(false);
   });
 });

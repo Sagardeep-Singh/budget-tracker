@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const uniqueEmail = () => `signup-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
 
-test('signs up with name/email/password and lands on the dashboard with starter data', async ({
+test('signs up with name/email/password and lands on the dashboard with no prepopulated data', async ({
   page,
 }) => {
   const email = uniqueEmail();
@@ -16,10 +16,10 @@ test('signs up with name/email/password and lands on the dashboard with starter 
   await expect(page).toHaveURL(/\/dashboard/);
 
   await page.goto('/accounts');
-  await expect(page.getByText('Checking').first()).toBeVisible();
+  await expect(page.getByText('No accounts yet.')).toBeVisible();
 
   await page.goto('/categories');
-  await expect(page.getByText('Groceries').first()).toBeVisible();
+  await expect(page.getByText('Groceries')).toHaveCount(0);
 });
 
 test('rejects sign-up with an email that already exists', async ({ page }) => {
