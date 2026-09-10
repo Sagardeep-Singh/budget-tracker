@@ -63,8 +63,9 @@ Subagents in `.claude/agents/` for non-trivial feature work, in order:
 1. **product-manager** — scope the feature, write user stories/acceptance criteria, flag open questions and non-goals. Invoke first for any non-trivial request.
 2. **software-architect** — design the change: file breakdown, service/validator contracts, schema impact (flag, don't assume authorization). Invoke after product-manager for anything touching schema, services, or cross-cutting concerns.
 3. **ui-designer** — component spec (tree, props/state, interaction states, accessibility) for any user-facing surface. Invoke after software-architect defines data contracts.
-4. **senior-developer** — implement file-by-file against the architect's plan (and UI spec, if any); writes tests for new service methods; runs `npm run format:fix && npm run lint` and the test suite.
-5. **tester** — reviews the implementation, runs lint/tests, checks for missing coverage, tries to break it (empty inputs, boundary values, malformed input).
+4. **tester (test plan)** — before any code changes, write a unit test plan (`tests/unit/...`, cases and expected behavior per new/changed service method) and, for any user-facing flow, an e2e test plan (`tests/e2e/...`, Playwright — key user paths, happy path plus error states). This is the acceptance bar the implementation is written against; hand it to senior-developer alongside the architect/UI plan.
+5. **senior-developer** — implement file-by-file against the architect's plan (and UI spec, if any), satisfying the tester's test plan; writes the actual unit tests for new service methods and e2e specs for the planned flows; runs `npm run format:fix && npm run lint` and the test suite (`npm run test` and `npm run test:e2e`).
+6. **tester (review)** — reviews the implementation against its own test plan, runs lint/unit/e2e tests, checks for missing coverage, tries to break it (empty inputs, boundary values, malformed input).
 
 Skip steps for trivial changes (typo fixes, small copy edits) — go straight to editing.
 
