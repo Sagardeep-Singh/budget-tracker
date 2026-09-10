@@ -195,7 +195,7 @@ export const RulesView = ({
             <div className="border-line text-ink-muted flex items-center gap-5 border-b py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
               <span className="flex-1">Match</span>
               <span className="w-[150px]">Category</span>
-              <span className="w-[70px] text-right">Priority</span>
+              <span className="w-[118px] text-right">Priority</span>
               <span className="w-[90px] text-right">Applied</span>
               <span className="w-[60px]" />
             </div>
@@ -214,11 +214,11 @@ export const RulesView = ({
                       {rule.categoryName}
                     </span>
                   </span>
-                  <span className="w-[70px] text-right">
+                  <span className="w-[118px] text-right">
                     {editingId === rule.id ? (
                       <span className="flex items-center justify-end gap-1">
                         <Input
-                          className="w-14 rounded-[9px] px-2 py-1 text-right font-mono text-[13px]"
+                          className="w-14 shrink-0 rounded-[9px] px-2 py-1 text-right font-mono text-[13px]"
                           type="number"
                           autoFocus
                           value={editPriority}
