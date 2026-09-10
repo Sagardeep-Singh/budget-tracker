@@ -1,6 +1,6 @@
 # Import Batch Tracking, Duplicate Detection, History & Undo
 
-## Status: scoped — decisions made, ready for architect phase
+## Status: scoped + architected, ready for ui-designer phase (see checklist)
 
 ## Decisions
 
@@ -16,7 +16,10 @@
    d row count) and `importedCount` (post-dedupe inserted count); comparison for the warning uses submitted `rowCount` against the prior batch's, to avo
    id false positives from unrelated dedupe skips.
 6. Manual-edit tracking: **not built** — no `updatedAt` schema change. Undo silently discards edits made since import. Accepted known gap — undo conf
-   irmation copy must explicitly say edits since import will be lost.
+   irmation copy must explicitly say edits since import will be lost. This covers **skip-state too**: `skippedAt` (added by the categorize-dropdown-skip
+   feature, after this decision was first written) has no edit-tracking either — confirmed via `lib/services/categorize.ts:46,75`, which excludes
+   `skippedAt`-set rows from the categorize queue. Undo copy must name "recategorized, retyped, or skipped" as a set, not just recategorization/type
+   changes.
 7. Commit row cap: **align with preview's existing 2000-row limit** (`commitImportSchema.rows.max(2000)`).
 8. Cross-batch skipped-duplicate rows (row skipped in batch B as dup of batch A, then A undone → row unrecoverable): **accepted known gap**, no speci
    al handling. Mitigation: persist `skippedDuplicates` count on the batch so the gap is visible in history rather than silent.
@@ -101,8 +104,8 @@ Filename: true` to proceed (decision 1). Override creates a new, independent bat
 
 - From history view, undo any active batch.
 - Deletes every transaction with matching `importBatchId` — whole batch, no partial undo.
-- Type-filename-to-confirm modal (decision 11): warning states count of transactions to be deleted and explicitly warns edits made since import will
-  be lost (decision 6); delete only fires once user retypes the batch filename correctly.
+- Type-filename-to-confirm modal (decision 11): warning states count of transactions to be deleted and explicitly warns that edits made since import —
+  recategorized, retyped income/expense, or skipped — will be lost (decision 6); delete only fires once user retypes the batch filename correctly.
 - Implemented as one `prisma.$transaction`: delete transactions with matching `importBatchId`, flip batch status to undone. Not a bare FK cascade (de
   cision 9).
 - After undo, filename becomes reusable — new commit with same name treated as fresh independent batch.
@@ -815,7 +818,7 @@ misclicks, not an authorization boundary.
   `nextCursor`, undo trigger.
 - `components/import/undo-batch-modal.tsx` — _(new)_ client component: type-filename-
   to-confirm; copy must state the transaction count **and** explicitly warn that edits
-  made since import will be lost (decisions 6 + 11).
+  made since import — recategorized, retyped, or skipped — will be lost (decisions 6 + 11).
 - `components/import/import-view.tsx` — _(modify)_ send `accountId` + `filename` on
   preview and commit; consume `{ rows, filenameWarning }` (was a bare array); render
   the filename warning distinctly from row-level dup flags; handle the 409 by showing
