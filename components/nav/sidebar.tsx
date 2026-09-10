@@ -1,5 +1,15 @@
 import Link from 'next/link';
-import { LogOut, Plus } from 'lucide-react';
+import {
+  LogOut,
+  Plus,
+  LayoutDashboard,
+  Receipt,
+  Tag,
+  PiggyBank,
+  Wallet,
+  ListFilter,
+  Settings,
+} from 'lucide-react';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { getNavCounts } from '@/lib/services/nav';
 import { listAccounts } from '@/lib/services/accounts';
@@ -12,14 +22,45 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
   const userId = session!.user.id;
   const [counts, accounts] = await Promise.all([getNavCounts(userId), listAccounts(userId)]);
 
+  const navIconClassName = 'size-4 shrink-0';
   const navItems: SidebarNavItem[] = [
-    { href: '/dashboard', label: 'Overview' },
-    { href: '/transactions', label: 'Transactions', badge: counts.transactions },
-    { href: '/categorize', label: 'Categorize', badge: counts.categorize, alert: true },
-    { href: '/budgets', label: 'Budgets', badge: counts.budgets },
-    { href: '/accounts', label: 'Accounts', badge: counts.accounts },
-    { href: '/rules', label: 'Rules', badge: counts.rules },
-    { href: '/settings', label: 'Settings' },
+    {
+      href: '/dashboard',
+      label: 'Overview',
+      icon: <LayoutDashboard className={navIconClassName} />,
+    },
+    {
+      href: '/transactions',
+      label: 'Transactions',
+      icon: <Receipt className={navIconClassName} />,
+      badge: counts.transactions,
+    },
+    {
+      href: '/categorize',
+      label: 'Categorize',
+      icon: <Tag className={navIconClassName} />,
+      badge: counts.categorize,
+      alert: true,
+    },
+    {
+      href: '/budgets',
+      label: 'Budgets',
+      icon: <PiggyBank className={navIconClassName} />,
+      badge: counts.budgets,
+    },
+    {
+      href: '/accounts',
+      label: 'Accounts',
+      icon: <Wallet className={navIconClassName} />,
+      badge: counts.accounts,
+    },
+    {
+      href: '/rules',
+      label: 'Rules',
+      icon: <ListFilter className={navIconClassName} />,
+      badge: counts.rules,
+    },
+    { href: '/settings', label: 'Settings', icon: <Settings className={navIconClassName} /> },
   ];
 
   return (
