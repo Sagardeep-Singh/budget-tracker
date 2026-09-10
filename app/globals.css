@@ -237,5 +237,8 @@ dialog::backdrop {
 }
 
 dialog[open] {
+  /* Tailwind's preflight resets margin to 0 on every element, which strips the
+     browser's default `dialog { margin: auto }` centering — restore it explicitly. */
+  margin: auto;
   animation: dialog-in 0.18s ease-out;
 }
