@@ -34,7 +34,13 @@ const shiftMonth = (month: number, delta: number): number => {
  * only for now, and a real range picker needs the service to support
  * arbitrary spans, which is a larger change than this stage's scope.
  */
-export const PeriodPopover = ({ month }: { month: number }): React.ReactElement => {
+export const PeriodPopover = ({
+  month,
+  basePath = '/dashboard',
+}: {
+  month: number;
+  basePath?: string;
+}): React.ReactElement => {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -52,7 +58,7 @@ export const PeriodPopover = ({ month }: { month: number }): React.ReactElement 
 
   const goTo = (m: number): void => {
     setOpen(false);
-    router.push(m === now ? '/dashboard' : `/dashboard?month=${m}`);
+    router.push(m === now ? basePath : `${basePath}?month=${m}`);
   };
 
   return (

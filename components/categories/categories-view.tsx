@@ -95,67 +95,73 @@ export const CategoriesView = ({
       </form>
       {error && <p className="text-rose mb-4 text-sm">{error}</p>}
 
-      <Card className="p-0">
-        {initialCategories.map((category) =>
-          editingId === category.id ? (
-            <div
-              key={category.id}
-              className="ledger-row flex items-center justify-between gap-2 px-6 py-2.5"
-            >
-              <Input
-                className="bg-paper-raised"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                autoFocus
-                required
-              />
-              <button
-                type="button"
-                onClick={() => handleEditSave(category.id)}
-                disabled={editPending}
-                className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
-                aria-label="Save category name"
+      {initialCategories.length === 0 ? (
+        <div className="border-line bg-paper-raised flex flex-col items-center gap-1.5 rounded-2xl border border-dashed p-8 text-center">
+          <p className="text-ink-muted text-sm">No categories yet. Add one above to get started.</p>
+        </div>
+      ) : (
+        <Card className="p-0">
+          {initialCategories.map((category) =>
+            editingId === category.id ? (
+              <div
+                key={category.id}
+                className="ledger-row flex items-center justify-between gap-2 px-6 py-2.5"
               >
-                <Check size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={cancelEdit}
-                disabled={editPending}
-                className="text-ink-muted hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
-                aria-label="Cancel edit"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : (
-            <div
-              key={category.id}
-              className="ledger-row flex items-center justify-between px-6 py-3"
-            >
-              <span className="text-ink text-sm">{category.name}</span>
-              <span className="flex items-center gap-3">
+                <Input
+                  className="bg-paper-raised"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  autoFocus
+                  required
+                />
                 <button
                   type="button"
-                  onClick={() => startEdit(category)}
-                  className="text-ink-muted hover:text-iris inline-flex items-center gap-1 text-xs"
+                  onClick={() => handleEditSave(category.id)}
+                  disabled={editPending}
+                  className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                  aria-label="Save category name"
                 >
-                  <Pencil size={14} />
-                  Edit
+                  <Check size={16} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => setConfirmDeleteId(category.id)}
-                  className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
+                  onClick={cancelEdit}
+                  disabled={editPending}
+                  className="text-ink-muted hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                  aria-label="Cancel edit"
                 >
-                  <Trash2 size={14} />
-                  Delete
+                  <X size={16} />
                 </button>
-              </span>
-            </div>
-          ),
-        )}
-      </Card>
+              </div>
+            ) : (
+              <div
+                key={category.id}
+                className="ledger-row flex items-center justify-between px-6 py-3"
+              >
+                <span className="text-ink text-sm">{category.name}</span>
+                <span className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => startEdit(category)}
+                    className="text-ink-muted hover:text-iris inline-flex items-center gap-1 text-xs"
+                  >
+                    <Pencil size={14} />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(category.id)}
+                    className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
+                  >
+                    <Trash2 size={14} />
+                    Delete
+                  </button>
+                </span>
+              </div>
+            ),
+          )}
+        </Card>
+      )}
       {editError && <p className="text-rose mt-3 text-sm">{editError}</p>}
       <ConfirmDialog
         open={confirmDeleteId !== null}

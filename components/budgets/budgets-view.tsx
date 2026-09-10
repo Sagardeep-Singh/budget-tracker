@@ -18,11 +18,20 @@ const daysInMonth = (month: number): number => {
   return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 };
 
+const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'short',
+  year: 'numeric',
+});
+
+const monthLabel = (month: number): string =>
+  MONTH_LABEL.format(new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1)));
+
 const paceText = (limit: number, spent: number, month: number): string => {
   const now = new Date();
-  const isCurrentMonth = month === now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
+  const currentMonth = now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
   const total = daysInMonth(month);
-  const elapsed = isCurrentMonth ? now.getUTCDate() : total;
+  const elapsed = month === currentMonth ? now.getUTCDate() : month > currentMonth ? 0 : total;
   const remaining = Math.max(total - elapsed, 0);
   if (remaining === 0) return spent > limit ? 'Over for the month' : 'On track for the month';
   const perDay = Math.max(limit - spent, 0) / remaining;
@@ -45,6 +54,12 @@ export const BudgetsView = ({
   const available = categories.filter((c) => !budgetedCategoryIds.has(c.id));
 
   const [categoryId, setCategoryId] = useState(available[0]?.id ?? '');
+  // `available` is derived from props that change on month navigation, but
+  // `categoryId` is only initialized once — fall back when it no longer
+  // points at an available category instead of trusting the stale value.
+  const selectedCategoryId = available.some((c) => c.id === categoryId)
+    ? categoryId
+    : (available[0]?.id ?? '');
   const [limitAmount, setLimitAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -66,13 +81,21 @@ export const BudgetsView = ({
     setEditError(null);
   };
 
-  const handleEditSave = async (id: string): Promise<void> => {
+  const handleEditSave = async (budget: FrontendBudget): Promise<void> => {
     setEditPending(true);
     setEditError(null);
-    const res = await fetch(`/api/budgets/${id}`, {
-      method: 'PATCH',
+    // A budget carried forward from an earlier month has a different id/month
+    // than the one being viewed — editing it starts a new value from this
+    // month forward instead of rewriting history.
+    const startsNewMonth = budget.month !== month;
+    const res = await fetch(startsNewMonth ? '/api/budgets' : `/api/budgets/${budget.id}`, {
+      method: startsNewMonth ? 'POST' : 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limitAmount: editValue }),
+      body: JSON.stringify(
+        startsNewMonth
+          ? { categoryId: budget.categoryId, month, limitAmount: editValue }
+          : { limitAmount: editValue },
+      ),
     });
     setEditPending(false);
     if (!res.ok) {
@@ -90,7 +113,7 @@ export const BudgetsView = ({
     const res = await fetch('/api/budgets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryId, limitAmount, month }),
+      body: JSON.stringify({ categoryId: selectedCategoryId, limitAmount, month }),
     });
     setPending(false);
     if (!res.ok) {
@@ -100,6 +123,8 @@ export const BudgetsView = ({
     setLimitAmount('');
     router.refresh();
   };
+
+  const confirmDeletingBudget = initialBudgets.find((b) => b.id === confirmDeleteId) ?? null;
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
@@ -136,7 +161,7 @@ export const BudgetsView = ({
               </label>
               <Select
                 className="rounded-[9px]"
-                value={categoryId}
+                value={selectedCategoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
                 required
               >
@@ -170,7 +195,9 @@ export const BudgetsView = ({
       {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
       {initialBudgets.length === 0 ? (
-        <p className="text-ink-muted mt-6 text-sm">No budgets set for this month yet.</p>
+        categories.length > 0 && (
+          <p className="text-ink-muted mt-6 text-sm">No budgets set for this month yet.</p>
+        )
       ) : (
         <div className="mt-4.5 grid grid-cols-2 gap-4">
           {initialBudgets.map((budget) => {
@@ -214,7 +241,7 @@ export const BudgetsView = ({
                         />
                         <button
                           type="button"
-                          onClick={() => handleEditSave(budget.id)}
+                          onClick={() => handleEditSave(budget)}
                           disabled={editPending}
                           className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
                           aria-label="Save budget"
@@ -272,7 +299,11 @@ export const BudgetsView = ({
       <ConfirmDialog
         open={confirmDeleteId !== null}
         title="Remove budget"
-        description="Remove this budget for the month? You can set a new one anytime."
+        description={
+          confirmDeletingBudget
+            ? `Clears the ${confirmDeletingBudget.categoryName} budget from ${monthLabel(confirmDeletingBudget.month)} onward, including past months. You can set a new one anytime.`
+            : ''
+        }
         confirmLabel="Remove"
         pending={deletePending}
         onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}

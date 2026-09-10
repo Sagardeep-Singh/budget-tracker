@@ -53,6 +53,39 @@ describe('listBudgets', () => {
       },
     ]);
   });
+
+  it('carries a budget forward into later months until a newer one overrides it', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b-newer',
+        categoryId: 'cat-1',
+        month: 202602,
+        limitAmount: 250,
+        category: { name: 'Groceries' },
+      },
+      {
+        id: 'b-older',
+        categoryId: 'cat-1',
+        month: 202601,
+        limitAmount: 200,
+        category: { name: 'Groceries' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+
+    const result = await listBudgets('user-1', 202604);
+
+    expect(result).toEqual([
+      {
+        id: 'b-newer',
+        categoryId: 'cat-1',
+        categoryName: 'Groceries',
+        month: 202602,
+        limitAmount: '250.00',
+        spent: '0.00',
+      },
+    ]);
+  });
 });
 
 describe('createBudget', () => {
