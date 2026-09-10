@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Select } from '@/components/ui/field';
 import { Toast } from '@/components/ui/toast';
-import { cn } from '@/lib/cn';
 import type { CategorizeQueueRow } from '@/lib/services/categorize';
 import type { FrontendCategory } from '@/lib/services/categories';
 
@@ -14,6 +13,9 @@ const patchCategory = (id: string, categoryId: string | null): Promise<Response>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ categoryId }),
   });
+
+const skipTransaction = (id: string): Promise<Response> =>
+  fetch(`/api/transactions/${id}/skip`, { method: 'POST' });
 
 export const CategorizeView = ({
   initialQueue,
@@ -26,7 +28,6 @@ export const CategorizeView = ({
   const [queue, setQueue] = useState(initialQueue);
   const [reviewOne, setReviewOne] = useState(false);
   const [index, setIndex] = useState(0);
-  const [changing, setChanging] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null);
 
@@ -48,6 +49,18 @@ export const CategorizeView = ({
     await patchCategory(row.id, categoryId);
     setPending(false);
     removeRow(row.id);
+    router.refresh();
+  };
+
+  const skip = async (row: CategorizeQueueRow): Promise<void> => {
+    setPending(true);
+    await skipTransaction(row.id);
+    setPending(false);
+    if (reviewOne) {
+      setIndex((i) => i + 1);
+    } else {
+      removeRow(row.id);
+    }
     router.refresh();
   };
 
@@ -135,55 +148,33 @@ export const CategorizeView = ({
               {row.why ?? 'No rule matches this transaction.'}
             </div>
             <div className="ml-auto flex shrink-0 gap-1.5">
-              {changing === row.id ? (
-                <Select
-                  autoFocus
-                  className="border-line bg-paper rounded-full px-3 py-2 text-sm"
-                  onChange={(e) => {
-                    if (e.target.value) void confirm(row, e.target.value);
-                    setChanging(null);
-                  }}
-                  defaultValue=""
-                >
+              <Select
+                disabled={pending}
+                className="border-line bg-paper rounded-full px-3 py-2 text-sm"
+                onChange={(e) => {
+                  if (e.target.value) void confirm(row, e.target.value);
+                }}
+                defaultValue={row.suggestedCategoryId ?? ''}
+              >
+                {!row.suggestedCategoryId && (
                   <option value="" disabled>
                     Choose category
                   </option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              ) : (
-                <>
-                  {row.suggestedCategoryId && (
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => void confirm(row, row.suggestedCategoryId!)}
-                      className="bg-iris text-paper-raised rounded-full px-3.5 py-2 text-[13px] font-semibold disabled:opacity-50"
-                    >
-                      {row.suggestedCategoryName}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setChanging(row.id)}
-                    className="border-line text-ink-muted rounded-full border px-3.5 py-2 text-[13px]"
-                  >
-                    Change
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => (reviewOne ? setIndex((i) => i + 1) : removeRow(row.id))}
-                    className={cn(
-                      'border-line text-ink-muted rounded-full border px-3 py-2 text-[13px]',
-                    )}
-                  >
-                    Skip
-                  </button>
-                </>
-              )}
+                )}
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => void skip(row)}
+                className="border-line text-ink-muted rounded-full border px-3 py-2 text-[13px] disabled:opacity-50"
+              >
+                Skip
+              </button>
             </div>
           </div>
         ))}

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Input, Select } from '@/components/ui/field';
 import { Ring } from '@/components/ui/ring';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/cn';
 import type { FrontendBudget } from '@/lib/services/budgets';
 import type { FrontendCategory } from '@/lib/services/categories';
@@ -44,6 +45,8 @@ export const BudgetsView = ({
   const [limitAmount, setLimitAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -64,7 +67,10 @@ export const BudgetsView = ({
   };
 
   const handleDelete = async (id: string): Promise<void> => {
+    setDeletePending(true);
     await fetch(`/api/budgets/${id}`, { method: 'DELETE' });
+    setDeletePending(false);
+    setConfirmDeleteId(null);
     router.refresh();
   };
 
@@ -156,7 +162,7 @@ export const BudgetsView = ({
                     <span className="text-ink-muted text-xs">{paceText(limit, spent, month)}</span>
                     <button
                       type="button"
-                      onClick={() => handleDelete(budget.id)}
+                      onClick={() => setConfirmDeleteId(budget.id)}
                       className="text-ink-muted text-xs"
                     >
                       Remove
@@ -168,6 +174,15 @@ export const BudgetsView = ({
           })}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Remove budget"
+        description="Remove this budget for the month? You can set a new one anytime."
+        confirmLabel="Remove"
+        pending={deletePending}
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   );
 };

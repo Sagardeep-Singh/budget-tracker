@@ -22,7 +22,9 @@ enum TransactionType {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
-  passwordHash String
+  name         String?
+  /// nullable: users who sign up via Google have no password
+  passwordHash String?
   createdAt    DateTime @default(now())
 
   accounts      Account[]
@@ -78,6 +80,7 @@ model Transaction {
   /// the previous statement's balance, so it's excluded from the current
   /// statement period's credit/debit/net totals
   isPayment     Boolean         @default(false)
+  skippedAt     DateTime?
   createdAt     DateTime        @default(now())
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
