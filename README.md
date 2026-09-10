@@ -4,27 +4,34 @@ A small, honest personal budget tracker. Track accounts, log transactions (manua
 import), auto-categorize spend with your own rules, set monthly budgets per category, and see
 where things stand.
 
-Single-user by design — this is a personal tool, not a multi-tenant app.
+Free to use — anyone can sign up with Google or an email/password/name and gets their own
+isolated Ledger. Every service scopes its data by user, so accounts stay fully separate.
 
 ## Stack
 
-Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials), Tailwind CSS v4, Zod,
-Vitest.
+Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials + Google), Tailwind
+CSS v4, Zod, Vitest.
 
 ## Getting started
 
 ```bash
-cp .env.example .env   # fill in DATABASE_URL, NEXTAUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
+cp .env.example .env   # fill in DATABASE_URL, NEXTAUTH_SECRET
 npm install
 npm run db:setup       # prisma generate + migrate + seed (destructive, local dev only)
 npm run dev
 ```
 
-Sign in at `/login` with the `ADMIN_EMAIL` / `ADMIN_PASSWORD` you set. There's no self-signup —
-this is the only account.
+Create an account at `/signup` (name, email, password) or sign in at `/login`. "Continue with
+Google" appears once `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` are set — see `.env.example` for how
+to obtain them.
 
-For a production deploy: run `npm run prisma:deploy` to apply migrations, then
-`npm run prisma:bootstrap-admin` once (non-destructive) to create the account.
+For local development, `npm run db:setup` also seeds a known dev account from `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` in `.env` as a convenience — this isn't required for real usage, anyone can sign
+up from `/signup`.
+
+For a production deploy: run `npm run prisma:deploy` to apply migrations. `npm run
+prisma:bootstrap-admin` is optional — it seeds/updates one known account by email, useful for an
+admin or demo login.
 
 ## Commands
 
