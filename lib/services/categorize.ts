@@ -43,7 +43,7 @@ export const getCategorizeQueue = async (userId: string): Promise<CategorizeQueu
     orderBy: { priority: 'asc' },
   });
   const transactions = await prisma.transaction.findMany({
-    where: { userId, categoryId: null },
+    where: { userId, categoryId: null, skippedAt: null },
     include: { account: { select: { name: true } } },
     orderBy: { date: 'desc' },
   });
@@ -72,7 +72,7 @@ export const getCategorizeQueueStats = async (userId: string): Promise<Categoriz
       select: { categoryId: true, matchText: true, priority: true },
     }),
     prisma.transaction.findMany({
-      where: { userId, categoryId: null },
+      where: { userId, categoryId: null, skippedAt: null },
       select: { payee: true, note: true },
     }),
   ]);

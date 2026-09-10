@@ -152,3 +152,14 @@ export const deleteTransaction = async (userId: string, transactionId: string): 
   }
   await prisma.transaction.delete({ where: { id: transactionId } });
 };
+
+export const skipTransaction = async (userId: string, transactionId: string): Promise<void> => {
+  const existing = await prisma.transaction.findFirst({ where: { id: transactionId, userId } });
+  if (!existing) {
+    throw new ServiceValidationError('Transaction not found');
+  }
+  await prisma.transaction.update({
+    where: { id: transactionId },
+    data: { skippedAt: new Date() },
+  });
+};
