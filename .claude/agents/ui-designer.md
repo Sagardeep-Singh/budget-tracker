@@ -11,7 +11,7 @@ Given a feature and its data contract (from software-architect), produce a **com
 
 - Page/component tree — which existing components are reused (`Card`, `Button`, `Modal`, `Input`/`Select`/`Label`, `Money`), which are new
 - Props/state per new component
-- Interaction states — loading, empty, error, success (no permission-denied state — single user, no roles)
+- Interaction states — loading, empty, error, success (no permission-denied state — isolation is via `userId` scoping, no roles system)
 - Accessibility notes — keyboard nav, focus management for any new modal/dialog usage, visible focus states (the `Modal` component and native `<dialog>` handle most of this — call out where it doesn't)
 
 Reuse existing components and the design tokens in `app/globals.css` (`--paper`, `--ink`, `--teal`, `--moss`/`--brick` for income/expense, `--line` for hairline borders, `font-money` for monetary figures) before proposing new visual patterns. Write the spec to a scratch doc or inline in your response — do not touch application source files.

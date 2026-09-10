@@ -71,14 +71,14 @@ per CLAUDE.md rather than assuming it's in scope here.
 
 - [ ] In `categorize-view.tsx`, remove the `changing` state and the
       conditional `changing === row.id ? <Select> : <>...suggestion/Change
-  button...</>` branch.
+button...</>` branch.
 - [ ] Render the `<Select>` unconditionally per row:
   - `defaultValue={row.suggestedCategoryId ?? ''}`
   - placeholder `<option value="" disabled>Choose category</option>` only
     shown/selectable when there's no suggestion.
   - `onChange` → `if (e.target.value) void confirm(row, e.target.value)`.
 - [ ] Keep the Skip button exactly as today (`reviewOne ? advance index :
-  removeRow`), just re-laid-out next to the dropdown instead of next to
+removeRow`), just re-laid-out next to the dropdown instead of next to
       the old three-button group.
 - [ ] Remove now-dead styling/markup for the old suggestion button and
       "Change" button.
