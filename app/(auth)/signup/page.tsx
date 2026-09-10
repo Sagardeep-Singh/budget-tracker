@@ -1,17 +1,16 @@
 import Link from 'next/link';
-import { LoginForm } from '@/components/auth/login-form';
+import { SignUpForm } from '@/components/auth/signup-form';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { LogoMark } from '@/components/ui/logo-mark';
 import { Ring } from '@/components/ui/ring';
 
-const googleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+// Forced dynamic so `googleConfigured` is read per-request, not baked into a
+// static build — otherwise adding AUTH_GOOGLE_ID/SECRET later would need a
+// rebuild for the button to appear.
+export const dynamic = 'force-dynamic';
 
-const LoginPage = async ({
-  searchParams,
-}: {
-  searchParams: Promise<{ passwordChanged?: string }>;
-}): Promise<React.ReactElement> => {
-  const { passwordChanged } = await searchParams;
+const SignUpPage = (): React.ReactElement => {
+  const googleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
 
   return (
     <>
@@ -36,14 +35,11 @@ const LoginPage = async ({
       </div>
       <div className="flex items-center justify-center p-14">
         <div className="w-full max-w-[360px] animate-[fade-up_0.3s_ease-out]">
-          <h2 className="font-display text-2xl font-semibold tracking-[-0.02em]">Sign in</h2>
-          <p className="text-ink-muted mt-2 mb-6.5 text-[13.5px]">Welcome back.</p>
-          {passwordChanged === '1' && (
-            <p className="bg-sky-soft text-sky mb-4 rounded-lg px-3 py-2 text-sm" role="status">
-              Password changed. Sign in with your new password.
-            </p>
-          )}
-          <LoginForm />
+          <h2 className="font-display text-2xl font-semibold tracking-[-0.02em]">
+            Create your account
+          </h2>
+          <p className="text-ink-muted mt-2 mb-6.5 text-[13.5px]">Free — takes a minute.</p>
+          <SignUpForm />
           {googleConfigured && (
             <>
               <div className="text-ink-muted my-5 flex items-center gap-3 text-xs">
@@ -55,9 +51,9 @@ const LoginPage = async ({
             </>
           )}
           <p className="text-ink-muted mt-6 text-center text-[13.5px]">
-            New here?{' '}
-            <Link href="/signup" className="text-iris font-medium">
-              Create an account
+            Already have an account?{' '}
+            <Link href="/login" className="text-iris font-medium">
+              Sign in
             </Link>
           </p>
         </div>
@@ -66,4 +62,4 @@ const LoginPage = async ({
   );
 };
 
-export default LoginPage;
+export default SignUpPage;
