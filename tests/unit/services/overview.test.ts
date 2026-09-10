@@ -115,13 +115,16 @@ describe('getOverviewData', () => {
           category: null,
         },
         {
+          // isPayment: false on purpose — the income leg of a checking ->
+          // savings transfer has no isPayment fallback, so this asserts the
+          // isTransfer gate itself
           id: 't3',
           type: 'INCOME',
           amount: 400,
           date: new Date(Date.UTC(2026, 2, 6)),
-          isPayment: true,
+          isPayment: false,
           isTransfer: true,
-          payee: 'Payment received',
+          payee: 'Transfer in',
           category: null,
         },
       ])
