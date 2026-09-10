@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { Ring } from '@/components/ui/ring';
@@ -49,6 +50,38 @@ export const BudgetsView = ({
   const [pending, setPending] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [editPending, setEditPending] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const startEdit = (budget: FrontendBudget): void => {
+    setEditingId(budget.id);
+    setEditValue(budget.limitAmount);
+    setEditError(null);
+  };
+
+  const cancelEdit = (): void => {
+    setEditingId(null);
+    setEditError(null);
+  };
+
+  const handleEditSave = async (id: string): Promise<void> => {
+    setEditPending(true);
+    setEditError(null);
+    const res = await fetch(`/api/budgets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limitAmount: editValue }),
+    });
+    setEditPending(false);
+    if (!res.ok) {
+      setEditError('Could not update that budget.');
+      return;
+    }
+    setEditingId(null);
+    router.refresh();
+  };
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -78,46 +111,61 @@ export const BudgetsView = ({
 
   return (
     <div className="mt-6.5">
-      {available.length > 0 && (
-        <form
-          onSubmit={handleAdd}
-          className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-5"
-        >
-          <div className="flex-1">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Category
-            </label>
-            <Select
-              className="rounded-[9px]"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              required
-            >
-              {available.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="w-[150px]">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Monthly limit
-            </label>
-            <Input
-              className="rounded-[9px] font-mono"
-              type="number"
-              step="0.01"
-              placeholder="0.00"
-              value={limitAmount}
-              onChange={(e) => setLimitAmount(e.target.value)}
-              required
-            />
-          </div>
-          <Button type="submit" icon={Check} loading={pending} className="px-4.5 py-2.5">
-            Set budget
-          </Button>
-        </form>
+      {categories.length === 0 ? (
+        <div className="border-line bg-paper-raised flex flex-col items-center gap-3 rounded-2xl border border-dashed p-8 text-center">
+          <p className="text-ink-muted text-sm">
+            You don&apos;t have any categories yet. Add one to start setting budgets.
+          </p>
+          <Link
+            href="/categories"
+            className="bg-iris text-paper-raised focus-visible:outline-iris inline-flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            <Plus size={16} />
+            Add categories
+          </Link>
+        </div>
+      ) : (
+        available.length > 0 && (
+          <form
+            onSubmit={handleAdd}
+            className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-5"
+          >
+            <div className="flex-1">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                Category
+              </label>
+              <Select
+                className="rounded-[9px]"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                required
+              >
+                {available.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="w-[150px]">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                Monthly limit
+              </label>
+              <Input
+                className="rounded-[9px] font-mono"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={limitAmount}
+                onChange={(e) => setLimitAmount(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" icon={Check} loading={pending} className="px-4.5 py-2.5">
+              Set budget
+            </Button>
+          </form>
+        )
       )}
       {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
@@ -153,20 +201,68 @@ export const BudgetsView = ({
                         : `$${(limit - spent).toFixed(2)} left`}
                     </span>
                   </div>
-                  <div className="mt-2.5 font-mono text-[19px] tracking-[-0.02em] whitespace-nowrap">
-                    ${spent.toFixed(2)} of ${limit.toFixed(2)}
-                  </div>
-                  <div className="mt-2.5 flex items-baseline justify-between">
-                    <span className="text-ink-muted text-xs">{paceText(limit, spent, month)}</span>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(budget.id)}
-                      className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
-                    >
-                      <Trash2 size={14} />
-                      Remove
-                    </button>
-                  </div>
+                  {editingId === budget.id ? (
+                    <div className="mt-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          className="rounded-[9px] font-mono"
+                          type="number"
+                          step="0.01"
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleEditSave(budget.id)}
+                          disabled={editPending}
+                          className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                          aria-label="Save budget"
+                        >
+                          <Check size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={editPending}
+                          className="text-ink-muted hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                          aria-label="Cancel edit"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                      {editError && <p className="text-rose mt-1.5 text-xs">{editError}</p>}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-2.5 font-mono text-[19px] tracking-[-0.02em] whitespace-nowrap">
+                        ${spent.toFixed(2)} of ${limit.toFixed(2)}
+                      </div>
+                      <div className="mt-2.5 flex items-baseline justify-between">
+                        <span className="text-ink-muted text-xs">
+                          {paceText(limit, spent, month)}
+                        </span>
+                        <span className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEdit(budget)}
+                            className="text-ink-muted hover:text-iris inline-flex items-center gap-1 text-xs"
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(budget.id)}
+                            className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
+                          >
+                            <Trash2 size={14} />
+                            Remove
+                          </button>
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
