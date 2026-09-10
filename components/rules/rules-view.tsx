@@ -219,7 +219,7 @@ export const RulesView = ({
                       {rule.categoryName}
                     </span>
                   </span>
-                  <span className="w-[118px] text-right">
+                  <span className="relative w-[118px] text-right">
                     {editingId === rule.id ? (
                       <span className="flex items-center justify-end gap-1">
                         <Input
@@ -248,6 +248,11 @@ export const RulesView = ({
                         >
                           <X size={14} />
                         </button>
+                        {editError && (
+                          <span className="text-rose bg-paper-raised border-line absolute top-full right-0 z-10 mt-1 w-max max-w-[200px] rounded-md border px-2 py-1 text-xs whitespace-normal">
+                            {editError}
+                          </span>
+                        )}
                       </span>
                     ) : (
                       <button
@@ -278,7 +283,6 @@ export const RulesView = ({
               ))
             )}
           </div>
-          {editError && <p className="text-rose mt-2 text-sm">{editError}</p>}
         </>
       )}
       <ConfirmDialog
