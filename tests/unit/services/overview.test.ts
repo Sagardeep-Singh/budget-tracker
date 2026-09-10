@@ -90,4 +90,52 @@ describe('getOverviewData', () => {
     expect(result.hero.hasBudget).toBe(false);
     expect(result.hero.leftAmount).toBe('0.00');
   });
+
+  it('breaks down every expense by category, including unbudgeted and uncategorized ones', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+    prismaMock.account.findFirst.mockResolvedValue(null);
+    prismaMock.transaction.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 't1',
+          type: 'EXPENSE',
+          amount: 100,
+          date: new Date(Date.UTC(2026, 2, 5)),
+          isPayment: false,
+          payee: 'Store',
+          categoryId: 'cat-1',
+          category: { name: 'Groceries' },
+        },
+        {
+          id: 't2',
+          type: 'EXPENSE',
+          amount: 40,
+          date: new Date(Date.UTC(2026, 2, 6)),
+          isPayment: false,
+          payee: 'Unknown',
+          categoryId: null,
+          category: null,
+        },
+        {
+          id: 't3',
+          type: 'INCOME',
+          amount: 500,
+          date: new Date(Date.UTC(2026, 2, 5)),
+          isPayment: false,
+          payee: 'Payroll',
+          categoryId: null,
+          category: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+
+    const result = await getOverviewData('user-1', { month: 202603 });
+
+    expect(result.expenseBreakdown).toEqual([
+      { categoryId: 'cat-1', categoryName: 'Groceries', amount: '100.00', fraction: 100 / 140 },
+      { categoryId: null, categoryName: 'Uncategorized', amount: '40.00', fraction: 40 / 140 },
+    ]);
+  });
 });

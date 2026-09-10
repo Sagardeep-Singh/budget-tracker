@@ -22,6 +22,13 @@ export type OverviewBudgetRing = {
   over: boolean;
 };
 
+export type OverviewExpenseSlice = {
+  categoryId: string | null;
+  categoryName: string;
+  amount: string;
+  fraction: number;
+};
+
 export type OverviewCycleCard = {
   accountName: string;
   cycleLabel: string;
@@ -53,6 +60,7 @@ export type OverviewData = {
     net: string;
   };
   budgetRings: OverviewBudgetRing[];
+  expenseBreakdown: OverviewExpenseSlice[];
   dayBars: OverviewDayBar[];
   selectedDay: {
     day: number;
@@ -123,6 +131,43 @@ export const getOverviewData = async (
   const expense = transactions
     .filter((t) => t.type === 'EXPENSE')
     .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  // Every expense this month, by category — unlike budgetRings this isn't
+  // limited to categories that have a budget set.
+  const expenseTotalsByCategory = new Map<string, { name: string; amount: number }>();
+  for (const t of transactions) {
+    if (t.type !== 'EXPENSE') continue;
+    const key = t.categoryId ?? 'uncategorized';
+    const name = t.category?.name ?? 'Uncategorized';
+    const entry = expenseTotalsByCategory.get(key);
+    if (entry) {
+      entry.amount += Number(t.amount);
+    } else {
+      expenseTotalsByCategory.set(key, { name, amount: Number(t.amount) });
+    }
+  }
+  const sortedExpenseSlices = [...expenseTotalsByCategory.entries()]
+    .map(([categoryId, v]) => ({
+      categoryId: categoryId === 'uncategorized' ? null : categoryId,
+      categoryName: v.name,
+      amount: v.amount,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const EXPENSE_SLICE_CAP = 6;
+  const topSlices = sortedExpenseSlices.slice(0, EXPENSE_SLICE_CAP);
+  const otherAmount = sortedExpenseSlices
+    .slice(EXPENSE_SLICE_CAP)
+    .reduce((sum, s) => sum + s.amount, 0);
+  const expenseBreakdown: OverviewExpenseSlice[] = [
+    ...topSlices,
+    ...(otherAmount > 0 ? [{ categoryId: null, categoryName: 'Other', amount: otherAmount }] : []),
+  ].map((s) => ({
+    categoryId: s.categoryId,
+    categoryName: s.categoryName,
+    amount: s.amount.toFixed(2),
+    fraction: expense > 0 ? s.amount / expense : 0,
+  }));
 
   const daysRemaining = Math.max(daysInMonth - todayOfMonth, 0);
   const dailyPace = limit > 0 ? limit / daysInMonth : 0;
@@ -238,6 +283,7 @@ export const getOverviewData = async (
         over: budgetSpent > budgetLimit,
       };
     }),
+    expenseBreakdown,
     dayBars,
     selectedDay: {
       day: selectedDayNum,
