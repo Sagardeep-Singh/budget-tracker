@@ -16,6 +16,11 @@ export const changePassword = async (
   if (!user) {
     throw new ServiceValidationError('Your session is no longer valid. Sign in again.');
   }
+  if (!user.passwordHash) {
+    throw new ServiceValidationError(
+      'This account signed up with Google and has no password to change.',
+    );
+  }
 
   const currentMatches = await bcrypt.compare(input.currentPassword, user.passwordHash);
   if (!currentMatches) {

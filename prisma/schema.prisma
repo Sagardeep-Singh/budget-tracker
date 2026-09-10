@@ -22,7 +22,9 @@ enum TransactionType {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
-  passwordHash String
+  name         String?
+  /// nullable: users who sign up via Google have no password
+  passwordHash String?
   createdAt    DateTime @default(now())
 
   accounts      Account[]

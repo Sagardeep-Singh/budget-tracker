@@ -30,7 +30,13 @@ const pillOption = (active: boolean): string =>
     active ? 'bg-iris border-iris text-paper-raised' : 'border-line text-ink',
   );
 
-export const SettingsView = ({ email }: { email: string }): React.ReactElement => {
+export const SettingsView = ({
+  email,
+  hasPassword,
+}: {
+  email: string;
+  hasPassword: boolean;
+}): React.ReactElement => {
   const palette = useSyncExternalStore(
     subscribeToPreferences,
     getPaletteSnapshot,
@@ -101,7 +107,13 @@ export const SettingsView = ({ email }: { email: string }): React.ReactElement =
 
       <div className="border-line bg-paper-raised rounded-2xl border p-5">
         <h2 className="font-display text-[15px] font-semibold">Change password</h2>
-        <ChangePasswordForm />
+        {hasPassword ? (
+          <ChangePasswordForm />
+        ) : (
+          <p className="text-ink-muted mt-3 text-[13.5px]">
+            Your account signed in with Google — there&rsquo;s no password to change.
+          </p>
+        )}
       </div>
     </div>
   );
