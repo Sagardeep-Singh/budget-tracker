@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Plus, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
@@ -55,7 +56,7 @@ export const CategoriesView = ({
           placeholder="New category name"
           required
         />
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" icon={Plus} loading={pending}>
           Add
         </Button>
       </form>
@@ -68,8 +69,9 @@ export const CategoriesView = ({
             <button
               type="button"
               onClick={() => setConfirmDeleteId(category.id)}
-              className="text-ink-muted hover:text-rose text-xs"
+              className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
             >
+              <Trash2 size={14} />
               Delete
             </button>
           </div>

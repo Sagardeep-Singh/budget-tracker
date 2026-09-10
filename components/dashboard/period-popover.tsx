@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Calendar, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
@@ -61,8 +62,9 @@ export const PeriodPopover = ({ month }: { month: number }): React.ReactElement 
         onClick={() => setOpen((v) => !v)}
         className="border-line bg-paper-raised text-ink flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium"
       >
+        <Calendar size={14} />
         {monthLabel(month)}
-        <span className="text-ink-muted text-[9px]">▼</span>
+        <ChevronDown size={13} className="text-ink-muted" />
       </button>
       {open && (
         <div className="border-line bg-paper-raised absolute top-full left-0 z-20 mt-3 w-[280px] rounded-2xl border p-5 shadow-[0_18px_48px_rgba(0,0,0,.18)]">

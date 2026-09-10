@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AccountForm } from '@/components/accounts/account-form';
@@ -81,15 +82,17 @@ export const AccountsView = ({
               <button
                 type="button"
                 onClick={() => openEdit(account)}
-                className="border-line text-ink rounded-full border px-3.5 py-2 text-[13px]"
+                className="border-line text-ink inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px]"
               >
+                <Pencil size={13} />
                 Edit
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDeleteId(account.id)}
-                className="text-ink-muted px-1 py-2 text-[13px]"
+                className="text-ink-muted hover:text-rose inline-flex items-center gap-1.5 px-1 py-2 text-[13px]"
               >
+                <Trash2 size={13} />
                 Delete
               </button>
             </div>
@@ -100,7 +103,7 @@ export const AccountsView = ({
           onClick={openCreate}
           className="border-line flex min-h-[190px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed"
         >
-          <span className="text-ink-muted text-[26px] leading-none">+</span>
+          <Plus size={22} className="text-ink-muted" />
           <span className="text-ink-muted text-sm font-medium">Add an account</span>
         </button>
       </div>

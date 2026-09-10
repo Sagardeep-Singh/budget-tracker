@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 export const Modal = ({
@@ -46,7 +47,7 @@ export const Modal = ({
           aria-label="Close"
           className="text-ink-muted hover:text-ink"
         >
-          ✕
+          <X size={18} />
         </button>
       </div>
       {children}

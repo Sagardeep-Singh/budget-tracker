@@ -23,6 +23,7 @@ Every button in the app gets a contextual icon and a real loading state (spinner
 **No icon system exists in the repo today** (checked `package.json` and `components/ui/` — only hand-drawn SVGs are `logo-mark.tsx` and `ring.tsx`, both bespoke brand marks, not a general icon set).
 
 Proposed: **`lucide-react`**.
+
 - Tree-shakeable named imports (`import { Trash2 } from 'lucide-react'`) — only used icons ship in the bundle.
 - Pure SVG components, no extra CSS/font loading, no runtime CSS-in-JS — fits the existing Tailwind-only styling approach.
 - Already the de-facto default for shadcn/Tailwind stacks, wide icon coverage, MIT licensed, actively maintained.
@@ -33,8 +34,8 @@ Proposed: **`lucide-react`**.
 ```tsx
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
-  icon?: LucideIcon;       // e.g. Plus, Trash2 — rendered at 16px, leading edge
-  loading?: boolean;       // shows Loader2 (animate-spin) in place of `icon`, forces disabled
+  icon?: LucideIcon; // e.g. Plus, Trash2 — rendered at 16px, leading edge
+  loading?: boolean; // shows Loader2 (animate-spin) in place of `icon`, forces disabled
 };
 ```
 
@@ -46,47 +47,47 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 ### Already use `<Button>` — migrate to `icon`/`loading` props
 
-| File | Line | Current | New icon | Loading source |
-|---|---|---|---|---|
-| `components/accounts/account-form.tsx` | 106 | `disabled={pending}` + text swap | `Check` (save) / `Plus` (create) — pick by `account ? 'Save changes' : 'Add account'` branch | `loading={pending}` |
-| `components/categories/categories-view.tsx` | 53 | `disabled={pending}` + text swap | `Plus` | `loading={pending}` |
-| `components/settings/change-password-form.tsx` | 98 | `disabled={pending}` + text swap | `Lock` | `loading={pending}` |
-| `components/import/import-view.tsx` | 233 | `disabled={loading}` + text swap ("Preview") | `Eye` | `loading={loading}` |
-| `components/import/import-view.tsx` | 255 | `disabled={loading}` + text swap ("Import N rows") | `Upload` | `loading={loading}` |
+| File                                           | Line | Current                                            | New icon                                                                                     | Loading source      |
+| ---------------------------------------------- | ---- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------- |
+| `components/accounts/account-form.tsx`         | 106  | `disabled={pending}` + text swap                   | `Check` (save) / `Plus` (create) — pick by `account ? 'Save changes' : 'Add account'` branch | `loading={pending}` |
+| `components/categories/categories-view.tsx`    | 53   | `disabled={pending}` + text swap                   | `Plus`                                                                                       | `loading={pending}` |
+| `components/settings/change-password-form.tsx` | 98   | `disabled={pending}` + text swap                   | `Lock`                                                                                       | `loading={pending}` |
+| `components/import/import-view.tsx`            | 233  | `disabled={loading}` + text swap ("Preview")       | `Eye`                                                                                        | `loading={loading}` |
+| `components/import/import-view.tsx`            | 255  | `disabled={loading}` + text swap ("Import N rows") | `Upload`                                                                                     | `loading={loading}` |
 
 ### Raw `<button className="bg-iris ...">` duplicating primary style — migrate to `<Button>` itself, then apply icon/loading
 
-| File | Line | Action | New icon |
-|---|---|---|---|
-| `components/budgets/budgets-view.tsx` | 109 | primary submit (set budget) | `Check` |
-| `components/categorize/categorize-view.tsx` | 106 | "Accept all" | `CheckCheck` |
-| `components/categorize/categorize-view.tsx` | 160 | per-row confirm (dropdown-driven) | `Check` — note: this button is likely removed/reshaped by the `categorize-dropdown-skip` branch; coordinate or skip if that branch lands first |
-| `components/rules/rules-view.tsx` | 92 | primary submit (add rule) | `Plus` |
-| `components/transactions/transaction-form.tsx` | 229 | primary submit (save transaction) | `Check` |
-| `components/auth/login-form.tsx` | 41 | sign in | `LogIn` |
+| File                                           | Line | Action                            | New icon                                                                                                                                       |
+| ---------------------------------------------- | ---- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/budgets/budgets-view.tsx`          | 109  | primary submit (set budget)       | `Check`                                                                                                                                        |
+| `components/categorize/categorize-view.tsx`    | 106  | "Accept all"                      | `CheckCheck`                                                                                                                                   |
+| `components/categorize/categorize-view.tsx`    | 160  | per-row confirm (dropdown-driven) | `Check` — note: this button is likely removed/reshaped by the `categorize-dropdown-skip` branch; coordinate or skip if that branch lands first |
+| `components/rules/rules-view.tsx`              | 92   | primary submit (add rule)         | `Plus`                                                                                                                                         |
+| `components/transactions/transaction-form.tsx` | 229  | primary submit (save transaction) | `Check`                                                                                                                                        |
+| `components/auth/login-form.tsx`               | 41   | sign in                           | `LogIn`                                                                                                                                        |
 
 ### Destructive/delete buttons — need icon AND a loading state added (currently no pending state at all, just an immediate `fetch` after `confirm()`)
 
-| File | Line | Action | New icon |
-|---|---|---|---|
-| `components/accounts/accounts-view.tsx` | 76, 83 | delete account row actions | `Trash2` (delete), `Pencil` (edit, if 76/83 is edit+delete pair — verify at implementation) |
-| `components/categories/categories-view.tsx` | 63 | delete category | `Trash2` |
-| `components/transactions/transactions-view.tsx` | 184, 345 | delete transaction / row action | `Trash2` |
-| `components/rules/rules-view.tsx` | 128 | delete rule | `Trash2` |
+| File                                            | Line     | Action                          | New icon                                                                                    |
+| ----------------------------------------------- | -------- | ------------------------------- | ------------------------------------------------------------------------------------------- |
+| `components/accounts/accounts-view.tsx`         | 76, 83   | delete account row actions      | `Trash2` (delete), `Pencil` (edit, if 76/83 is edit+delete pair — verify at implementation) |
+| `components/categories/categories-view.tsx`     | 63       | delete category                 | `Trash2`                                                                                    |
+| `components/transactions/transactions-view.tsx` | 184, 345 | delete transaction / row action | `Trash2`                                                                                    |
+| `components/rules/rules-view.tsx`               | 128      | delete rule                     | `Trash2`                                                                                    |
 
 These currently call `fetch` with no `pending` state — add local `useState` pending per-row (or reuse existing row-level state if present) so the spinner has something to bind to. This is new state, not just a prop rename — call it out in the PR since it's slightly more than a mechanical `Button` swap.
 
 ### Secondary/utility buttons — icon only, no loading needed (synchronous actions)
 
-| File | Line | Action | New icon |
-|---|---|---|---|
-| `components/nav/sidebar.tsx` | 60 | sign out | `LogOut` |
-| `components/dashboard/period-popover.tsx` | 59, 70, 80, 101 | period nav (prev/next/open/select) | `ChevronLeft` / `ChevronRight` / `Calendar` (verify per-button role at implementation) |
-| `components/transactions/period-picker.tsx` | 37, 52, 61 | period nav | `ChevronLeft` / `ChevronRight` |
-| `components/settings/settings-view.tsx` | 69, 89 | settings actions (verify role at implementation) | TBD — read file at implementation time |
-| `components/transactions/transaction-form.tsx` | 116, 128, 204, 236 | cancel / secondary actions | `X` (cancel/close), others TBD — read file at implementation time |
-| `components/ui/modal.tsx`, `components/ui/drawer.tsx` | close (×) | already icon-only (uses a literal `×` character) | `X` — replace the literal glyph with the icon component for visual consistency |
-| `components/ui/toast.tsx` | dismiss | check current glyph, likely same `×` treatment | `X` |
+| File                                                  | Line               | Action                                           | New icon                                                                               |
+| ----------------------------------------------------- | ------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `components/nav/sidebar.tsx`                          | 60                 | sign out                                         | `LogOut`                                                                               |
+| `components/dashboard/period-popover.tsx`             | 59, 70, 80, 101    | period nav (prev/next/open/select)               | `ChevronLeft` / `ChevronRight` / `Calendar` (verify per-button role at implementation) |
+| `components/transactions/period-picker.tsx`           | 37, 52, 61         | period nav                                       | `ChevronLeft` / `ChevronRight`                                                         |
+| `components/settings/settings-view.tsx`               | 69, 89             | settings actions (verify role at implementation) | TBD — read file at implementation time                                                 |
+| `components/transactions/transaction-form.tsx`        | 116, 128, 204, 236 | cancel / secondary actions                       | `X` (cancel/close), others TBD — read file at implementation time                      |
+| `components/ui/modal.tsx`, `components/ui/drawer.tsx` | close (×)          | already icon-only (uses a literal `×` character) | `X` — replace the literal glyph with the icon component for visual consistency         |
+| `components/ui/toast.tsx`                             | dismiss            | check current glyph, likely same `×` treatment   | `X`                                                                                    |
 
 ## Checklist
 

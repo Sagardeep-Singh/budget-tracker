@@ -1,5 +1,6 @@
 'use client';
 
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { Period } from '@/lib/statement';
 
@@ -55,7 +56,7 @@ export const PeriodPicker = ({
           aria-label="Previous period"
           className="hover:bg-paper-raised hover:text-ink rounded-full px-2 py-1"
         >
-          ‹
+          <ChevronLeft size={16} />
         </button>
         <span className="font-money tabular-nums">{formatPeriod(period)}</span>
         <button
@@ -64,7 +65,7 @@ export const PeriodPicker = ({
           aria-label="Next period"
           className="hover:bg-paper-raised hover:text-ink rounded-full px-2 py-1"
         >
-          ›
+          <ChevronRight size={16} />
         </button>
       </div>
     )}

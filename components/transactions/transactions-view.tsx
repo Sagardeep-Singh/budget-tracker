@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Plus, Trash2, Upload } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
 import { Select } from '@/components/ui/field';
@@ -182,16 +184,16 @@ export const TransactionsView = ({
           ))}
         </Select>
         <div className="flex-1" />
-        <Link href="/import" className="border-line text-ink rounded-full border px-4 py-2 text-sm">
+        <Link
+          href="/import"
+          className="border-line text-ink inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm"
+        >
+          <Upload size={15} />
           Import CSV
         </Link>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="bg-iris text-paper-raised rounded-full px-4 py-2 text-sm font-semibold"
-        >
+        <Button type="button" onClick={openCreate} icon={Plus} className="px-4 py-2">
           Add transaction
-        </button>
+        </Button>
       </div>
 
       {accountFilter && (
@@ -349,8 +351,9 @@ export const TransactionsView = ({
             <button
               type="button"
               onClick={() => setConfirmDeleteId(detail.id)}
-              className="border-line text-rose mt-2 w-full rounded-full border py-3 text-[14px]"
+              className="border-line text-rose mt-2 flex w-full items-center justify-center gap-1.5 rounded-full border py-3 text-[14px]"
             >
+              <Trash2 size={15} />
               Delete
             </button>
           </>

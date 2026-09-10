@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Check, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input, Label, Select } from '@/components/ui/field';
 import { cn } from '@/lib/cn';
 import type { FrontendAccount } from '@/lib/services/accounts';
@@ -226,20 +228,18 @@ export const TransactionForm = ({
         </p>
       )}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="bg-iris text-paper-raised flex-1 rounded-full py-3 text-[15px] font-semibold disabled:opacity-50"
-        >
-          {pending ? 'Saving…' : transaction ? 'Save changes' : 'Save transaction'}
-        </button>
-        <button
+        <Button type="submit" icon={Check} loading={pending} className="flex-1 py-3 text-[15px]">
+          {transaction ? 'Save changes' : 'Save transaction'}
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
           onClick={onDone}
-          className="border-line text-ink-muted rounded-full border px-4.5 py-3 text-[15px]"
+          icon={X}
+          className="px-4.5 py-3 text-[15px]"
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

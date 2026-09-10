@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Lock } from 'lucide-react';
 import { signOutAfterPasswordChange } from '@/lib/auth/actions';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
@@ -95,8 +96,8 @@ export const ChangePasswordForm = (): React.ReactElement => {
           {error}
         </p>
       )}
-      <Button type="submit" disabled={pending} className="self-start">
-        {pending ? 'Changing…' : 'Change password'}
+      <Button type="submit" icon={Lock} loading={pending} className="self-start">
+        Change password
       </Button>
     </form>
   );

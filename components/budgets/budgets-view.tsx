@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Check, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { Ring } from '@/components/ui/ring';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -112,13 +114,9 @@ export const BudgetsView = ({
               required
             />
           </div>
-          <button
-            type="submit"
-            disabled={pending}
-            className="bg-iris text-paper-raised rounded-full px-4.5 py-2.5 text-sm font-semibold disabled:opacity-50"
-          >
+          <Button type="submit" icon={Check} loading={pending} className="px-4.5 py-2.5">
             Set budget
-          </button>
+          </Button>
         </form>
       )}
       {error && <p className="text-rose mt-2 text-sm">{error}</p>}
@@ -163,8 +161,9 @@ export const BudgetsView = ({
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteId(budget.id)}
-                      className="text-ink-muted text-xs"
+                      className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
                     >
+                      <Trash2 size={14} />
                       Remove
                     </button>
                   </div>
