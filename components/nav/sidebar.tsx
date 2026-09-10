@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { LogOut, Plus } from 'lucide-react';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { getNavCounts } from '@/lib/services/nav';
 import { listAccounts } from '@/lib/services/accounts';
@@ -31,7 +32,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
         href="?overlay=add"
         className="bg-iris text-paper-raised mb-5 flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
       >
-        <span className="text-base leading-none">+</span> Log a transaction
+        <Plus size={16} /> Log a transaction
       </Link>
 
       <SidebarNav items={navItems} />
@@ -57,7 +58,11 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
             </div>
           ))}
           <form action={signOutAction} className="pt-3.5">
-            <button type="submit" className="text-ink-muted text-xs">
+            <button
+              type="submit"
+              className="text-ink-muted hover:text-ink focus-visible:outline-iris inline-flex cursor-pointer items-center gap-1 rounded text-xs transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <LogOut size={13} />
               Sign out
             </button>
           </form>

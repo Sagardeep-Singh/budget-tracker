@@ -1,7 +1,9 @@
 'use client';
 
 import { useActionState } from 'react';
+import { LogIn } from 'lucide-react';
 import { signInAction } from '@/lib/auth/actions';
+import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 
 export const LoginForm = (): React.ReactElement => {
@@ -38,13 +40,14 @@ export const LoginForm = (): React.ReactElement => {
           {error}
         </p>
       )}
-      <button
+      <Button
         type="submit"
-        disabled={pending}
-        className="bg-iris text-paper-raised mt-2 w-full rounded-full py-3.5 text-[15px] font-semibold disabled:opacity-50"
+        icon={LogIn}
+        loading={pending}
+        className="mt-2 w-full py-3.5 text-[15px]"
       >
-        {pending ? 'Signing in…' : 'Continue'}
-      </button>
+        Continue
+      </Button>
     </form>
   );
 };

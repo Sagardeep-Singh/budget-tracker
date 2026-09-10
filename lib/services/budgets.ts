@@ -22,11 +22,14 @@ const monthRange = (month: number): { start: Date; end: Date } => {
 export const listBudgets = async (userId: string, month: number): Promise<FrontendBudget[]> => {
   const { start, end } = monthRange(month);
 
-  const [budgets, spentByCategory] = await Promise.all([
+  const [rows, spentByCategory] = await Promise.all([
+    // Budgets repeat month over month until changed: pull every row at or
+    // before the requested month and keep, per category, only the most
+    // recent one — that's the value in effect for this month.
     prisma.budget.findMany({
-      where: { userId, month },
+      where: { userId, month: { lte: month } },
       include: { category: { select: { name: true } } },
-      orderBy: { category: { name: 'asc' } },
+      orderBy: [{ categoryId: 'asc' }, { month: 'desc' }],
     }),
     prisma.transaction.groupBy({
       by: ['categoryId'],
@@ -35,18 +38,27 @@ export const listBudgets = async (userId: string, month: number): Promise<Fronte
     }),
   ]);
 
+  const effectiveByCategory = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (!effectiveByCategory.has(row.categoryId)) {
+      effectiveByCategory.set(row.categoryId, row);
+    }
+  }
+
   const spentMap = new Map(
     spentByCategory.map((row) => [row.categoryId as string, Number(row._sum.amount ?? 0)]),
   );
 
-  return budgets.map((budget) => ({
-    id: budget.id,
-    categoryId: budget.categoryId,
-    categoryName: budget.category.name,
-    month: budget.month,
-    limitAmount: Number(budget.limitAmount).toFixed(2),
-    spent: (spentMap.get(budget.categoryId) ?? 0).toFixed(2),
-  }));
+  return [...effectiveByCategory.values()]
+    .sort((a, b) => a.category.name.localeCompare(b.category.name))
+    .map((budget) => ({
+      id: budget.id,
+      categoryId: budget.categoryId,
+      categoryName: budget.category.name,
+      month: budget.month,
+      limitAmount: Number(budget.limitAmount).toFixed(2),
+      spent: (spentMap.get(budget.categoryId) ?? 0).toFixed(2),
+    }));
 };
 
 export const createBudget = async (

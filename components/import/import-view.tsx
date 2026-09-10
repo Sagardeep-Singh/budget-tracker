@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Papa from 'papaparse';
+import { Eye, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label, Select } from '@/components/ui/field';
@@ -230,8 +231,8 @@ export const ImportView = ({
               </Select>
             </div>
             <div className="flex items-end">
-              <Button type="button" onClick={handlePreview} disabled={loading}>
-                {loading ? 'Loading…' : 'Preview'}
+              <Button type="button" onClick={handlePreview} icon={Eye} loading={loading}>
+                Preview
               </Button>
             </div>
           </div>
@@ -252,8 +253,13 @@ export const ImportView = ({
               {preview.filter((r) => r.duplicate).length} possible duplicate
               {preview.filter((r) => r.duplicate).length === 1 ? '' : 's'}
             </div>
-            <Button onClick={handleCommit} disabled={loading || preview.every((r) => !r.include)}>
-              {loading ? 'Importing…' : `Import ${preview.filter((r) => r.include).length} rows`}
+            <Button
+              onClick={handleCommit}
+              icon={Upload}
+              loading={loading}
+              disabled={preview.every((r) => !r.include)}
+            >
+              Import {preview.filter((r) => r.include).length} rows
             </Button>
           </div>
           {preview.map((row, i) => (

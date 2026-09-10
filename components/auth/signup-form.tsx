@@ -1,7 +1,9 @@
 'use client';
 
 import { useActionState } from 'react';
+import { UserPlus } from 'lucide-react';
 import { signUpAction } from '@/lib/auth/actions';
+import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 
 export const SignUpForm = (): React.ReactElement => {
@@ -50,13 +52,14 @@ export const SignUpForm = (): React.ReactElement => {
           {error}
         </p>
       )}
-      <button
+      <Button
         type="submit"
-        disabled={pending}
-        className="bg-iris text-paper-raised mt-2 w-full rounded-full py-3.5 text-[15px] font-semibold disabled:opacity-50"
+        icon={UserPlus}
+        loading={pending}
+        className="mt-2 w-full py-3.5 text-[15px]"
       >
-        {pending ? 'Creating account…' : 'Create account'}
-      </button>
+        Create account
+      </Button>
     </form>
   );
 };

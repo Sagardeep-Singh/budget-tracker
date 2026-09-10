@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const FOCUSABLE_SELECTOR =
@@ -87,9 +88,9 @@ export const Drawer = ({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="text-ink-muted focus-visible:ring-iris rounded text-lg focus-visible:ring-2 focus-visible:outline-none"
+          className="text-ink-muted focus-visible:ring-iris rounded focus-visible:ring-2 focus-visible:outline-none"
         >
-          ×
+          <X size={18} />
         </button>
       </div>
       {children}

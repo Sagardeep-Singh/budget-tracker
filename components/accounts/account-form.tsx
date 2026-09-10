@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Check, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Label, Select } from '@/components/ui/field';
 import type { FrontendAccount } from '@/lib/services/accounts';
@@ -103,8 +104,8 @@ export const AccountForm = ({
           {error}
         </p>
       )}
-      <Button type="submit" disabled={pending}>
-        {pending ? 'Saving…' : account ? 'Save changes' : 'Add account'}
+      <Button type="submit" icon={account ? Check : Plus} loading={pending}>
+        {account ? 'Save changes' : 'Add account'}
       </Button>
     </form>
   );

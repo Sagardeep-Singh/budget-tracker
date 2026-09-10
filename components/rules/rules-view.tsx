@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Plus, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
@@ -51,64 +54,77 @@ export const RulesView = ({
 
   return (
     <div className="mt-6.5">
-      <form
-        onSubmit={handleAdd}
-        className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-4.5"
-      >
-        <div className="flex-1">
-          <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-            When the description contains
-          </label>
-          <Input
-            className="rounded-[9px]"
-            value={matchText}
-            onChange={(e) => setMatchText(e.target.value)}
-            placeholder="e.g. superstore"
-            required
-          />
-        </div>
-        <div className="w-[200px]">
-          <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-            Categorize as
-          </label>
-          <Select
-            className="rounded-[9px]"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            required
+      {categories.length === 0 ? (
+        <div className="border-line bg-paper-raised flex flex-col items-center gap-3 rounded-2xl border border-dashed p-8 text-center">
+          <p className="text-ink-muted text-sm">
+            You don&apos;t have any categories yet. Add one to start writing rules.
+          </p>
+          <Link
+            href="/categories"
+            className="bg-iris text-paper-raised focus-visible:outline-iris inline-flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+            <Plus size={16} />
+            Add categories
+          </Link>
         </div>
-        <div className="w-20">
-          <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-            Priority
-          </label>
-          <Input
-            className="rounded-[9px] font-mono"
-            type="number"
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={pending}
-          className="bg-iris text-paper-raised rounded-full px-4.5 py-2.5 text-sm font-semibold disabled:opacity-50"
+      ) : (
+        <form
+          onSubmit={handleAdd}
+          className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-4.5"
         >
-          Add rule
-        </button>
-      </form>
+          <div className="flex-1">
+            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+              When the description contains
+            </label>
+            <Input
+              className="rounded-[9px]"
+              value={matchText}
+              onChange={(e) => setMatchText(e.target.value)}
+              placeholder="e.g. superstore"
+              required
+            />
+          </div>
+          <div className="w-[200px]">
+            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+              Categorize as
+            </label>
+            <Select
+              className="rounded-[9px]"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              required
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="w-20">
+            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+              Priority
+            </label>
+            <Input
+              className="rounded-[9px] font-mono"
+              type="number"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+            />
+          </div>
+          <Button type="submit" icon={Plus} loading={pending} className="px-4.5 py-2.5">
+            Add rule
+          </Button>
+        </form>
+      )}
       {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
       {initialRules.length === 0 ? (
-        <p className="text-ink-muted mt-6 text-sm">
-          No rules yet. Everything falls back to no category.
-        </p>
+        categories.length > 0 && (
+          <p className="text-ink-muted mt-6 text-sm">
+            No rules yet. Everything falls back to no category.
+          </p>
+        )
       ) : (
         <div className="border-line bg-paper-raised mt-4.5 rounded-2xl border px-6">
           <div className="border-line text-ink-muted flex items-center gap-5 border-b py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
@@ -134,8 +150,9 @@ export const RulesView = ({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteId(rule.id)}
-                  className="text-ink-muted text-[12.5px]"
+                  className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-[12.5px]"
                 >
+                  <Trash2 size={13} />
                   Delete
                 </button>
               </span>

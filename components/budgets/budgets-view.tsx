@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { Ring } from '@/components/ui/ring';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -15,11 +18,20 @@ const daysInMonth = (month: number): number => {
   return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 };
 
+const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'short',
+  year: 'numeric',
+});
+
+const monthLabel = (month: number): string =>
+  MONTH_LABEL.format(new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1)));
+
 const paceText = (limit: number, spent: number, month: number): string => {
   const now = new Date();
-  const isCurrentMonth = month === now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
+  const currentMonth = now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
   const total = daysInMonth(month);
-  const elapsed = isCurrentMonth ? now.getUTCDate() : total;
+  const elapsed = month === currentMonth ? now.getUTCDate() : month > currentMonth ? 0 : total;
   const remaining = Math.max(total - elapsed, 0);
   if (remaining === 0) return spent > limit ? 'Over for the month' : 'On track for the month';
   const perDay = Math.max(limit - spent, 0) / remaining;
@@ -42,11 +54,57 @@ export const BudgetsView = ({
   const available = categories.filter((c) => !budgetedCategoryIds.has(c.id));
 
   const [categoryId, setCategoryId] = useState(available[0]?.id ?? '');
+  // `available` is derived from props that change on month navigation, but
+  // `categoryId` is only initialized once — fall back when it no longer
+  // points at an available category instead of trusting the stale value.
+  const selectedCategoryId = available.some((c) => c.id === categoryId)
+    ? categoryId
+    : (available[0]?.id ?? '');
   const [limitAmount, setLimitAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [editPending, setEditPending] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const startEdit = (budget: FrontendBudget): void => {
+    setEditingId(budget.id);
+    setEditValue(budget.limitAmount);
+    setEditError(null);
+  };
+
+  const cancelEdit = (): void => {
+    setEditingId(null);
+    setEditError(null);
+  };
+
+  const handleEditSave = async (budget: FrontendBudget): Promise<void> => {
+    setEditPending(true);
+    setEditError(null);
+    // A budget carried forward from an earlier month has a different id/month
+    // than the one being viewed — editing it starts a new value from this
+    // month forward instead of rewriting history.
+    const startsNewMonth = budget.month !== month;
+    const res = await fetch(startsNewMonth ? '/api/budgets' : `/api/budgets/${budget.id}`, {
+      method: startsNewMonth ? 'POST' : 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        startsNewMonth
+          ? { categoryId: budget.categoryId, month, limitAmount: editValue }
+          : { limitAmount: editValue },
+      ),
+    });
+    setEditPending(false);
+    if (!res.ok) {
+      setEditError('Could not update that budget.');
+      return;
+    }
+    setEditingId(null);
+    router.refresh();
+  };
 
   const handleAdd = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -55,7 +113,7 @@ export const BudgetsView = ({
     const res = await fetch('/api/budgets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryId, limitAmount, month }),
+      body: JSON.stringify({ categoryId: selectedCategoryId, limitAmount, month }),
     });
     setPending(false);
     if (!res.ok) {
@@ -65,6 +123,8 @@ export const BudgetsView = ({
     setLimitAmount('');
     router.refresh();
   };
+
+  const confirmDeletingBudget = initialBudgets.find((b) => b.id === confirmDeleteId) ?? null;
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
@@ -76,55 +136,68 @@ export const BudgetsView = ({
 
   return (
     <div className="mt-6.5">
-      {available.length > 0 && (
-        <form
-          onSubmit={handleAdd}
-          className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-5"
-        >
-          <div className="flex-1">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Category
-            </label>
-            <Select
-              className="rounded-[9px]"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              required
-            >
-              {available.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="w-[150px]">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Monthly limit
-            </label>
-            <Input
-              className="rounded-[9px] font-mono"
-              type="number"
-              step="0.01"
-              placeholder="0.00"
-              value={limitAmount}
-              onChange={(e) => setLimitAmount(e.target.value)}
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={pending}
-            className="bg-iris text-paper-raised rounded-full px-4.5 py-2.5 text-sm font-semibold disabled:opacity-50"
+      {categories.length === 0 ? (
+        <div className="border-line bg-paper-raised flex flex-col items-center gap-3 rounded-2xl border border-dashed p-8 text-center">
+          <p className="text-ink-muted text-sm">
+            You don&apos;t have any categories yet. Add one to start setting budgets.
+          </p>
+          <Link
+            href="/categories"
+            className="bg-iris text-paper-raised focus-visible:outline-iris inline-flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
-            Set budget
-          </button>
-        </form>
+            <Plus size={16} />
+            Add categories
+          </Link>
+        </div>
+      ) : (
+        available.length > 0 && (
+          <form
+            onSubmit={handleAdd}
+            className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-5"
+          >
+            <div className="flex-1">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                Category
+              </label>
+              <Select
+                className="rounded-[9px]"
+                value={selectedCategoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                required
+              >
+                {available.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="w-[150px]">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                Monthly limit
+              </label>
+              <Input
+                className="rounded-[9px] font-mono"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={limitAmount}
+                onChange={(e) => setLimitAmount(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" icon={Check} loading={pending} className="px-4.5 py-2.5">
+              Set budget
+            </Button>
+          </form>
+        )
       )}
       {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
       {initialBudgets.length === 0 ? (
-        <p className="text-ink-muted mt-6 text-sm">No budgets set for this month yet.</p>
+        categories.length > 0 && (
+          <p className="text-ink-muted mt-6 text-sm">No budgets set for this month yet.</p>
+        )
       ) : (
         <div className="mt-4.5 grid grid-cols-2 gap-4">
           {initialBudgets.map((budget) => {
@@ -155,19 +228,68 @@ export const BudgetsView = ({
                         : `$${(limit - spent).toFixed(2)} left`}
                     </span>
                   </div>
-                  <div className="mt-2.5 font-mono text-[19px] tracking-[-0.02em] whitespace-nowrap">
-                    ${spent.toFixed(2)} of ${limit.toFixed(2)}
-                  </div>
-                  <div className="mt-2.5 flex items-baseline justify-between">
-                    <span className="text-ink-muted text-xs">{paceText(limit, spent, month)}</span>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(budget.id)}
-                      className="text-ink-muted text-xs"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                  {editingId === budget.id ? (
+                    <div className="mt-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          className="rounded-[9px] font-mono"
+                          type="number"
+                          step="0.01"
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleEditSave(budget)}
+                          disabled={editPending}
+                          className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                          aria-label="Save budget"
+                        >
+                          <Check size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={editPending}
+                          className="text-ink-muted hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                          aria-label="Cancel edit"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                      {editError && <p className="text-rose mt-1.5 text-xs">{editError}</p>}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-2.5 font-mono text-[19px] tracking-[-0.02em] whitespace-nowrap">
+                        ${spent.toFixed(2)} of ${limit.toFixed(2)}
+                      </div>
+                      <div className="mt-2.5 flex items-baseline justify-between">
+                        <span className="text-ink-muted text-xs">
+                          {paceText(limit, spent, month)}
+                        </span>
+                        <span className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEdit(budget)}
+                            className="text-ink-muted hover:text-iris inline-flex items-center gap-1 text-xs"
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(budget.id)}
+                            className="text-ink-muted hover:text-rose inline-flex items-center gap-1 text-xs"
+                          >
+                            <Trash2 size={14} />
+                            Remove
+                          </button>
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -177,7 +299,11 @@ export const BudgetsView = ({
       <ConfirmDialog
         open={confirmDeleteId !== null}
         title="Remove budget"
-        description="Remove this budget for the month? You can set a new one anytime."
+        description={
+          confirmDeletingBudget
+            ? `Clears the ${confirmDeletingBudget.categoryName} budget from ${monthLabel(confirmDeletingBudget.month)} onward, including past months. You can set a new one anytime.`
+            : ''
+        }
         confirmLabel="Remove"
         pending={deletePending}
         onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}

@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { CheckCheck, SkipForward } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
 import { Toast } from '@/components/ui/toast';
 import type { CategorizeQueueRow } from '@/lib/services/categorize';
@@ -116,14 +118,15 @@ export const CategorizeView = ({
             {reviewOne ? 'Show all' : 'Review one by one'}
           </button>
           {matched.length > 0 && (
-            <button
+            <Button
               type="button"
               onClick={acceptAll}
-              disabled={pending}
-              className="bg-iris text-paper-raised rounded-full px-4 py-2 text-[13.5px] font-semibold disabled:opacity-50"
+              icon={CheckCheck}
+              loading={pending}
+              className="px-4 py-2 text-[13.5px]"
             >
               Accept all {matched.length} match{matched.length === 1 ? '' : 'es'}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -167,14 +170,16 @@ export const CategorizeView = ({
                   </option>
                 ))}
               </Select>
-              <button
+              <Button
                 type="button"
-                disabled={pending}
+                variant="secondary"
                 onClick={() => void skip(row)}
-                className="border-line text-ink-muted rounded-full border px-3 py-2 text-[13px] disabled:opacity-50"
+                icon={SkipForward}
+                loading={pending}
+                className="px-3 py-2 text-[13px]"
               >
                 Skip
-              </button>
+              </Button>
             </div>
           </div>
         ))}

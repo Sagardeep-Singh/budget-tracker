@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AccountForm } from '@/components/accounts/account-form';
@@ -81,15 +82,17 @@ export const AccountsView = ({
               <button
                 type="button"
                 onClick={() => openEdit(account)}
-                className="border-line text-ink rounded-full border px-3.5 py-2 text-[13px]"
+                className="border-line text-ink inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px]"
               >
+                <Pencil size={13} />
                 Edit
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDeleteId(account.id)}
-                className="text-ink-muted px-1 py-2 text-[13px]"
+                className="text-ink-muted hover:text-rose inline-flex items-center gap-1.5 px-1 py-2 text-[13px]"
               >
+                <Trash2 size={13} />
                 Delete
               </button>
             </div>
@@ -98,10 +101,10 @@ export const AccountsView = ({
         <button
           type="button"
           onClick={openCreate}
-          className="border-line flex min-h-[190px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed"
+          className="border-ink-muted/40 hover:border-iris hover:text-iris focus-visible:outline-iris text-ink-muted flex min-h-[190px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          <span className="text-ink-muted text-[26px] leading-none">+</span>
-          <span className="text-ink-muted text-sm font-medium">Add an account</span>
+          <Plus size={22} />
+          <span className="text-sm font-medium">Add an account</span>
         </button>
       </div>
 

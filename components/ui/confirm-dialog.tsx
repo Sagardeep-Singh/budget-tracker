@@ -1,5 +1,6 @@
 'use client';
 
+import { Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
@@ -33,10 +34,11 @@ export const ConfirmDialog = ({
       <Button
         type="button"
         variant={danger ? 'danger' : 'primary'}
+        icon={danger ? Trash2 : undefined}
         onClick={onConfirm}
-        disabled={pending}
+        loading={pending}
       >
-        {pending ? 'Working…' : confirmLabel}
+        {confirmLabel}
       </Button>
     </div>
   </Modal>
