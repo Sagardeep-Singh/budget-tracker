@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/db/prisma';
+import { provisionDefaultsForUser } from '../lib/services/defaults';
 
 const main = async (): Promise<void> => {
   const email = process.env.ADMIN_EMAIL;
@@ -10,12 +11,17 @@ const main = async (): Promise<void> => {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const existing = await prisma.user.findUnique({ where: { email } });
 
   const user = await prisma.user.upsert({
     where: { email },
     update: { passwordHash },
     create: { email, passwordHash },
   });
+
+  if (!existing) {
+    await provisionDefaultsForUser(user.id);
+  }
 
   console.log(`Admin user ready: ${user.email}`);
 };

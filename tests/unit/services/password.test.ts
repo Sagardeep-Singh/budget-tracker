@@ -35,6 +35,15 @@ describe('changePassword', () => {
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
+  it('rejects a change for a Google-only account with no password', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ passwordHash: null });
+
+    await expect(
+      changePassword('user-1', { currentPassword: CURRENT, newPassword: NEW }),
+    ).rejects.toThrow('This account signed up with Google and has no password to change.');
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
   it('rejects an incorrect current password', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ passwordHash: CURRENT_HASH });
 
