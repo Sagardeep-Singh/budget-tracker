@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Modal } from '@/components/ui/modal';
 import { Drawer } from '@/components/ui/drawer';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
@@ -315,7 +314,7 @@ export const TransactionsView = ({
         })
       )}
 
-      <Modal
+      <Drawer
         key={`dialog-${dialogKey}`}
         open={open}
         onClose={() => setOpen(false)}
@@ -326,7 +325,7 @@ export const TransactionsView = ({
           categories={categories}
           onDone={() => setOpen(false)}
         />
-      </Modal>
+      </Drawer>
 
       <Drawer
         key={`drawer-${drawerKey}`}
