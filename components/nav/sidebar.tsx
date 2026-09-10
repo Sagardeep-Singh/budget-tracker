@@ -23,7 +23,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
   ];
 
   return (
-    <nav className="border-line bg-paper-raised flex w-60 shrink-0 flex-col border-r px-4 py-6.5">
+    <nav className="border-line bg-paper-raised sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r px-4 py-6.5">
       <div className="font-display text-ink mb-5.5 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight">
         <LogoMark size={22} />
         Ledger
@@ -35,9 +35,11 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
         <Plus size={16} /> Log a transaction
       </Link>
 
-      <SidebarNav items={navItems} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <SidebarNav items={navItems} />
+      </div>
 
-      <div className="border-line mt-auto border-t pt-6">
+      <div className="border-line mt-auto shrink-0 border-t pt-6">
         <div className="px-1">
           <div className="text-ink-muted text-[11px] font-semibold tracking-[0.08em] uppercase">
             Accounts
