@@ -14,15 +14,15 @@ Every primary nav item in `components/nav/sidebar.tsx` gets a leading icon, matc
 
 ## Icon-per-item mapping
 
-| Label | Icon (lucide-react name) | Notes |
-|---|---|---|
-| Overview | `LayoutDashboard` | matches "dashboard" route name |
-| Transactions | `Receipt` | consistent with money/ledger entries |
-| Categorize | `Tag` | categorization action |
-| Budgets | `PiggyBank` | budget/savings connotation |
-| Accounts | `Wallet` | bank/account balance |
-| Rules | `ListFilter` | matching rule/filter logic |
-| Settings | `Settings` | standard gear icon |
+| Label        | Icon (lucide-react name) | Notes                                |
+| ------------ | ------------------------ | ------------------------------------ |
+| Overview     | `LayoutDashboard`        | matches "dashboard" route name       |
+| Transactions | `Receipt`                | consistent with money/ledger entries |
+| Categorize   | `Tag`                    | categorization action                |
+| Budgets      | `PiggyBank`              | budget/savings connotation           |
+| Accounts     | `Wallet`                 | bank/account balance                 |
+| Rules        | `ListFilter`             | matching rule/filter logic           |
+| Settings     | `Settings`               | standard gear icon                   |
 
 (Exact icon names to be confirmed against whichever icon set is actually installed — see dependency note below.)
 
