@@ -58,7 +58,10 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
             </div>
           ))}
           <form action={signOutAction} className="pt-3.5">
-            <button type="submit" className="text-ink-muted inline-flex items-center gap-1 text-xs">
+            <button
+              type="submit"
+              className="text-ink-muted hover:text-ink focus-visible:outline-iris inline-flex cursor-pointer items-center gap-1 rounded text-xs transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
               <LogOut size={13} />
               Sign out
             </button>

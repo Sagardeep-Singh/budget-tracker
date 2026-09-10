@@ -101,10 +101,10 @@ export const AccountsView = ({
         <button
           type="button"
           onClick={openCreate}
-          className="border-line flex min-h-[190px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed"
+          className="border-ink-muted/40 hover:border-iris hover:text-iris focus-visible:outline-iris text-ink-muted flex min-h-[190px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
         >
-          <Plus size={22} className="text-ink-muted" />
-          <span className="text-ink-muted text-sm font-medium">Add an account</span>
+          <Plus size={22} />
+          <span className="text-sm font-medium">Add an account</span>
         </button>
       </div>
 
