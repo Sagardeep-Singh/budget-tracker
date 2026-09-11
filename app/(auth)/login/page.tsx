@@ -4,16 +4,16 @@ import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { LogoMark } from '@/components/ui/logo-mark';
 import { Ring } from '@/components/ui/ring';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@/prisma/demo-seed';
-import { isDemoEnabled } from '@/lib/flags';
 
 const googleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+const demoEnabled = process.env.DEMO_ENABLED === 'true';
 
 const LoginPage = async ({
   searchParams,
 }: {
   searchParams: Promise<{ passwordChanged?: string }>;
 }): Promise<React.ReactElement> => {
-  const [{ passwordChanged }, demoEnabled] = await Promise.all([searchParams, isDemoEnabled()]);
+  const { passwordChanged } = await searchParams;
 
   return (
     <>

@@ -23,10 +23,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
-    "@flags-sdk/vercel": "^1.4.8",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
-    "flags": "^4.3.1",
     "lucide-react": "^1.43.0",
     "next": "16.3.4",
     "next-auth": "^5.0.0-beta.32",
