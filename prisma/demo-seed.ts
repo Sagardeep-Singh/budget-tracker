@@ -16,7 +16,7 @@ import { provisionDefaultsForUser, DEFAULT_RULES } from '../lib/services/default
  */
 
 export const DEMO_EMAIL = process.env.DEMO_EMAIL ?? 'demo@ledger.app';
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? 'demopassword123';
+export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? 'demopassword123';
 const MONTHS_BACK = 6;
 
 // mulberry32 — small, fast, seeded PRNG so the dataset is reproducible.

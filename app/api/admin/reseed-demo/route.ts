@@ -12,6 +12,10 @@ import { seedDemoData } from '@/prisma/demo-seed';
  * fixed demo user (DEMO_EMAIL), looked up/created via upsert, and every
  * delete is `where: { userId }` against that same user — there is no
  * global deleteMany here or in seedDemoData.
+ *
+ * Gated on DEMO_ENABLED=true so the demo can be turned off without
+ * removing CRON_SECRET or the cron schedule itself — the cron still
+ * fires, this just no-ops instead of erroring, so it never pages anyone.
  */
 export const GET = async (request: Request): Promise<NextResponse> => {
   const secret = process.env.CRON_SECRET;
@@ -21,6 +25,9 @@ export const GET = async (request: Request): Promise<NextResponse> => {
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (process.env.DEMO_ENABLED !== 'true') {
+    return NextResponse.json({ ok: false, skipped: true, reason: 'DEMO_ENABLED is not true' });
   }
 
   const result = await seedDemoData();
