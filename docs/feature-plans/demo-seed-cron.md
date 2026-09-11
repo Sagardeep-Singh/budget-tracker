@@ -75,7 +75,7 @@ prisma:seed:demo`), kept separate from `demo-seed.ts` so the importable
 ## Checklist
 
 - [x] `prisma/demo-seed.ts` + `prisma/run-demo-seed.ts`, `npm run
-    prisma:seed:demo`
+  prisma:seed:demo`
 - [x] Verified locally against the dev Postgres: 216 transactions, 3
       accounts, 7 categories, 33 rules, 6 budgets, re-run is idempotent
       (deletes-then-regenerates the same demo user, doesn't accumulate)
@@ -84,7 +84,7 @@ prisma:seed:demo`), kept separate from `demo-seed.ts` so the importable
 - [x] `vercel.json` cron entry
 - [x] Login page shows demo credentials when `DEMO_ENABLED=true`
 - [x] `npm run format:fix && npm run lint`, `npx tsc --noEmit`, `npm run
-    test` all clean
+  test` all clean
 
 ## Known follow-ups
 
