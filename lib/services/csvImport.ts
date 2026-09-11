@@ -1,10 +1,33 @@
-import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/db/prisma';
-import { ServiceValidationError } from '@/lib/services/common';
+import { DuplicateFilenameError, ServiceValidationError } from '@/lib/services/common';
 import { matchCategoryRule } from '@/lib/services/categorize';
-import type { CommitImportInput, ImportRowInput } from '@/lib/validators/csv-import';
+import {
+  findActiveBatchByFilename,
+  normalizeFilename,
+  type FrontendImportBatch,
+} from '@/lib/services/importBatches';
+import type {
+  CommitImportInput,
+  ImportRowInput,
+  PreviewImportInput,
+} from '@/lib/validators/csv-import';
 
-export type PreviewRow = ImportRowInput & { categoryName: string | null; duplicate: boolean };
+export type PreviewRow = ImportRowInput & { categoryName: string | null };
+
+export type FilenameWarning = {
+  /** the matched active batch, so the client can name it */
+  batch: FrontendImportBatch;
+  /** this file's submitted row count */
+  submittedRowCount: number;
+  /** decision 5: compare submitted row counts, not post-dedupe ones */
+  rowCountMatches: boolean;
+  dateRangeMatches: boolean;
+};
+
+export type PreviewResult = {
+  rows: PreviewRow[];
+  filenameWarning: FilenameWarning | null;
+};
 
 export type RawImportRow = {
   accountId: string;
@@ -35,23 +58,30 @@ const loadExistingKeys = async (userId: string): Promise<Set<string>> => {
   );
 };
 
+/** min/max transaction date across a set of rows, used for the batch's date range */
+const dateRange = (dates: Date[]): { dateFrom: Date; dateTo: Date } => {
+  const times = dates.map((d) => d.getTime());
+  return { dateFrom: new Date(Math.min(...times)), dateTo: new Date(Math.max(...times)) };
+};
+
 export const previewImport = async (
   userId: string,
-  rawRows: RawImportRow[],
-): Promise<PreviewRow[]> => {
-  const [rules, categories, existingKeys] = await Promise.all([
+  input: PreviewImportInput,
+): Promise<PreviewResult> => {
+  const [rules, categories, existingKeys, conflict] = await Promise.all([
     prisma.categoryRule.findMany({
       where: { userId },
       select: { categoryId: true, matchText: true, priority: true },
     }),
     prisma.category.findMany({ where: { userId }, select: { id: true, name: true } }),
     loadExistingKeys(userId),
+    findActiveBatchByFilename(userId, input.accountId, input.filename),
   ]);
 
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   const seenInBatch = new Set<string>();
 
-  return rawRows.map((row) => {
+  const rows = input.rows.map((row) => {
     const text = `${row.payee ?? ''} ${row.note ?? ''}`;
     const categoryId = matchCategoryRule(rules, text);
     const key = duplicateKey(row);
@@ -73,19 +103,45 @@ export const previewImport = async (
       duplicate,
     };
   });
+
+  // Advisory only (story 2): the warning never excludes or mutates a row.
+  let filenameWarning: FilenameWarning | null = null;
+  if (conflict) {
+    const { dateFrom, dateTo } = dateRange(rows.map((r) => r.date));
+    filenameWarning = {
+      batch: conflict,
+      submittedRowCount: rows.length,
+      rowCountMatches: rows.length === conflict.rowCount,
+      dateRangeMatches:
+        dateFrom.toISOString() === conflict.dateFrom && dateTo.toISOString() === conflict.dateTo,
+    };
+  }
+
+  return { rows, filenameWarning };
 };
 
 export const commitImport = async (
   userId: string,
   input: CommitImportInput,
-): Promise<{ imported: number; skippedDuplicates: number }> => {
-  const accountIds = [...new Set(input.rows.map((r) => r.accountId))];
-  const accounts = await prisma.account.findMany({
-    where: { id: { in: accountIds }, userId },
+): Promise<{ batchId: string | null; imported: number; skippedDuplicates: number }> => {
+  const account = await prisma.account.findFirst({
+    where: { id: input.accountId, userId },
     select: { id: true },
   });
-  if (accounts.length !== accountIds.length) {
-    throw new ServiceValidationError('One or more accounts are invalid');
+  if (!account) {
+    throw new ServiceValidationError('Account not found');
+  }
+
+  // Ordering is normative: the filename gate runs *before* row-level dedupe and
+  // before the zero-row early return. Re-importing an identical file makes every
+  // row a row-level duplicate, which would otherwise return `imported: 0` and never
+  // surface the conflict at all.
+  const conflict = await findActiveBatchByFilename(userId, input.accountId, input.filename);
+  if (conflict && !input.overrideDuplicateFilename) {
+    throw new DuplicateFilenameError(
+      `"${conflict.filename}" was already imported into this account`,
+      conflict,
+    );
   }
 
   // Re-check against the database at commit time, not just whatever the
@@ -98,6 +154,15 @@ export const commitImport = async (
   const seenInBatch = new Set<string>();
   const rowsToImport = requested.filter((row) => {
     const key = duplicateKey(row);
+    if (row.duplicate) {
+      // flagged as a duplicate at preview and still included: an explicit user
+      // override (story 2a), so neither key check applies. Still seeded into
+      // `seenInBatch` so a later non-flagged row with this key dedupes.
+      seenInBatch.add(key);
+      return true;
+    }
+    // not flagged at preview but matching now: stale preview / double submit.
+    // Unchanged protection.
     if (existingKeys.has(key) || seenInBatch.has(key)) return false;
     seenInBatch.add(key);
     return true;
@@ -105,23 +170,44 @@ export const commitImport = async (
   const skippedDuplicates = requested.length - rowsToImport.length;
 
   if (rowsToImport.length === 0) {
-    return { imported: 0, skippedDuplicates };
+    // no batch created, so no filename is reserved (story 1)
+    return { batchId: null, imported: 0, skippedDuplicates };
   }
 
-  const importBatchId = randomUUID();
-  const result = await prisma.transaction.createMany({
-    data: rowsToImport.map((row) => ({
-      userId,
-      accountId: row.accountId,
-      categoryId: row.categoryId ?? null,
-      amount: Math.abs(row.amount),
-      type: row.type,
-      date: row.date,
-      payee: row.payee,
-      note: row.note,
-      importBatchId,
-    })),
+  // metrics span every *submitted* row, including excluded ones, so the preview
+  // comparison against a prior batch is like-for-like (decision 5)
+  const { dateFrom, dateTo } = dateRange(input.rows.map((r) => r.date));
+
+  const { batchId, imported } = await prisma.$transaction(async (tx) => {
+    // batch first: the transactions' foreign key requires it to exist
+    const batch = await tx.importBatch.create({
+      data: {
+        userId,
+        accountId: input.accountId,
+        filename: input.filename,
+        filenameNormalized: normalizeFilename(input.filename),
+        rowCount: input.rows.length,
+        importedCount: rowsToImport.length,
+        skippedDuplicates,
+        dateFrom,
+        dateTo,
+      },
+    });
+    const created = await tx.transaction.createMany({
+      data: rowsToImport.map((row) => ({
+        userId,
+        accountId: row.accountId,
+        categoryId: row.categoryId ?? null,
+        amount: Math.abs(row.amount),
+        type: row.type,
+        date: row.date,
+        payee: row.payee,
+        note: row.note,
+        importBatchId: batch.id,
+      })),
+    });
+    return { batchId: batch.id, imported: created.count };
   });
 
-  return { imported: result.count, skippedDuplicates };
+  return { batchId, imported, skippedDuplicates };
 };

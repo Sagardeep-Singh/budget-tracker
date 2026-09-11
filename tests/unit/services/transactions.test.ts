@@ -16,7 +16,7 @@ const { prismaMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
-const { createTransaction, updateTransaction, skipTransaction } =
+const { createTransaction, updateTransaction, skipTransaction, listTransactions } =
   await import('@/lib/services/transactions');
 
 beforeEach(() => {
@@ -34,9 +34,78 @@ const baseTx = {
   payee: 'Card payment',
   note: null,
   isPayment: true,
+  importBatchId: null,
   account: { name: 'Visa' },
   category: null,
+  importBatch: null,
 };
+
+describe('listTransactions import batch filter', () => {
+  it('filters on importBatchId when a batchId is supplied', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await listTransactions('user-1', { batchId: 'batch-1' });
+
+    expect(prismaMock.transaction.findMany.mock.calls[0][0].where).toEqual({
+      userId: 'user-1',
+      accountId: undefined,
+      categoryId: undefined,
+      importBatchId: 'batch-1',
+      date: { gte: undefined, lte: undefined },
+    });
+  });
+
+  it('leaves importBatchId undefined (never null) when no batchId is supplied', async () => {
+    // a `null` here would silently narrow the list to manually-entered rows only
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await listTransactions('user-1', {});
+
+    const where = prismaMock.transaction.findMany.mock.calls[0][0].where;
+    expect(where.importBatchId).toBeUndefined();
+    expect(where).toEqual({
+      userId: 'user-1',
+      accountId: undefined,
+      categoryId: undefined,
+      importBatchId: undefined,
+      date: { gte: undefined, lte: undefined },
+    });
+  });
+});
+
+describe('listTransactions import batch mapping', () => {
+  it('exposes the batch id and filename for an imported transaction', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        ...baseTx,
+        importBatchId: 'b1',
+        importBatch: { id: 'b1', filename: 'march.csv' },
+      },
+    ]);
+
+    const [result] = await listTransactions('user-1', {});
+
+    expect(result.importBatchId).toBe('b1');
+    expect(result.importBatchFilename).toBe('march.csv');
+  });
+
+  it('leaves both batch fields null for a manually entered transaction', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([baseTx]);
+
+    const [result] = await listTransactions('user-1', {});
+
+    expect(result.importBatchId).toBeNull();
+    expect(result.importBatchFilename).toBeNull();
+  });
+
+  it('still serializes the amount as a fixed-2 string', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([baseTx]);
+
+    const [result] = await listTransactions('user-1', {});
+
+    expect(result.amount).toBe('50.00');
+  });
+});
 
 describe('createTransaction isPayment', () => {
   it('persists isPayment when flagged as a card payment', async () => {

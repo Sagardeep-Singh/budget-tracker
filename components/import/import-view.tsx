@@ -8,10 +8,19 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label, Select } from '@/components/ui/field';
 import { Money } from '@/components/ui/money';
+import { formatDate } from '@/lib/format';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
+import type { FrontendImportBatch } from '@/lib/services/importBatches';
 
 type CsvRow = Record<string, string>;
+
+type FilenameWarning = {
+  batch: FrontendImportBatch;
+  submittedRowCount: number;
+  rowCountMatches: boolean;
+  dateRangeMatches: boolean;
+};
 
 type PreviewRow = {
   accountId: string;
@@ -39,12 +48,15 @@ export const ImportView = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<CsvRow[]>([]);
+  const [fileName, setFileName] = useState('');
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [dateCol, setDateCol] = useState('');
   const [amountCol, setAmountCol] = useState('');
   const [payeeCol, setPayeeCol] = useState('');
   const [noteCol, setNoteCol] = useState('');
   const [preview, setPreview] = useState<PreviewRow[] | null>(null);
+  const [filenameWarning, setFilenameWarning] = useState<FilenameWarning | null>(null);
+  const [duplicateBatch, setDuplicateBatch] = useState<FrontendImportBatch | null>(null);
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState<{
@@ -59,6 +71,9 @@ export const ImportView = ({
     setCommitted(null);
     setPreview(null);
     setError(null);
+    setFilenameWarning(null);
+    setDuplicateBatch(null);
+    setFileName(file.name);
 
     Papa.parse<CsvRow>(file, {
       header: true,
@@ -81,6 +96,8 @@ export const ImportView = ({
     if (!dateCol || !amountCol || !accountId) return;
     setLoading(true);
     setError(null);
+    setFilenameWarning(null);
+    setDuplicateBatch(null);
 
     const rows = rawRows.map((row) => {
       const amount = Number(row[amountCol]);
@@ -97,7 +114,7 @@ export const ImportView = ({
     const res = await fetch('/api/import/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows }),
+      body: JSON.stringify({ accountId, filename: fileName, rows }),
     });
 
     setLoading(false);
@@ -105,7 +122,9 @@ export const ImportView = ({
       setError('Could not preview these rows. Check your column mapping.');
       return;
     }
-    setPreview(await res.json());
+    const data: { rows: PreviewRow[]; filenameWarning: FilenameWarning | null } = await res.json();
+    setPreview(data.rows);
+    setFilenameWarning(data.filenameWarning);
   };
 
   const toggleInclude = (index: number): void => {
@@ -122,24 +141,41 @@ export const ImportView = ({
     setPreview(next);
   };
 
-  const handleCommit = async (): Promise<void> => {
+  // `override` is an argument, not state: `handleFile` resets everything on a new
+  // file, and a persisted override flag would silently carry the previous file's
+  // intent into the next one and skip a 409 it should have hit.
+  const handleCommit = async (override: boolean = false): Promise<void> => {
     if (!preview || committing) return;
     setCommitting(true);
     setLoading(true);
     setError(null);
+    setDuplicateBatch(null);
     const res = await fetch('/api/import/commit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows: preview }),
+      body: JSON.stringify({
+        accountId,
+        filename: fileName,
+        rows: preview,
+        overrideDuplicateFilename: override,
+      }),
     });
     setLoading(false);
     if (!res.ok) {
       setCommitting(false);
+      const body = await res.json().catch(() => null);
+      if (res.status === 409 && body?.code === 'DUPLICATE_FILENAME') {
+        // keep the preview on screen: the rows stay reviewable behind the error
+        setDuplicateBatch(body.batch as FrontendImportBatch);
+        return;
+      }
       setError('Import failed.');
       return;
     }
     const data = await res.json();
     setCommitted(data);
+    setFilenameWarning(null);
+    setDuplicateBatch(null);
 
     // Reset everything so this file can't be re-submitted: another click on
     // "Import" after a successful commit was silently re-importing the same
@@ -147,6 +183,7 @@ export const ImportView = ({
     // moment the first commit landed.
     setHeaders([]);
     setRawRows([]);
+    setFileName('');
     setPreview(null);
     setDateCol('');
     setAmountCol('');
@@ -245,6 +282,37 @@ export const ImportView = ({
 
       {error && <p className="text-rose text-sm">{error}</p>}
 
+      {filenameWarning && (
+        <p className="bg-sky-soft text-sky rounded-lg px-4 py-3 text-sm">
+          A file named &ldquo;{fileName}&rdquo; was already imported into this account on{' '}
+          {formatDate(filenameWarning.batch.createdAt)} ({filenameWarning.batch.rowCount} rows
+          {filenameWarning.rowCountMatches && ', same row count'}
+          {filenameWarning.dateRangeMatches && ', same date range'}). You can still import —
+          duplicate rows will be flagged below.
+        </p>
+      )}
+
+      {duplicateBatch && (
+        <div className="bg-rose-soft border-rose/40 flex flex-col items-start gap-2 rounded-lg border px-4 py-3">
+          <p className="text-rose text-sm font-medium">
+            &ldquo;{duplicateBatch.filename}&rdquo; was already imported into this account on{' '}
+            {formatDate(duplicateBatch.createdAt)}.
+          </p>
+          <p className="text-ink-muted text-xs">
+            {duplicateBatch.rowCount} rows, {duplicateBatch.importedCount} imported.
+          </p>
+          <Button
+            type="button"
+            variant="danger"
+            icon={Upload}
+            loading={loading}
+            onClick={() => handleCommit(true)}
+          >
+            Import anyway
+          </Button>
+        </div>
+      )}
+
       {preview && (
         <Card className="p-0">
           <div className="flex items-center justify-between px-6 py-4">
@@ -254,7 +322,7 @@ export const ImportView = ({
               {preview.filter((r) => r.duplicate).length === 1 ? '' : 's'}
             </div>
             <Button
-              onClick={handleCommit}
+              onClick={() => handleCommit()}
               icon={Upload}
               loading={loading}
               disabled={preview.every((r) => !r.include)}

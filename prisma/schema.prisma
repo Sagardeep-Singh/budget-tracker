@@ -19,6 +19,11 @@ enum TransactionType {
   EXPENSE
 }
 
+enum ImportBatchStatus {
+  ACTIVE
+  UNDONE
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -32,6 +37,7 @@ model User {
   transactions  Transaction[]
   budgets       Budget[]
   categoryRules CategoryRule[]
+  importBatches ImportBatch[]
 }
 
 model Account {
@@ -44,8 +50,9 @@ model Account {
   statementDay    Int?
   createdAt       DateTime    @default(now())
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  importBatches ImportBatch[]
 
   @@index([userId])
 }
@@ -83,14 +90,46 @@ model Transaction {
   skippedAt     DateTime?
   createdAt     DateTime        @default(now())
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
 
   @@index([userId, date])
   @@index([accountId])
   @@index([categoryId])
   @@index([importBatchId])
+}
+
+/// one CSV commit; groups the transactions it created so the whole import can be
+/// listed in history and undone as a unit. `filenameNormalized` is the lowercased,
+/// trimmed `filename` and is what duplicate-import detection compares on.
+model ImportBatch {
+  id                 String            @id @default(cuid())
+  userId             String
+  accountId          String
+  filename           String
+  filenameNormalized String
+  status             ImportBatchStatus @default(ACTIVE)
+  /// count of rows the client submitted in the commit body (pre-dedupe); used for
+  /// the secondary duplicate-import signal, so unrelated dedupe skips don't skew it
+  rowCount           Int
+  /// rows actually inserted (post row-level dedupe)
+  importedCount      Int
+  /// rows dropped by row-level dedupe at commit time
+  skippedDuplicates  Int
+  /// min/max transaction date across the submitted rows; secondary dup signal
+  dateFrom           DateTime
+  dateTo             DateTime
+  createdAt          DateTime          @default(now())
+  undoneAt           DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId, accountId, filenameNormalized])
+  @@index([userId, createdAt])
 }
 
 /// month stored as YYYYMM (e.g. 202603) to keep budgets sortable and

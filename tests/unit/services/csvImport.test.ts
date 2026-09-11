@@ -1,50 +1,94 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { commitImportSchema } from '@/lib/validators/csv-import';
 
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     categoryRule: { findMany: vi.fn() },
     category: { findMany: vi.fn() },
     transaction: { findMany: vi.fn(), createMany: vi.fn() },
-    account: { findMany: vi.fn() },
+    account: { findFirst: vi.fn() },
+    importBatch: { findFirst: vi.fn(), create: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
 const { previewImport, commitImport } = await import('@/lib/services/csvImport');
-const { ServiceValidationError } = await import('@/lib/services/common');
+const { DuplicateFilenameError, ServiceValidationError } = await import('@/lib/services/common');
+
+const activeBatch = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'batch-1',
+  userId: 'user-1',
+  accountId: 'acc-1',
+  filename: 'march.csv',
+  filenameNormalized: 'march.csv',
+  status: 'ACTIVE',
+  rowCount: 1,
+  importedCount: 1,
+  skippedDuplicates: 0,
+  dateFrom: new Date('2026-03-01'),
+  dateTo: new Date('2026-03-01'),
+  createdAt: new Date('2026-04-01'),
+  undoneAt: null,
+  account: { name: 'Visa' },
+  ...overrides,
+});
+
+const commitRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  accountId: 'acc-1',
+  date: new Date('2026-03-01'),
+  amount: 42,
+  type: 'EXPENSE' as const,
+  payee: 'Coffee Shop',
+  include: true,
+  duplicate: false,
+  ...overrides,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const commit = (input: any): ReturnType<typeof commitImport> => commitImport('user-1', input);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const preview = (input: any): ReturnType<typeof previewImport> => previewImport('user-1', input);
 
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.transaction.findMany.mockResolvedValue([]);
+  prismaMock.categoryRule.findMany.mockResolvedValue([]);
+  prismaMock.category.findMany.mockResolvedValue([]);
+  // no filename conflict unless a test says otherwise
+  prismaMock.importBatch.findFirst.mockResolvedValue(null);
+  prismaMock.importBatch.create.mockResolvedValue({ id: 'batch-new' });
+  prismaMock.$transaction.mockImplementation(
+    async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock),
+  );
 });
 
 describe('previewImport', () => {
   it('flags a row as a duplicate when an identical transaction already exists', async () => {
-    prismaMock.categoryRule.findMany.mockResolvedValue([]);
-    prismaMock.category.findMany.mockResolvedValue([]);
     prismaMock.transaction.findMany.mockResolvedValue([
       { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
     ]);
 
-    const result = await previewImport('user-1', [
-      {
-        accountId: 'acc-1',
-        date: '2026-03-01',
-        amount: 42,
-        type: 'EXPENSE',
-        payee: 'Coffee Shop',
-      },
-    ]);
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [
+        {
+          accountId: 'acc-1',
+          date: '2026-03-01',
+          amount: 42,
+          type: 'EXPENSE',
+          payee: 'Coffee Shop',
+        },
+      ],
+    });
 
-    expect(result[0].duplicate).toBe(true);
-    expect(result[0].include).toBe(false);
+    expect(result.rows[0].duplicate).toBe(true);
+    expect(result.rows[0].include).toBe(false);
   });
 
   it('flags the second of two identical rows within the same file as a duplicate', async () => {
-    prismaMock.categoryRule.findMany.mockResolvedValue([]);
-    prismaMock.category.findMany.mockResolvedValue([]);
-
     const row = {
       accountId: 'acc-1',
       date: '2026-03-01',
@@ -52,12 +96,16 @@ describe('previewImport', () => {
       type: 'EXPENSE' as const,
       payee: 'Coffee Shop',
     };
-    const result = await previewImport('user-1', [row, { ...row }]);
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [row, { ...row }],
+    });
 
-    expect(result[0].duplicate).toBe(false);
-    expect(result[0].include).toBe(true);
-    expect(result[1].duplicate).toBe(true);
-    expect(result[1].include).toBe(false);
+    expect(result.rows[0].duplicate).toBe(false);
+    expect(result.rows[0].include).toBe(true);
+    expect(result.rows[1].duplicate).toBe(true);
+    expect(result.rows[1].include).toBe(false);
   });
 
   it('suggests a category from matching rules and includes non-duplicate rows', async () => {
@@ -66,71 +114,253 @@ describe('previewImport', () => {
     ]);
     prismaMock.category.findMany.mockResolvedValue([{ id: 'cat-1', name: 'Dining' }]);
 
-    const result = await previewImport('user-1', [
-      {
-        accountId: 'acc-1',
-        date: '2026-03-02',
-        amount: 10,
-        type: 'EXPENSE',
-        payee: 'Coffee Shop',
-      },
-    ]);
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [
+        {
+          accountId: 'acc-1',
+          date: '2026-03-02',
+          amount: 10,
+          type: 'EXPENSE',
+          payee: 'Coffee Shop',
+        },
+      ],
+    });
 
-    expect(result[0].categoryId).toBe('cat-1');
-    expect(result[0].categoryName).toBe('Dining');
-    expect(result[0].include).toBe(true);
+    expect(result.rows[0].categoryId).toBe('cat-1');
+    expect(result.rows[0].categoryName).toBe('Dining');
+    expect(result.rows[0].include).toBe(true);
+  });
+
+  it('returns no filename warning when no active batch shares the name', async () => {
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'april.csv',
+      rows: [{ accountId: 'acc-1', date: '2026-03-01', amount: 10, type: 'EXPENSE' }],
+    });
+
+    expect(result.filenameWarning).toBeNull();
+  });
+
+  it('warns with both signals matching when row count and date range line up', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch());
+
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [{ accountId: 'acc-1', date: '2026-03-01', amount: 10, type: 'EXPENSE' }],
+    });
+
+    expect(result.filenameWarning?.batch.id).toBe('batch-1');
+    expect(result.filenameWarning?.submittedRowCount).toBe(1);
+    expect(result.filenameWarning?.rowCountMatches).toBe(true);
+    expect(result.filenameWarning?.dateRangeMatches).toBe(true);
+  });
+
+  it('reports rowCountMatches false when the submitted row count differs', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch({ rowCount: 5 }));
+
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [{ accountId: 'acc-1', date: '2026-03-01', amount: 10, type: 'EXPENSE' }],
+    });
+
+    expect(result.filenameWarning?.rowCountMatches).toBe(false);
+    expect(result.filenameWarning?.dateRangeMatches).toBe(true);
+  });
+
+  it('reports dateRangeMatches false when the dates differ', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch());
+
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [{ accountId: 'acc-1', date: '2026-03-09', amount: 10, type: 'EXPENSE' }],
+    });
+
+    expect(result.filenameWarning?.dateRangeMatches).toBe(false);
+  });
+
+  it('is advisory only: the warning never changes a row include/duplicate flag', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch());
+
+    const result = await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [{ accountId: 'acc-1', date: '2026-03-01', amount: 10, type: 'EXPENSE' }],
+    });
+
+    expect(result.filenameWarning).not.toBeNull();
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].duplicate).toBe(false);
+    expect(result.rows[0].include).toBe(true);
   });
 });
 
 describe('commitImport', () => {
-  it('rejects when a row references an account the user does not own', async () => {
-    prismaMock.account.findMany.mockResolvedValue([]);
+  it('rejects when the account is not owned by the user', async () => {
+    prismaMock.account.findFirst.mockResolvedValue(null);
 
     await expect(
-      commitImport('user-1', {
-        rows: [
-          {
-            accountId: 'acc-missing',
-            date: new Date(),
-            amount: 10,
-            type: 'EXPENSE',
-            include: true,
-          },
-        ],
-      }),
+      commit({ accountId: 'acc-missing', filename: 'march.csv', rows: [commitRow()] }),
     ).rejects.toThrow(ServiceValidationError);
   });
 
   it('only creates transactions for rows marked include', async () => {
-    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
     prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
 
-    const result = await commitImport('user-1', {
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
       rows: [
-        { accountId: 'acc-1', date: new Date(), amount: 10, type: 'EXPENSE', include: true },
-        { accountId: 'acc-1', date: new Date(), amount: 5, type: 'EXPENSE', include: false },
+        commitRow({ amount: 10, payee: undefined }),
+        commitRow({ amount: 5, payee: undefined, include: false }),
       ],
     });
 
-    expect(prismaMock.transaction.createMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.arrayContaining([expect.anything()]) }),
-    );
     expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
-    expect(result).toEqual({ imported: 1, skippedDuplicates: 0 });
+    expect(result).toEqual({ batchId: 'batch-new', imported: 1, skippedDuplicates: 0 });
   });
 
   it('re-checks against the database and skips rows that already exist, even if included', async () => {
-    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
     prismaMock.transaction.findMany.mockResolvedValue([
       { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
     ]);
-    prismaMock.transaction.createMany.mockResolvedValue({ count: 0 });
 
-    const result = await commitImport('user-1', {
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow()],
+    });
+
+    // simulates a resubmitted/stale preview: the row looks includable to the
+    // client, but a matching transaction already landed in the database
+    expect(prismaMock.transaction.createMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ batchId: null, imported: 0, skippedDuplicates: 1 });
+  });
+
+  it('skips a second identical row within the same commit batch', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow(), commitRow()],
+    });
+
+    expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
+    expect(result).toEqual({ batchId: 'batch-new', imported: 1, skippedDuplicates: 1 });
+  });
+
+  it('rejects with DuplicateFilenameError and creates no batch when the filename conflicts', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch());
+
+    await expect(
+      commit({ accountId: 'acc-1', filename: 'march.csv', rows: [commitRow()] }),
+    ).rejects.toThrow(DuplicateFilenameError);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.importBatch.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a new independent batch when the filename conflict is overridden', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch());
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow()],
+      overrideDuplicateFilename: true,
+    });
+
+    // a *new* batch, never a merge into or mutation of the conflicting one
+    expect(prismaMock.importBatch.create).toHaveBeenCalledTimes(1);
+    expect(result.batchId).toBe('batch-new');
+  });
+
+  it('surfaces the filename conflict even when every row is a row-level duplicate', async () => {
+    // ordering guard: were the filename gate to run after dedupe, this would
+    // return the zero-row shape and the 409 would never be seen
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.importBatch.findFirst.mockResolvedValue(activeBatch());
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
+    ]);
+
+    await expect(
+      commit({ accountId: 'acc-1', filename: 'march.csv', rows: [commitRow()] }),
+    ).rejects.toThrow(DuplicateFilenameError);
+  });
+
+  it('creates no batch and reserves no filename on a zero-row commit', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow({ include: false })],
+    });
+
+    expect(prismaMock.importBatch.create).not.toHaveBeenCalled();
+    expect(result).toEqual({ batchId: null, imported: 0, skippedDuplicates: 0 });
+  });
+
+  it('imports a row the user explicitly overrode after it was flagged at preview', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
+    ]);
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow({ duplicate: true })],
+    });
+
+    expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
+    expect(result).toEqual({ batchId: 'batch-new', imported: 1, skippedDuplicates: 0 });
+  });
+
+  it('still skips a row that was not flagged at preview but matches now', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
+    ]);
+
+    const result = await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow({ duplicate: false })],
+    });
+
+    expect(prismaMock.transaction.createMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ batchId: null, imported: 0, skippedDuplicates: 1 });
+  });
+
+  it('treats an absent duplicate flag as not-flagged and skips the row', async () => {
+    // legacy/malformed client payload: the validator defaults `duplicate` to
+    // false, so stale-preview protection still applies
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { accountId: 'acc-1', date: new Date('2026-03-01'), amount: 42, payee: 'Coffee Shop' },
+    ]);
+
+    // run the raw payload through the validator, so the default is the real one
+    const parsed = commitImportSchema.parse({
+      accountId: 'acc-1',
+      filename: 'march.csv',
       rows: [
         {
           accountId: 'acc-1',
-          date: new Date('2026-03-01'),
+          date: '2026-03-01',
           amount: 42,
           type: 'EXPENSE',
           payee: 'Coffee Shop',
@@ -138,28 +368,56 @@ describe('commitImport', () => {
         },
       ],
     });
+    const result = await commit(parsed);
 
-    // simulates a resubmitted/stale preview: the row looks includable to the
-    // client, but a matching transaction already landed in the database
     expect(prismaMock.transaction.createMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ imported: 0, skippedDuplicates: 1 });
+    expect(result.skippedDuplicates).toBe(1);
   });
 
-  it('skips a second identical row within the same commit batch', async () => {
-    prismaMock.account.findMany.mockResolvedValue([{ id: 'acc-1' }]);
-    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+  it('records rowCount over all submitted rows, importedCount and skippedDuplicates separately', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { accountId: 'acc-1', date: new Date('2026-03-10'), amount: 42, payee: 'Stale' },
+    ]);
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 2 });
 
-    const row = {
+    const result = await commit({
       accountId: 'acc-1',
-      date: new Date('2026-03-01'),
-      amount: 42,
-      type: 'EXPENSE' as const,
-      payee: 'Coffee Shop',
-      include: true,
-    };
-    const result = await commitImport('user-1', { rows: [row, { ...row }] });
+      filename: 'march.csv',
+      rows: [
+        // excluded rows still move the date range boundaries
+        commitRow({ include: false, date: new Date('2026-03-01'), payee: 'Excluded early' }),
+        commitRow({ include: false, date: new Date('2026-03-31'), payee: 'Excluded late' }),
+        commitRow({ date: new Date('2026-03-10'), payee: 'Stale' }),
+        commitRow({ date: new Date('2026-03-11'), payee: 'Fresh A' }),
+        commitRow({ date: new Date('2026-03-12'), payee: 'Fresh B' }),
+      ],
+    });
 
-    expect(prismaMock.transaction.createMany.mock.calls[0][0].data).toHaveLength(1);
-    expect(result).toEqual({ imported: 1, skippedDuplicates: 1 });
+    expect(result).toEqual({ batchId: 'batch-new', imported: 2, skippedDuplicates: 1 });
+    const batchData = prismaMock.importBatch.create.mock.calls[0][0].data;
+    expect(batchData.rowCount).toBe(5);
+    expect(batchData.importedCount).toBe(2);
+    expect(batchData.skippedDuplicates).toBe(1);
+    expect(batchData.dateFrom).toEqual(new Date('2026-03-01'));
+    expect(batchData.dateTo).toEqual(new Date('2026-03-31'));
+    expect(batchData.filenameNormalized).toBe('march.csv');
+  });
+
+  it('stamps every created transaction with the batch id returned by the create call', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.importBatch.create.mockResolvedValue({ id: 'batch-xyz' });
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 2 });
+
+    await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow({ payee: 'A' }), commitRow({ payee: 'B' })],
+    });
+
+    const data = prismaMock.transaction.createMany.mock.calls[0][0].data;
+    expect(data.every((row: { importBatchId: string }) => row.importBatchId === 'batch-xyz')).toBe(
+      true,
+    );
   });
 });
