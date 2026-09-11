@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Upload } from 'lucide-react';
+import { ArrowLeftRight, Plus, Trash2, Upload } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -45,6 +45,8 @@ export const TransactionsView = ({
   const [detail, setDetail] = useState<FrontendTransaction | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
+  const [matchPending, setMatchPending] = useState(false);
+  const [matchResult, setMatchResult] = useState<string | null>(null);
   const [accountFilter, setAccountFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
@@ -105,6 +107,24 @@ export const TransactionsView = ({
     router.refresh();
   };
 
+  const handleMatchTransfers = async (): Promise<void> => {
+    setMatchPending(true);
+    setMatchResult(null);
+    const res = await fetch('/api/transactions/match-transfers', { method: 'POST' });
+    setMatchPending(false);
+    if (!res.ok) {
+      setMatchResult('Could not match transfers. Try again.');
+      return;
+    }
+    const data: { matched: number } = await res.json();
+    setMatchResult(
+      data.matched === 0
+        ? 'No new transfer pairs found.'
+        : `Matched ${data.matched} transfer pair${data.matched === 1 ? '' : 's'}.`,
+    );
+    router.refresh();
+  };
+
   const filtered = initialTransactions.filter((t) => {
     if (accountFilter && t.accountId !== accountFilter) return false;
     if (categoryFilter && t.categoryId !== categoryFilter) return false;
@@ -116,13 +136,18 @@ export const TransactionsView = ({
   });
 
   // Payments toward a credit card's balance settle the *previous* statement,
-  // so they're excluded from this period's credit/debit/net and shown
-  // separately instead.
+  // and both legs of a transfer between the user's own accounts are money that
+  // never left the ledger — so neither counts toward this period's
+  // credit/debit/net; they're shown separately instead.
   const summary = filtered.reduce(
     (acc, t) => {
       const amount = Number(t.amount);
+      // isPayment is checked first so a card payment keeps its existing
+      // "Payments (excluded)" treatment once transfer matching also flags it
       if (t.isPayment) {
         acc.payments += amount;
+      } else if (t.isTransfer) {
+        acc.transfers += amount;
       } else if (t.type === 'INCOME') {
         acc.credit += amount;
       } else {
@@ -130,7 +155,7 @@ export const TransactionsView = ({
       }
       return acc;
     },
-    { credit: 0, debit: 0, payments: 0 },
+    { credit: 0, debit: 0, payments: 0, transfers: 0 },
   );
   const net = summary.credit - summary.debit;
 
@@ -191,10 +216,26 @@ export const TransactionsView = ({
           <Upload size={15} />
           Import CSV
         </Link>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleMatchTransfers}
+          icon={ArrowLeftRight}
+          loading={matchPending}
+          className="px-4 py-2"
+        >
+          Match transfers
+        </Button>
         <Button type="button" onClick={openCreate} icon={Plus} className="px-4 py-2">
           Add transaction
         </Button>
       </div>
+
+      {matchResult && (
+        <p className="text-ink-muted mt-2 text-sm" role="status">
+          {matchResult}
+        </p>
+      )}
 
       {accountFilter && (
         <div className="mt-3">
@@ -246,6 +287,12 @@ export const TransactionsView = ({
             <span className="border-line flex items-baseline gap-1.5 border-l pl-6.5">
               <span className="text-ink-muted text-xs">Payments (excluded)</span>
               <Money value={summary.payments} tone="neutral" />
+            </span>
+          )}
+          {summary.transfers > 0 && (
+            <span className="border-line flex items-baseline gap-1.5 border-l pl-6.5">
+              <span className="text-ink-muted text-xs">Transfers (excluded)</span>
+              <Money value={summary.transfers} tone="neutral" />
             </span>
           )}
         </div>
