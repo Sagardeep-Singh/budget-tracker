@@ -285,6 +285,15 @@ export const TransactionsView = ({
                         {t.payee || t.categoryName || 'Transaction'}
                       </div>
                       <div className="text-ink-muted mt-0.5 text-xs">{t.accountName}</div>
+                      {/* non-interactive chip: the row already owns the click
+                          (opens the detail drawer). The link to the history
+                          entry lives in that drawer instead. */}
+                      {t.importBatchFilename && (
+                        <div className="text-ink-muted mt-0.5 flex items-center gap-1 text-[11px]">
+                          <Upload size={11} />
+                          <span className="truncate">{t.importBatchFilename}</span>
+                        </div>
+                      )}
                     </div>
                     <span
                       className={cn(
@@ -348,6 +357,14 @@ export const TransactionsView = ({
                 onDone={() => setDetail(null)}
               />
             </div>
+            {detail.importBatchFilename && detail.importBatchId && (
+              <Link
+                href={`/import/history/${detail.importBatchId}`}
+                className="text-iris mt-3 block text-sm hover:underline"
+              >
+                Imported from {detail.importBatchFilename}
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => setConfirmDeleteId(detail.id)}

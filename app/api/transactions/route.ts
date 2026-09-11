@@ -15,6 +15,7 @@ export const GET = async (request: Request): Promise<NextResponse> => {
   const parsed = listTransactionsQuerySchema.safeParse({
     accountId: url.searchParams.get('accountId') ?? undefined,
     categoryId: url.searchParams.get('categoryId') ?? undefined,
+    batchId: url.searchParams.get('batchId') ?? undefined,
     from: url.searchParams.get('from') ?? undefined,
     to: url.searchParams.get('to') ?? undefined,
   });

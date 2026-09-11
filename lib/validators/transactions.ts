@@ -18,6 +18,7 @@ export const updateTransactionSchema = createTransactionSchema.partial();
 export const listTransactionsQuerySchema = z.object({
   accountId: z.string().optional(),
   categoryId: z.string().optional(),
+  batchId: z.string().optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
 });

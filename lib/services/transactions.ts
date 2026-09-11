@@ -18,6 +18,9 @@ export type FrontendTransaction = {
   payee: string | null;
   note: string | null;
   isPayment: boolean;
+  importBatchId: string | null;
+  /** null when the transaction was entered manually rather than imported */
+  importBatchFilename: string | null;
 };
 
 const toFrontend = (tx: {
@@ -30,8 +33,10 @@ const toFrontend = (tx: {
   payee: string | null;
   note: string | null;
   isPayment: boolean;
+  importBatchId: string | null;
   account: { name: string };
   category: { name: string } | null;
+  importBatch: { id: string; filename: string } | null;
 }): FrontendTransaction => ({
   id: tx.id,
   accountId: tx.accountId,
@@ -44,11 +49,14 @@ const toFrontend = (tx: {
   payee: tx.payee,
   note: tx.note,
   isPayment: tx.isPayment,
+  importBatchId: tx.importBatchId,
+  importBatchFilename: tx.importBatch?.filename ?? null,
 });
 
 const include = {
   account: { select: { name: true } },
   category: { select: { name: true } },
+  importBatch: { select: { id: true, filename: true } },
 } as const;
 
 export const listTransactions = async (
@@ -60,6 +68,7 @@ export const listTransactions = async (
       userId,
       accountId: query.accountId,
       categoryId: query.categoryId,
+      importBatchId: query.batchId,
       date: {
         gte: query.from,
         lte: query.to,
