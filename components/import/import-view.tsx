@@ -140,6 +140,9 @@ export const ImportView = ({
     }
     const data = await res.json();
     setCommitted(data);
+    // committing was never reset on the success path, so every import after
+    // the first silently no-op'd on the `committing` reentrancy guard above.
+    setCommitting(false);
 
     // Reset everything so this file can't be re-submitted: another click on
     // "Import" after a successful commit was silently re-importing the same
