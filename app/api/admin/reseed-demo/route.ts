@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { seedDemoData } from '@/prisma/demo-seed';
+import { isDemoEnabled } from '@/lib/flags';
 
 /**
  * Triggered by Vercel Cron (see vercel.json) to periodically refresh the
@@ -13,9 +14,10 @@ import { seedDemoData } from '@/prisma/demo-seed';
  * delete is `where: { userId }` against that same user — there is no
  * global deleteMany here or in seedDemoData.
  *
- * Gated on DEMO_ENABLED=true so the demo can be turned off without
- * removing CRON_SECRET or the cron schedule itself — the cron still
- * fires, this just no-ops instead of erroring, so it never pages anyone.
+ * Gated on the `enable-demo` Vercel feature flag so the demo can be
+ * turned off from the dashboard, with no redeploy and without removing
+ * CRON_SECRET or the cron schedule itself — the cron still fires, this
+ * just no-ops instead of erroring, so it never pages anyone.
  */
 export const GET = async (request: Request): Promise<NextResponse> => {
   const secret = process.env.CRON_SECRET;
@@ -26,8 +28,8 @@ export const GET = async (request: Request): Promise<NextResponse> => {
   if (authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (process.env.DEMO_ENABLED !== 'true') {
-    return NextResponse.json({ ok: false, skipped: true, reason: 'DEMO_ENABLED is not true' });
+  if (!(await isDemoEnabled())) {
+    return NextResponse.json({ ok: false, skipped: true, reason: 'enable-demo flag is off' });
   }
 
   const result = await seedDemoData();
