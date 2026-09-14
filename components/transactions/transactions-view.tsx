@@ -231,9 +231,16 @@ export const TransactionsView = ({
         >
           Match transfers
         </Button>
-        <Button type="button" onClick={openCreate} icon={Plus} className="shrink-0 px-4 py-2">
-          Add transaction
-        </Button>
+        {/* Desktop-only: below lg the sticky "+ Log a spend" CTA already covers
+            this screen, and a second entry point crowds the filter row.
+            Visibility lives on a wrapper, not the Button's className — `cn` is
+            a plain join, so `hidden` would sit alongside the Button's own base
+            `inline-flex` rather than overriding it. */}
+        <div className="hidden shrink-0 lg:block">
+          <Button type="button" onClick={openCreate} icon={Plus} className="px-4 py-2">
+            Add transaction
+          </Button>
+        </div>
       </div>
 
       {matchResult && (

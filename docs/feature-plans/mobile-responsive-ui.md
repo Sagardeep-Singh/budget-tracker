@@ -1,6 +1,6 @@
 # Mobile-Friendly UI
 
-## Status: Phase 1 implemented; Phase 2 planned — not implemented
+## Status: Phase 1 and Phase 2 implemented
 
 ## Source
 
@@ -61,7 +61,7 @@ Every screen below is graded against its current file so "adapt in place" means 
 - **Line 96**: `grid grid-cols-[1.5fr_1fr] items-start gap-5` is the two-column split (left: hero/budgets/pie/by-day; right: day panel/triage/statement-cycle cards, lines 255+). Becomes `grid grid-cols-1 lg:grid-cols-[1.5fr_1fr]`. Below `lg`, source order puts the day panel _after_ the by-day chart — matches README's explicit "move the day panel under the chart" fallback, and needs no JSX reordering since the day panel is already the second grid child.
 - **Line 182**: the 4-up budget-rings row (`grid grid-cols-4 gap-2.5`, using `Ring size="category"`) — README's mobile Overview also shows category rings at the `category` mobile size (66/27/7, not the `hero-mobile`/desktop 88/36/9). At narrow width 4 columns of a 66px ring is tight but plausible (see the Ring section below); if it doesn't fit cleanly, fall back to horizontal scroll rather than wrapping to 2×2 (wrapping changes the "4 categories at a glance" scan pattern the design relies on) — verify against a real 402px render before deciding.
 - **Line 220**: `flex h-[120px] items-end gap-1` by-day bars — desktop renders all `daysInMonth` bars (~30). README's mobile Overview is a **7-bar week strip**, not the full month compressed. This is a real data/prop difference, not just fewer pixels per bar: the component needs a `days` slice (current week) on mobile vs. the full month array on desktop, or two render paths. Flag this explicitly for the architect — it's the one place in "adapt in place" that isn't purely CSS.
-- Lines 255-335 (day panel): stays byte-identical in content; only its grid position changes per the `grid-cols-1` collapse above. This block is also the literal source for the mobile Day screen (see below) — extract it into its own component (e.g. `components/dashboard/day-panel.tsx`) so Overview and the mobile Day screen both render it instead of copy-pasting.
+- Lines 255-335 (day panel): only its grid position changes per the `grid-cols-1` collapse above; content is unchanged except that entry-row amounts moved to `<Money>` during extraction (same sky/rose + sign visual output as the inline code it replaced — verified equivalent, not a regression). This block is also the literal source for the mobile Day screen (see below) — extract it into its own component (e.g. `components/dashboard/day-panel.tsx`) so Overview and the mobile Day screen both render it instead of copy-pasting.
 - Recent list / triage / statement-cycle cards (lines 337+, not fully quoted above): already single-card-per-row, no structural change expected — confirm at implementation time.
 
 ### 2. Transactions — `components/transactions/transactions-view.tsx`
@@ -149,10 +149,12 @@ Phase 1 must be shippable alone — it's the actual "mobile-friendly" milestone;
 
 **Phase 2 — mobile-native flows** (per-screen detail above)
 
-- [ ] Day (§6): extracted `day-panel.tsx` rendered full-screen below `lg` when `?day=` present — no new route
-- [ ] Log a spend (§7): new `log-a-spend-mobile.tsx` + `numeric-keypad.tsx`; decide state-sharing approach with `TransactionForm` (hook extraction vs. independent submit) before starting
+- [x] Day (§6): `components/dashboard/day-panel.tsx` extracted and used by both the Overview side card (`ringSize` default `budget`) and, below `lg` when `?day=` is present, as the whole screen (`ringSize="day"` — the 108/46/10 size that existed unused, plus a `lg:hidden` "Back to Overview" link). No new route. Entry-row amounts now use `Money`; the big "Spent" figure deliberately does not — its iris/rose means under/over pace, which doesn't map onto `Money`'s income/expense tones. The collapse uses new wrapper divs, never an appended `hidden`, since `cn` has no tailwind-merge.
+- [x] Log a spend (§7): state/submit logic extracted to `lib/transactions/use-transaction-form.ts` (option (a)) with the payload shaping split out as the pure, unit-tested `lib/transactions/transaction-payload.ts` — `isPayment` is forced false whenever the account/type combination is ineligible, even if the (conditionally rendered) checkbox state is stale. `TransactionForm`'s `handleSubmit` is now a FormData→values adapter and its desktop inputs stay uncontrolled. New `components/ui/numeric-keypad.tsx` over the pure `lib/ui/numeric-keypad.ts` (`applyKeypadInput` / `isValidKeypadAmount`, which rejects the keypad-only `'1.'` state), and `components/transactions/log-a-spend-mobile.tsx` — a full-screen `role="dialog"` with `Drawer`'s focus-trap/Escape/scroll-lock pattern copied in, `mobile-`prefixed field ids (both shells are in the DOM at once), and an `aria-live` amount announcement. `add-transaction-overlay.tsx` branches between the two; the Transactions header's second "Add transaction" entry point is now desktop-only (the sticky CTA covers mobile).
 - [x] Categorize (§8, pulled forward into Phase 1): mobile card branch for the existing `reviewOne`/`index` row (desktop table unchanged, `hidden lg:block` / `lg:hidden` split same as other screens). Category dropdown replaced with one-tap chips — tapping confirms immediately, no separate confirm step, matching the desktop dropdown's existing behavior. The rule's suggestion (if any) sorts first with an accent ring. Progress shown as a proportional bar rather than 12 fixed segments (the README's mockup fixture happened to have exactly 12 rows; a real queue's length varies, so a fraction-based bar is the correct generalization, not a literal segment count). Pulled forward from Phase 2 because the _existing_ desktop table was actually broken at mobile width before this fix — its fixed-width columns pushed the category select and Skip button off-screen entirely below `lg`, not just cramped.
-- [ ] Period sheet (§9): confirm `period-picker.tsx` vs. `period-popover.tsx` scope first; build `components/ui/bottom-sheet.tsx` (not a `Drawer` variant); wrap `period-popover.tsx`'s existing logic
+- [x] Period sheet (§9): scope confirmed as `period-popover.tsx` only (used by Dashboard, Budgets and Trends via `basePath`, so one fix covers all three). Its preset pills + 12-month grid are now a shared internal `PeriodPickerBody` rendered by both the `lg:block` anchored box and a new `components/ui/bottom-sheet.tsx` below `lg`. The sheet is rendered **inside** the component's existing outside-click `ref`, otherwise every tap in it registers as an outside click. `period-picker.tsx` (Transactions' ALL/MONTH/STATEMENT toggle) needed no sheet — it has no drill-down content, just `flex-wrap`.
+
+**Cross-cutting note from Phase 2**: the CSS-visibility split (`lg:hidden` / `hidden lg:block`) hides components but does **not** unmount them, so a mobile-only overlay's effects still run at desktop width. Both new overlays guard their body-scroll lock and focus trap on `isDesktopViewport()` (`lib/ui/viewport.ts`), and release the lock with `removeProperty` rather than restoring a snapshot — two overlays mounted at once would otherwise hand the lock back and forth and leave the page unscrollable.
 
 ## Non-Goals
 
@@ -165,8 +167,14 @@ Phase 1 must be shippable alone — it's the actual "mobile-friendly" milestone;
 
 - Exact bottom-nav item set (5 slots max is typical; README lists 9 sidebar items — needs a "More" overflow decision).
 - Whether `Ring`'s mobile-size extension is a new enum member or a `mobile` boolean prop — small API decision, not a design decision, left to implementation.
-- Whether `period-picker.tsx` (Transactions screen, ALL/MONTH/STATEMENT + prev/next) needs its own mobile treatment distinct from `period-popover.tsx`'s bottom sheet, or whether it's narrow enough already — it has no calendar/grid to collapse, just a pill row that may already fit at 402px. Check before building anything for it.
-- `TransactionForm` state-sharing approach for Log a spend (extracted hook vs. independent mobile component posting to the same endpoint) — see screen 7 above, left to the architect.
+
+_(The `period-picker.tsx` scope and the `TransactionForm` state-sharing approach were listed here until Phase 2 — both are resolved below.)_
+
+## Resolved during implementation (Phase 2)
+
+- **`period-picker.tsx` scope**: no mobile sheet needed. It has no drill-down content — a pill row plus prev/next — so it only needed `flex-wrap`. The bottom sheet belongs to `period-popover.tsx`, which all three of Dashboard/Budgets/Trends use via `basePath`.
+- **`TransactionForm` state-sharing**: option (a), the extracted `useTransactionForm` hook, with payload shaping split into a pure `buildTransactionPayload` so the stale-`isPayment` rule is unit-testable. The desktop form keeps its uncontrolled inputs and only its `handleSubmit` changed.
+- **CSS-visibility split has a real cost, not just a styling detail**: Phase 1's pattern (both desktop and mobile trees mounted, one hidden via `lg:` classes) means a hidden overlay's effects still run. Found and fixed for `BottomSheet`/`LogASpendMobile` (`lib/ui/viewport.ts`'s `isDesktopViewport()` guard — without it, opening the desktop period popover or add-transaction drawer also ran the hidden mobile version's scroll-lock and focus-trap effects, fighting the visible one for focus). **Acknowledged limitation**: the guard is read once per open/close, not on resize — a window manually resized across `lg` while an overlay is open won't re-evaluate. Accepted as out of scope; not a real path for an actual phone.
 
 ## Resolved during detail pass (were open questions in the first draft)
 

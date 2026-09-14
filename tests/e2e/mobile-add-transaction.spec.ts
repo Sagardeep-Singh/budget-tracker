@@ -16,6 +16,17 @@ const login = async (page: import('@playwright/test').Page): Promise<void> => {
 const cta = (page: import('@playwright/test').Page) =>
   page.getByRole('link', { name: /Log a spend/ });
 
+const shell = (page: import('@playwright/test').Page) => page.getByTestId('log-a-spend-mobile');
+
+/** Types an amount by tapping keypad keys, the only input this screen has. */
+const tapAmount = async (page: import('@playwright/test').Page, amount: string): Promise<void> => {
+  for (const char of amount) {
+    await shell(page)
+      .getByRole('button', { name: char === '.' ? 'Decimal point' : char, exact: true })
+      .click();
+  }
+};
+
 test('the sticky CTA appears on Overview and Transactions only', async ({ page }) => {
   await login(page);
   await expect(cta(page)).toBeVisible();
@@ -29,54 +40,113 @@ test('the sticky CTA appears on Overview and Transactions only', async ({ page }
   }
 });
 
-test('the CTA opens a drawer that fits the mobile viewport', async ({ page }) => {
+test('the CTA opens the full-screen keypad shell, not the desktop drawer', async ({ page }) => {
   await login(page);
   await cta(page).click();
   await expect(page).toHaveURL(/overlay=add/);
 
-  const drawer = page.getByRole('dialog', { name: 'Log a transaction' });
-  await expect(drawer).toBeVisible();
+  await expect(shell(page)).toBeVisible();
+  await expect(shell(page).getByRole('button', { name: '7', exact: true })).toBeVisible();
+  // No text amount field in this shell; the desktop form's #amount is in the
+  // DOM but hidden behind the lg-only wrapper.
+  await expect(shell(page).locator('input[type="number"]')).toHaveCount(0);
+  await expect(page.locator('#amount')).toBeHidden();
 
-  const box = await drawer.boundingBox();
+  const box = await shell(page).boundingBox();
   const viewport = page.viewportSize();
   expect(box).not.toBeNull();
   expect(viewport).not.toBeNull();
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
+  expect(box!.x).toBe(0);
+  expect(box!.width).toBe(viewport!.width);
 });
 
-test('a transaction can be created from the mobile CTA', async ({ page }) => {
+test('the Transactions header "Add transaction" button is desktop-only', async ({ page }) => {
+  await login(page);
+  await page.goto('/transactions');
+  await expect(page.getByRole('button', { name: 'Add transaction' })).toBeHidden();
+  await expect(cta(page)).toBeVisible();
+});
+
+test('a transaction can be created with the keypad', async ({ page }) => {
   await login(page);
   await page.goto('/transactions');
   await cta(page).click();
+  await expect(shell(page)).toBeVisible();
 
-  const drawer = page.getByRole('dialog', { name: 'Log a transaction' });
-  await expect(drawer).toBeVisible();
+  const payee = `E2E Keypad ${Date.now()}`;
+  await shell(page).getByLabel('Payee').fill(payee);
+  await tapAmount(page, '7.89');
 
-  const payee = `E2E Mobile CTA ${Date.now()}`;
-  await drawer.getByLabel('Payee').fill(payee);
-  await drawer.locator('#amount').fill('7.89');
-  await drawer.getByRole('button', { name: 'Save transaction' }).click();
+  await shell(page).getByRole('button', { name: 'Save transaction' }).click();
 
-  await expect(drawer).toBeHidden();
+  await expect(shell(page)).toHaveCount(0);
   await expect(page).not.toHaveURL(/overlay=add/);
   await expect(page.getByText(payee)).toBeVisible();
 });
 
-test('Escape closes the mobile CTA drawer without creating anything', async ({ page }) => {
+test('Save stays blocked until the keypad holds a valid amount', async ({ page }) => {
   await login(page);
   await cta(page).click();
 
-  const drawer = page.getByRole('dialog', { name: 'Log a transaction' });
-  await expect(drawer).toBeVisible();
+  const save = shell(page).getByRole('button', { name: 'Save transaction' });
+  await expect(save).toBeDisabled();
 
-  const payee = `E2E Mobile Escape ${Date.now()}`;
-  await drawer.getByLabel('Payee').fill(payee);
+  // A lone decimal point is a state a native number input can never reach.
+  await tapAmount(page, '.');
+  await expect(save).toBeDisabled();
+
+  await tapAmount(page, '5');
+  await expect(save).toBeEnabled();
+
+  await shell(page).getByRole('button', { name: 'Delete last digit' }).click();
+  await expect(save).toBeDisabled();
+});
+
+test('Escape closes the keypad shell without creating anything', async ({ page }) => {
+  await login(page);
+  await cta(page).click();
+  await expect(shell(page)).toBeVisible();
+
+  const payee = `E2E Keypad Escape ${Date.now()}`;
+  await shell(page).getByLabel('Payee').fill(payee);
+  await tapAmount(page, '3');
   await page.keyboard.press('Escape');
 
-  await expect(drawer).toBeHidden();
+  await expect(shell(page)).toHaveCount(0);
+  await expect(page).not.toHaveURL(/overlay=add/);
+  // Closing must release the body scroll lock — two overlays mount at once
+  // here (the hidden desktop drawer and this shell), so it is easy to leave
+  // one lock behind.
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
+
+  await page.goto('/transactions');
+  await expect(page.getByText(payee)).toHaveCount(0);
+});
+
+test('Cancel closes the keypad shell without creating anything', async ({ page }) => {
+  await login(page);
+  await cta(page).click();
+
+  const payee = `E2E Keypad Cancel ${Date.now()}`;
+  await shell(page).getByLabel('Payee').fill(payee);
+  await tapAmount(page, '4');
+  // `exact` matters: the dev database has category chips whose names contain
+  // "Cancel" from earlier runs.
+  await shell(page).getByRole('button', { name: 'Cancel', exact: true }).click();
+
+  await expect(shell(page)).toHaveCount(0);
   await expect(page).not.toHaveURL(/overlay=add/);
 
   await page.goto('/transactions');
   await expect(page.getByText(payee)).toHaveCount(0);
+});
+
+test('a category is still suggested from the payee on the keypad screen', async ({ page }) => {
+  await login(page);
+  await cta(page).click();
+  await expect(shell(page)).toBeVisible();
+
+  // "Starbucks" matches a seeded Dining rule.
+  await shell(page).getByLabel('Payee').fill('Starbucks');
+  await expect(shell(page).getByText('(suggested)')).toBeVisible({ timeout: 5000 });
 });

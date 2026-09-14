@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Label, Select } from '@/components/ui/field';
+import { useTransactionForm } from '@/lib/transactions/use-transaction-form';
 import { cn } from '@/lib/cn';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
@@ -23,87 +22,43 @@ export const TransactionForm = ({
   categories: FrontendCategory[];
   onDone: () => void;
 }): React.ReactElement => {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? '');
-  const [suggested, setSuggested] = useState(false);
-  const [type, setType] = useState(transaction?.type ?? 'EXPENSE');
-  const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? '');
-  const [isPayment, setIsPayment] = useState(transaction?.isPayment ?? false);
-  const [isTransfer, setIsTransfer] = useState(transaction?.isTransfer ?? false);
+  const {
+    categoryId,
+    setCategoryId,
+    suggested,
+    setSuggested,
+    type,
+    setType,
+    accountId,
+    setAccountId,
+    isPayment,
+    setIsPayment,
+    isTransfer,
+    setIsTransfer,
+    canBePayment,
+    pending,
+    error,
+    suggestFor,
+    submit,
+  } = useTransactionForm({ transaction, accounts });
 
-  const selectedAccount = accounts.find((a) => a.id === accountId);
-  const canBePayment = type === 'INCOME' && selectedAccount?.type === 'CREDIT_CARD';
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const suggestFor = (payee: string, note: string): void => {
-    if (transaction || categoryId) return; // don't override an explicit choice or existing edit
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      const text = `${payee} ${note}`.trim();
-      if (!text) return;
-      const res = await fetch('/api/categorize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.categoryId) {
-        setCategoryId(data.categoryId);
-        setSuggested(true);
-      }
-    }, 400);
-  };
-
-  useEffect(
-    () => () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    },
-    [],
-  );
-
+  // Thin FormData → values adapter; all the logic lives in the shared hook so
+  // the mobile keypad screen can't drift from it.
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-
     const form = new FormData(event.currentTarget);
-    const body = {
-      accountId: form.get('accountId'),
-      categoryId: categoryId || null,
-      amount: form.get('amount'),
-      type: form.get('type'),
-      date: form.get('date'),
-      payee: form.get('payee') || undefined,
-      note: form.get('note') || undefined,
-      isPayment: canBePayment && isPayment,
-      isTransfer,
-    };
-
-    const res = await fetch(
-      transaction ? `/api/transactions/${transaction.id}` : '/api/transactions',
-      {
-        method: transaction ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-    );
-
-    setPending(false);
-    if (!res.ok) {
-      setError('Could not save this transaction. Check the fields and try again.');
-      return;
-    }
-
-    router.refresh();
-    onDone();
+    const ok = await submit({
+      accountId: String(form.get('accountId') ?? ''),
+      amount: String(form.get('amount') ?? ''),
+      date: String(form.get('date') ?? ''),
+      payee: String(form.get('payee') ?? '') || undefined,
+      note: String(form.get('note') ?? '') || undefined,
+    });
+    if (ok) onDone();
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <input type="hidden" name="type" value={type} />
       <div className="border-line flex items-baseline gap-2 border-b pb-3.5">
         <span className="text-ink-muted font-mono text-[26px]">$</span>
         <Input

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Calendar, ChevronDown } from 'lucide-react';
+import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/cn';
 
 const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
@@ -28,11 +29,78 @@ const shiftMonth = (month: number, delta: number): number => {
   return date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 };
 
+/** The preset pills + 12-month grid, shared by the popover and the sheet. */
+const PeriodPickerBody = ({
+  month,
+  now,
+  year,
+  goTo,
+}: {
+  month: number;
+  now: number;
+  year: number;
+  goTo: (m: number) => void;
+}): React.ReactElement => (
+  <>
+    <div className="flex flex-wrap gap-1.5">
+      <button
+        type="button"
+        onClick={() => goTo(now)}
+        className={cn(
+          'rounded-full px-3.5 py-2 text-[13px] font-medium',
+          month === now ? 'bg-iris text-paper-raised' : 'border-line text-ink border',
+        )}
+      >
+        This month
+      </button>
+      <button
+        type="button"
+        onClick={() => goTo(shiftMonth(now, -1))}
+        className={cn(
+          'rounded-full px-3.5 py-2 text-[13px] font-medium',
+          month === shiftMonth(now, -1)
+            ? 'bg-iris text-paper-raised'
+            : 'border-line text-ink border',
+        )}
+      >
+        Last month
+      </button>
+    </div>
+    <div className="mt-5 flex items-center justify-between">
+      <span className="text-ink-muted text-[11px] font-semibold tracking-[0.1em] uppercase">
+        Month
+      </span>
+      <span className="text-ink-muted font-mono text-xs">{year}</span>
+    </div>
+    <div className="mt-2.5 grid grid-cols-4 gap-1.5">
+      {Array.from({ length: 12 }, (_, i) => year * 100 + i + 1).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => goTo(m)}
+          className={cn(
+            'rounded-[10px] py-2.5 text-[13px] font-medium',
+            m === month ? 'bg-iris text-paper-raised' : 'text-ink hover:bg-paper',
+          )}
+        >
+          {(m % 100).toString().padStart(2, '0')}
+        </button>
+      ))}
+    </div>
+  </>
+);
+
 /**
  * Presets + a 12-month grid, mapped to the design's period popover. Custom
  * date-range picking isn't included — getOverviewData is calendar-month
  * only for now, and a real range picker needs the service to support
  * arbitrary spans, which is a larger change than this stage's scope.
+ *
+ * Below lg the same body renders in a `BottomSheet` instead of the anchored
+ * box. The sheet is rendered *inside* the ref-wrapped div on purpose: the
+ * outside-click effect below closes on any mousedown outside that ref, so a
+ * sibling/portal sheet would close itself on its own first tap. `fixed`
+ * positioning is unaffected by the nesting.
  */
 export const PeriodPopover = ({
   month,
@@ -56,10 +124,14 @@ export const PeriodPopover = ({
     return () => window.removeEventListener('mousedown', onClick);
   }, [open]);
 
+  const close = useCallback((): void => setOpen(false), []);
+
   const goTo = (m: number): void => {
     setOpen(false);
     router.push(m === now ? basePath : `${basePath}?month=${m}`);
   };
+
+  const body = <PeriodPickerBody month={month} now={now} year={year} goTo={goTo} />;
 
   return (
     <div ref={ref} className="relative">
@@ -73,54 +145,17 @@ export const PeriodPopover = ({
         <ChevronDown size={13} className="text-ink-muted" />
       </button>
       {open && (
-        <div className="border-line bg-paper-raised absolute top-full left-0 z-20 mt-3 w-[280px] rounded-2xl border p-5 shadow-[0_18px_48px_rgba(0,0,0,.18)]">
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => goTo(now)}
-              className={cn(
-                'rounded-full px-3.5 py-2 text-[13px] font-medium',
-                month === now ? 'bg-iris text-paper-raised' : 'border-line text-ink border',
-              )}
-            >
-              This month
-            </button>
-            <button
-              type="button"
-              onClick={() => goTo(shiftMonth(now, -1))}
-              className={cn(
-                'rounded-full px-3.5 py-2 text-[13px] font-medium',
-                month === shiftMonth(now, -1)
-                  ? 'bg-iris text-paper-raised'
-                  : 'border-line text-ink border',
-              )}
-            >
-              Last month
-            </button>
-          </div>
-          <div className="mt-5 flex items-center justify-between">
-            <span className="text-ink-muted text-[11px] font-semibold tracking-[0.1em] uppercase">
-              Month
-            </span>
-            <span className="text-ink-muted font-mono text-xs">{year}</span>
-          </div>
-          <div className="mt-2.5 grid grid-cols-4 gap-1.5">
-            {Array.from({ length: 12 }, (_, i) => year * 100 + i + 1).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => goTo(m)}
-                className={cn(
-                  'rounded-[10px] py-2.5 text-[13px] font-medium',
-                  m === month ? 'bg-iris text-paper-raised' : 'text-ink hover:bg-paper',
-                )}
-              >
-                {(m % 100).toString().padStart(2, '0')}
-              </button>
-            ))}
+        <div className="hidden lg:block">
+          <div className="border-line bg-paper-raised absolute top-full left-0 z-20 mt-3 w-[280px] rounded-2xl border p-5 shadow-[0_18px_48px_rgba(0,0,0,.18)]">
+            {body}
           </div>
         </div>
       )}
+      <div className="lg:hidden">
+        <BottomSheet open={open} onClose={close} title="Period">
+          {body}
+        </BottomSheet>
+      </div>
     </div>
   );
 };
