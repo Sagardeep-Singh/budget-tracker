@@ -21,8 +21,37 @@ const xAt = (i: number, count: number): number =>
 const yAt = (value: number, max: number): number =>
   PAD_TOP + USABLE_HEIGHT - (max > 0 ? (value / max) * USABLE_HEIGHT : 0);
 
-const points = (values: number[], max: number): string =>
-  values.map((v, i) => `${xAt(i, values.length)},${yAt(v, max)}`).join(' ');
+/**
+ * Monotone cubic (Fritsch–Carlson) through each month's point, not a naive
+ * Catmull-Rom spline — each point is a real discrete month, so the curve
+ * must never dip below/above its neighbors and imply a value that wasn't
+ * reported (the failure mode plain Catmull-Rom has on non-monotone data).
+ */
+const smoothPath = (values: number[], max: number): string => {
+  const n = values.length;
+  const xs = values.map((_, i) => xAt(i, n));
+  const ys = values.map((v) => yAt(v, max));
+  if (n < 2) return '';
+  if (n === 2) return `M${xs[0]},${ys[0]} L${xs[1]},${ys[1]}`;
+
+  const d = xs.map((_, i) => (i < n - 1 ? (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) : 0));
+  const m = xs.map((_, i) => {
+    if (i === 0) return d[0];
+    if (i === n - 1) return d[n - 2];
+    return d[i - 1] === 0 || d[i] === 0 || d[i - 1] * d[i] < 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  });
+
+  let path = `M${xs[0]},${ys[0]}`;
+  for (let i = 0; i < n - 1; i++) {
+    const dx = (xs[i + 1] - xs[i]) / 3;
+    const c1x = xs[i] + dx;
+    const c1y = ys[i] + m[i] * dx;
+    const c2x = xs[i + 1] - dx;
+    const c2y = ys[i + 1] - m[i + 1] * dx;
+    path += ` C${c1x},${c1y} ${c2x},${c2y} ${xs[i + 1]},${ys[i + 1]}`;
+  }
+  return path;
+};
 
 /**
  * Income vs. expense across the selected range — one chart, two series
@@ -66,16 +95,16 @@ export const SpendingLineChart = ({ months }: { months: TrendsMonth[] }): React.
             stroke="var(--line)"
             strokeWidth={1}
           />
-          <polyline
-            points={points(income, max)}
+          <path
+            d={smoothPath(income, max)}
             fill="none"
             stroke="var(--sky)"
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <polyline
-            points={points(expense, max)}
+          <path
+            d={smoothPath(expense, max)}
             fill="none"
             stroke="var(--rose)"
             strokeWidth={2}
