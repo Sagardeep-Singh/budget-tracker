@@ -7,6 +7,10 @@ import { cn } from '@/lib/cn';
 export type SidebarNavItem = {
   href: string;
   label: string;
+  /** A rendered icon element, not a component reference — this crosses a server/client
+   * boundary (Sidebar is a server component, SidebarNav is a client component), and only
+   * serializable React elements survive that hop, not component types/functions. */
+  icon: React.ReactNode;
   badge?: number;
   /** Categorize is treated as an alert queue: its badge tints rose when inactive. */
   alert?: boolean;
@@ -28,7 +32,10 @@ export const SidebarNav = ({ items }: { items: SidebarNavItem[] }): React.ReactE
               active ? 'bg-iris text-paper-raised' : 'text-ink hover:bg-paper',
             )}
           >
-            <span>{item.label}</span>
+            <span className="flex items-center gap-2">
+              {item.icon}
+              <span>{item.label}</span>
+            </span>
             {item.badge !== undefined && (
               <span
                 className={cn(
