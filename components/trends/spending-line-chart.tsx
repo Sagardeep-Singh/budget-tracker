@@ -110,11 +110,28 @@ export const SpendingLineChart = ({ months }: { months: TrendsMonth[] }): React.
             stroke="var(--paper-raised)"
             strokeWidth={2}
           />
-          <title>
-            {months
-              .map((m) => `${m.label}: in ${money(m.income)}, out ${money(m.expense)}`)
-              .join(' · ')}
-          </title>
+          {months.map((m, i) => (
+            <circle
+              key={`${m.month}-income`}
+              cx={xAt(i, months.length)}
+              cy={yAt(m.income, max)}
+              r={8}
+              fill="transparent"
+            >
+              <title>{`${m.label} income: ${money(m.income)}`}</title>
+            </circle>
+          ))}
+          {months.map((m, i) => (
+            <circle
+              key={`${m.month}-expense`}
+              cx={xAt(i, months.length)}
+              cy={yAt(m.expense, max)}
+              r={8}
+              fill="transparent"
+            >
+              <title>{`${m.label} expense: ${money(m.expense)}`}</title>
+            </circle>
+          ))}
         </svg>
       )}
     </div>
