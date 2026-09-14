@@ -12,7 +12,12 @@ const { prismaMock } = vi.hoisted(() => ({
   },
 }));
 
+const { matchTransfersMock } = vi.hoisted(() => ({
+  matchTransfersMock: vi.fn(async () => ({ matched: 0 })),
+}));
+
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+vi.mock('@/lib/services/transfers', () => ({ matchTransfers: matchTransfersMock }));
 
 const { previewImport, commitImport } = await import('@/lib/services/csvImport');
 const { DuplicateFilenameError, ServiceValidationError } = await import('@/lib/services/common');
@@ -419,5 +424,31 @@ describe('commitImport', () => {
     expect(data.every((row: { importBatchId: string }) => row.importBatchId === 'batch-xyz')).toBe(
       true,
     );
+  });
+
+  it('runs transfer matching after inserting the imported rows', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+    prismaMock.importBatch.create.mockResolvedValue({ id: 'batch-1' });
+    prismaMock.transaction.createMany.mockResolvedValue({ count: 1 });
+
+    await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow()],
+    });
+
+    expect(matchTransfersMock).toHaveBeenCalledWith('user-1');
+  });
+
+  it('does not run transfer matching when nothing was imported', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1' });
+
+    await commit({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [commitRow({ include: false })],
+    });
+
+    expect(matchTransfersMock).not.toHaveBeenCalled();
   });
 });

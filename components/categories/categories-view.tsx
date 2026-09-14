@@ -103,35 +103,35 @@ export const CategoriesView = ({
         <Card className="p-0">
           {initialCategories.map((category) =>
             editingId === category.id ? (
-              <div
-                key={category.id}
-                className="ledger-row flex items-center justify-between gap-2 px-6 py-2.5"
-              >
-                <Input
-                  className="bg-paper-raised"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  autoFocus
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => handleEditSave(category.id)}
-                  disabled={editPending}
-                  className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
-                  aria-label="Save category name"
-                >
-                  <Check size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  disabled={editPending}
-                  className="text-ink-muted hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
-                  aria-label="Cancel edit"
-                >
-                  <X size={16} />
-                </button>
+              <div key={category.id} className="ledger-row px-6 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Input
+                    className="bg-paper-raised"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleEditSave(category.id)}
+                    disabled={editPending}
+                    className="text-sky hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                    aria-label="Save category name"
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    disabled={editPending}
+                    className="text-ink-muted hover:text-ink inline-flex items-center p-1.5 disabled:opacity-50"
+                    aria-label="Cancel edit"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                {editError && <p className="text-rose mt-1.5 text-xs">{editError}</p>}
               </div>
             ) : (
               <div
@@ -162,7 +162,6 @@ export const CategoriesView = ({
           )}
         </Card>
       )}
-      {editError && <p className="text-rose mt-3 text-sm">{editError}</p>}
       <ConfirmDialog
         open={confirmDeleteId !== null}
         title="Delete category"

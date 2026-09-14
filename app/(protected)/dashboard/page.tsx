@@ -4,6 +4,7 @@ import { getOverviewData } from '@/lib/services/overview';
 import { ScreenHeader } from '@/components/nav/screen-header';
 import { Ring } from '@/components/ui/ring';
 import { PeriodPopover } from '@/components/dashboard/period-popover';
+import { ExpensePie } from '@/components/dashboard/expense-pie';
 import { cn } from '@/lib/cn';
 
 const money = (value: string): string =>
@@ -21,7 +22,16 @@ const DashboardPage = async ({
     day: day ? Number(day) : undefined,
     month: month ? Number(month) : undefined,
   });
-  const { hero, budgetRings, dayBars, selectedDay, triage, cycleCard, dailyPace } = data;
+  const {
+    hero,
+    budgetRings,
+    expenseBreakdown,
+    dayBars,
+    selectedDay,
+    triage,
+    cycleCard,
+    dailyPace,
+  } = data;
 
   const dayHref = (d: number): string =>
     month ? `/dashboard?month=${month}&day=${d}` : `/dashboard?day=${d}`;
@@ -100,12 +110,20 @@ const DashboardPage = async ({
                     {hero.leftLabel}
                   </div>
                   <div className="mt-2 font-mono text-[40px] leading-none font-medium tracking-[-0.03em]">
-                    {money(hero.leftAmount)}
+                    {hero.hasBudget ? money(hero.leftAmount) : '—'}
                   </div>
                   <div className="text-ink-muted mt-2 text-[13.5px]">
-                    {hero.metaLine} ·{' '}
-                    <span className="text-ink font-mono">{money(hero.paceAmount)}</span>{' '}
-                    {hero.paceTail}
+                    {hero.hasBudget ? (
+                      <>
+                        {hero.metaLine} ·{' '}
+                        <span className="text-ink font-mono">{money(hero.paceAmount)}</span>{' '}
+                        {hero.paceTail}
+                      </>
+                    ) : (
+                      <>
+                        {hero.metaLine} · {hero.paceTail}
+                      </>
+                    )}
                   </div>
                   <div className="border-line mt-4.5 flex gap-6.5 border-t pt-4">
                     <div>
@@ -184,6 +202,14 @@ const DashboardPage = async ({
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">
+              <div className="mb-4.5 flex items-baseline justify-between">
+                <h2 className="font-display text-base font-semibold">Spending by category</h2>
+                <span className="text-ink-muted text-xs">all expenses this month</span>
+              </div>
+              <ExpensePie slices={expenseBreakdown} total={hero.expense} />
             </div>
 
             <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">

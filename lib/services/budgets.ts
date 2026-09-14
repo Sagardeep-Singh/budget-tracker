@@ -33,7 +33,16 @@ export const listBudgets = async (userId: string, month: number): Promise<Fronte
     }),
     prisma.transaction.groupBy({
       by: ['categoryId'],
-      where: { userId, type: 'EXPENSE', date: { gte: start, lt: end }, categoryId: { not: null } },
+      // a transfer between the user's own accounts isn't spending, even when
+      // it carries a category — keep it out of budget spend so this agrees
+      // with the dashboard's expense total
+      where: {
+        userId,
+        type: 'EXPENSE',
+        isTransfer: false,
+        date: { gte: start, lt: end },
+        categoryId: { not: null },
+      },
       _sum: { amount: true },
     }),
   ]);

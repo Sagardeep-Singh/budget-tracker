@@ -35,6 +35,8 @@ const baseTx = {
   note: null,
   isPayment: true,
   importBatchId: null,
+  isTransfer: false,
+  transferMatchId: null,
   account: { name: 'Visa' },
   category: null,
   importBatch: null,
@@ -118,6 +120,7 @@ describe('createTransaction isPayment', () => {
       date: new Date('2026-03-16'),
       payee: 'Card payment',
       isPayment: true,
+      isTransfer: false,
     });
 
     expect(prismaMock.transaction.create).toHaveBeenCalledWith(
@@ -135,6 +138,7 @@ describe('createTransaction isPayment', () => {
       type: 'EXPENSE',
       date: new Date('2026-03-16'),
       isPayment: false,
+      isTransfer: false,
     });
 
     expect(prismaMock.transaction.create).toHaveBeenCalledWith(
@@ -152,6 +156,35 @@ describe('updateTransaction isPayment', () => {
 
     expect(prismaMock.transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ isPayment: true }) }),
+    );
+  });
+});
+
+describe('updateTransaction isTransfer', () => {
+  it('clears the correlation id when a transfer is un-marked', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue({ id: 'tx-1', accountId: 'acc-1' });
+    prismaMock.transaction.update.mockResolvedValue({ ...baseTx, isTransfer: false });
+
+    const result = await updateTransaction('user-1', 'tx-1', { isTransfer: false });
+
+    expect(prismaMock.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isTransfer: false, transferMatchId: null }),
+      }),
+    );
+    expect(result.isTransfer).toBe(false);
+  });
+
+  it('leaves the correlation id untouched when marking a transfer by hand', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue({ id: 'tx-1', accountId: 'acc-1' });
+    prismaMock.transaction.update.mockResolvedValue({ ...baseTx, isTransfer: true });
+
+    await updateTransaction('user-1', 'tx-1', { isTransfer: true });
+
+    expect(prismaMock.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isTransfer: true, transferMatchId: undefined }),
+      }),
     );
   });
 });

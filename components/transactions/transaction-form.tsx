@@ -31,6 +31,7 @@ export const TransactionForm = ({
   const [type, setType] = useState(transaction?.type ?? 'EXPENSE');
   const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? '');
   const [isPayment, setIsPayment] = useState(transaction?.isPayment ?? false);
+  const [isTransfer, setIsTransfer] = useState(transaction?.isTransfer ?? false);
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const canBePayment = type === 'INCOME' && selectedAccount?.type === 'CREDIT_CARD';
@@ -78,6 +79,7 @@ export const TransactionForm = ({
       payee: form.get('payee') || undefined,
       note: form.get('note') || undefined,
       isPayment: canBePayment && isPayment,
+      isTransfer,
     };
 
     const res = await fetch(
@@ -110,9 +112,10 @@ export const TransactionForm = ({
           type="number"
           step="0.01"
           min="0.01"
+          placeholder="0.00"
           defaultValue={transaction?.amount}
           required
-          className="border-0 bg-transparent p-0 font-mono text-[30px] tracking-[-0.03em] tabular-nums shadow-none outline-none focus:border-0"
+          className="placeholder:text-ink-muted/50 border-0 bg-transparent p-0 font-mono text-[30px] tracking-[-0.03em] tabular-nums shadow-none outline-none focus:border-0"
         />
         <div className="flex shrink-0 gap-1.5">
           <button
@@ -179,6 +182,16 @@ export const TransactionForm = ({
           <span className="text-ink-muted text-xs">(excluded from the statement total)</span>
         </label>
       )}
+      <label className="text-ink flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={isTransfer}
+          onChange={(e) => setIsTransfer(e.target.checked)}
+          className="accent-iris h-4 w-4"
+        />
+        This is a transfer between my own accounts
+        <span className="text-ink-muted text-xs">(excluded from income and spending)</span>
+      </label>
       <div>
         <Label htmlFor="payee">Payee</Label>
         <Input
