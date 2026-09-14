@@ -28,6 +28,10 @@ matching only, as it was before this feature.
    surprising, hard-to-undo action. The row shows `Category "X" not
 found` in the preview; the user creates the category first (or fixes
    the file) and re-imports — the row is simply left unchecked otherwise.
+   **Superseded** by `docs/feature-plans/rule-import-create-category.md`:
+   missing categories can now be created as an explicit per-row opt-in
+   (`will-create` status), never automatic/bulk. This decision's rationale
+   still applies to _unchecked_ rows.
 4. **Commit re-classifies at write time**, not trusting the client-sent
    preview — DB state (categories, existing rules) can change between
    preview and confirm, so `importCategoryRules` reruns the same

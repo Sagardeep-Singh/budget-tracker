@@ -14,14 +14,16 @@ import type { FrontendCategory } from '@/lib/services/categories';
 type ImportResult = {
   imported: number;
   skipped: Array<{ matchText: string; reason: string }>;
+  createdCategories: string[];
 };
 
 type PreviewRow = {
   matchText: string;
   categoryName: string;
   priority: number;
-  status: 'ready' | 'skip';
+  status: 'ready' | 'skip' | 'will-create';
   reason?: string;
+  newCategoryName?: string;
 };
 
 export const RulesView = ({
@@ -227,10 +229,18 @@ export const RulesView = ({
         </Button>
       </div>
 
-      {importError && <p className="text-rose mb-4 text-sm">{importError}</p>}
+      {importError && (
+        <p role="alert" className="text-rose mb-4 text-sm">
+          {importError}
+        </p>
+      )}
       {importResult && (
-        <p className="bg-sky-soft text-sky mb-4 rounded-lg px-4 py-3 text-sm">
+        <p role="status" className="bg-sky-soft text-sky mb-4 rounded-lg px-4 py-3 text-sm">
           Imported {importResult.imported} rule{importResult.imported === 1 ? '' : 's'}.
+          {importResult.createdCategories.length > 0 &&
+            ` Created ${importResult.createdCategories.length} new categor${
+              importResult.createdCategories.length === 1 ? 'y' : 'ies'
+            }: ${importResult.createdCategories.join(', ')}.`}
           {importResult.skipped.length > 0 &&
             ` Skipped ${importResult.skipped.length}: ${importResult.skipped
               .map((s) => `"${s.matchText}" (${s.reason})`)
@@ -451,9 +461,13 @@ export const RulesView = ({
                       &ldquo;{row.matchText}&rdquo;
                     </span>
                     <span className="text-ink-muted block text-[12px]">
-                      {row.status === 'ready' ? (
-                        <>→ {row.categoryName}</>
-                      ) : (
+                      {row.status === 'ready' && <>→ {row.categoryName}</>}
+                      {row.status === 'will-create' && (
+                        <span className="bg-iris-soft text-iris mt-1 inline-block rounded-full px-2.5 py-1 text-[12.5px]">
+                          Will create category &ldquo;{row.newCategoryName}&rdquo;
+                        </span>
+                      )}
+                      {row.status === 'skip' && (
                         <span className="text-rose">Skipped: {row.reason}</span>
                       )}
                     </span>
@@ -461,7 +475,11 @@ export const RulesView = ({
                 </label>
               ))}
             </div>
-            {importError && <p className="text-rose mt-3 text-sm">{importError}</p>}
+            {importError && (
+              <p className="text-rose mt-3 text-sm" role="alert">
+                {importError}
+              </p>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={cancelImport}>
                 Cancel
