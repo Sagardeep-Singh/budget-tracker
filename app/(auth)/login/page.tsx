@@ -3,8 +3,10 @@ import { LoginForm } from '@/components/auth/login-form';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { LogoMark } from '@/components/ui/logo-mark';
 import { Ring } from '@/components/ui/ring';
+import { DEMO_EMAIL, DEMO_PASSWORD } from '@/prisma/demo-seed';
 
 const googleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+const demoEnabled = process.env.DEMO_ENABLED === 'true';
 
 const LoginPage = async ({
   searchParams,
@@ -42,6 +44,17 @@ const LoginPage = async ({
             <p className="bg-sky-soft text-sky mb-4 rounded-lg px-3 py-2 text-sm" role="status">
               Password changed. Sign in with your new password.
             </p>
+          )}
+          {demoEnabled && (
+            <div className="bg-sky-soft text-sky mb-4 rounded-lg px-3 py-2.5 text-sm">
+              <p className="font-medium">Just want to look around?</p>
+              <p className="mt-0.5 text-[13px]">
+                Sign in with the demo account — email{' '}
+                <span className="font-mono">{DEMO_EMAIL}</span>, password{' '}
+                <span className="font-mono">{DEMO_PASSWORD}</span>. Its data resets on a schedule,
+                so don&rsquo;t keep anything you want to save.
+              </p>
+            </div>
           )}
           <LoginForm />
           {googleConfigured && (
