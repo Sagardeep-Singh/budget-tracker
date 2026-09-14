@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
-import { matchCategoryRule } from '@/lib/services/categorize';
+import { compileRuleMatcher } from '@/lib/services/categorize';
 import { matchTransfers } from '@/lib/services/transfers';
 import type { CommitImportInput, ImportRowInput } from '@/lib/validators/csv-import';
 
@@ -52,9 +52,15 @@ export const previewImport = async (
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   const seenInBatch = new Set<string>();
 
+  // Compiled once and reused across every row — a regex-mode rule would
+  // otherwise be recompiled per row per rule for a large CSV.
+  const matchers = [...rules]
+    .sort((a, b) => a.priority - b.priority)
+    .map((r) => ({ categoryId: r.categoryId, matcher: compileRuleMatcher(r.matchText) }));
+
   return rawRows.map((row) => {
     const text = `${row.payee ?? ''} ${row.note ?? ''}`;
-    const categoryId = matchCategoryRule(rules, text);
+    const categoryId = matchers.find((m) => m.matcher.test(text))?.categoryId ?? null;
     const key = duplicateKey(row);
     // flag against existing DB rows, and against an earlier row in this same
     // file (two identical CSV rows shouldn't both import silently)

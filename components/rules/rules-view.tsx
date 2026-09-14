@@ -1,14 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { Check, Download, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
 import type { FrontendCategory } from '@/lib/services/categories';
+
+type ImportResult = {
+  imported: number;
+  skipped: Array<{ matchText: string; reason: string }>;
+};
 
 export const RulesView = ({
   initialRules,
@@ -18,6 +23,7 @@ export const RulesView = ({
   categories: FrontendCategory[];
 }): React.ReactElement => {
   const router = useRouter();
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [matchText, setMatchText] = useState('');
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
   const [priority, setPriority] = useState('0');
@@ -30,6 +36,9 @@ export const RulesView = ({
   const [editPriority, setEditPriority] = useState('0');
   const [editPending, setEditPending] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const query = search.trim().toLowerCase();
   const visibleRules = useMemo(
@@ -106,8 +115,75 @@ export const RulesView = ({
     router.refresh();
   };
 
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportError(null);
+    setImportResult(null);
+    setImporting(true);
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch('/api/rules/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      });
+      if (!res.ok) {
+        setImportError('Could not import that file. Check it was exported from Rules.');
+        return;
+      }
+      setImportResult(await res.json());
+      router.refresh();
+    } catch {
+      setImportError('That file is not valid JSON.');
+    } finally {
+      setImporting(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="mt-6.5">
+      <div className="mb-4.5 flex justify-end gap-2">
+        <a
+          href="/api/rules/export"
+          download="ledger-rules.json"
+          className="border-line text-ink hover:border-iris inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150"
+        >
+          <Download size={16} />
+          Export rules
+        </a>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImportFile}
+          className="hidden"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          icon={Upload}
+          loading={importing}
+          onClick={() => importInputRef.current?.click()}
+        >
+          Import rules
+        </Button>
+      </div>
+
+      {importError && <p className="text-rose mb-4 text-sm">{importError}</p>}
+      {importResult && (
+        <p className="bg-sky-soft text-sky mb-4 rounded-lg px-4 py-3 text-sm">
+          Imported {importResult.imported} rule{importResult.imported === 1 ? '' : 's'}.
+          {importResult.skipped.length > 0 &&
+            ` Skipped ${importResult.skipped.length}: ${importResult.skipped
+              .map((s) => `"${s.matchText}" (${s.reason})`)
+              .join(', ')}.`}
+        </p>
+      )}
+
       {categories.length === 0 ? (
         <div className="border-line bg-paper-raised flex flex-col items-center gap-3 rounded-2xl border border-dashed p-8 text-center">
           <p className="text-ink-muted text-sm">
