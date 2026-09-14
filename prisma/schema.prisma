@@ -80,6 +80,13 @@ model Transaction {
   /// the previous statement's balance, so it's excluded from the current
   /// statement period's credit/debit/net totals
   isPayment     Boolean         @default(false)
+  /// marks one leg of a transfer between two of the user's own accounts (e.g.
+  /// the checking-side EXPENSE and the card-side INCOME of a card payment), so
+  /// neither leg is counted as real income or spending in any aggregate
+  isTransfer    Boolean         @default(false)
+  /// soft correlation id shared by both legs of one matched transfer pair; not
+  /// a foreign key — it exists for display, debugging, and future unlinking
+  transferMatchId String?
   skippedAt     DateTime?
   createdAt     DateTime        @default(now())
 
@@ -91,6 +98,7 @@ model Transaction {
   @@index([accountId])
   @@index([categoryId])
   @@index([importBatchId])
+  @@index([transferMatchId])
 }
 
 /// month stored as YYYYMM (e.g. 202603) to keep budgets sortable and

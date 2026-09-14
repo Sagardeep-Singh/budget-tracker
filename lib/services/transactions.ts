@@ -18,6 +18,8 @@ export type FrontendTransaction = {
   payee: string | null;
   note: string | null;
   isPayment: boolean;
+  isTransfer: boolean;
+  transferMatchId: string | null;
 };
 
 const toFrontend = (tx: {
@@ -30,6 +32,8 @@ const toFrontend = (tx: {
   payee: string | null;
   note: string | null;
   isPayment: boolean;
+  isTransfer: boolean;
+  transferMatchId: string | null;
   account: { name: string };
   category: { name: string } | null;
 }): FrontendTransaction => ({
@@ -44,6 +48,8 @@ const toFrontend = (tx: {
   payee: tx.payee,
   note: tx.note,
   isPayment: tx.isPayment,
+  isTransfer: tx.isTransfer,
+  transferMatchId: tx.transferMatchId,
 });
 
 const include = {
@@ -105,6 +111,7 @@ export const createTransaction = async (
       payee: input.payee,
       note: input.note,
       isPayment: input.isPayment,
+      isTransfer: input.isTransfer,
     },
     include,
   });
@@ -139,6 +146,10 @@ export const updateTransaction = async (
       payee: input.payee,
       note: input.note,
       isPayment: input.isPayment,
+      isTransfer: input.isTransfer,
+      // un-marking a transfer drops the correlation id too, so a bad auto-match
+      // leaves nothing dangling on this row
+      transferMatchId: input.isTransfer === false ? null : undefined,
     },
     include,
   });
