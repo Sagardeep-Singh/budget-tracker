@@ -97,11 +97,17 @@ test('the same content under a different filename does not conflict', async ({ p
   await page.getByRole('button', { name: /^Import 1 rows$/ }).click();
   await expect(page.getByText(/Imported 1 transaction/)).toBeVisible();
 
-  // filename-only matching: identical rows, different name -> no warning, no 409
+  // the batch-level filename gate is independent of the row-level content key:
+  // different name -> no filename warning, no commit-time 409 ...
   await previewFile(page, `E2E-Name-B-${stamp}.csv`, content);
   await expect(page.locator('.bg-sky-soft').filter({ hasText: 'already imported' })).toBeHidden();
 
-  await page.locator('.ledger-row input[type="checkbox"]').first().check();
+  // ... but the row itself is still flagged on content (account + date + amount
+  // + payee), which is why it comes back unchecked and has to be ticked below
+  await expect(page.getByText(/possible duplicate/).first()).toBeVisible();
+  const rowCheckbox = page.locator('.ledger-row input[type="checkbox"]').first();
+  await expect(rowCheckbox).not.toBeChecked();
+  await rowCheckbox.check();
   await page.getByRole('button', { name: /^Import \d+ rows$/ }).click();
   await expect(page.locator('.bg-rose-soft').filter({ hasText: 'already imported' })).toBeHidden();
 });
