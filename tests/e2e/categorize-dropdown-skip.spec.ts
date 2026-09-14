@@ -15,6 +15,12 @@ const addUncategorizedTransaction = async (
   page: import('@playwright/test').Page,
   payee: string,
 ): Promise<void> => {
+  // Fixture setup, not the subject under test: the Transactions header
+  // "Add transaction" button is desktop-only, so widen for the setup and
+  // restore the test's own viewport afterwards.
+  const original = page.viewportSize();
+  await page.setViewportSize({ width: 1280, height: 800 });
+
   await page.goto('/transactions');
   await page.getByRole('button', { name: 'Add transaction' }).click();
   const drawer = page.getByRole('dialog', { name: 'Add transaction' });
@@ -23,6 +29,8 @@ const addUncategorizedTransaction = async (
   await drawer.locator('#amount').fill('9.99');
   await drawer.getByRole('button', { name: 'Save transaction' }).click();
   await expect(drawer).toBeHidden();
+
+  if (original) await page.setViewportSize(original);
 };
 
 test('skipping a transaction persists — it does not reappear after reload', async ({ page }) => {

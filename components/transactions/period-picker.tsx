@@ -32,7 +32,10 @@ export const PeriodPicker = ({
   onNext: () => void;
   allowStatement: boolean;
 }): React.ReactElement => (
-  <div className="flex items-center gap-2">
+  // Wraps rather than overflows at mobile width, matching the Transactions
+  // summary bar. No bottom sheet needed here: there's no drill-down content,
+  // just a pill row and prev/next.
+  <div className="flex flex-wrap items-center gap-2">
     <div className="border-line bg-paper-raised flex rounded-full border p-0.5 text-xs">
       {(['ALL', 'MONTH', ...(allowStatement ? (['STATEMENT'] as const) : [])] as const).map((m) => (
         <button
