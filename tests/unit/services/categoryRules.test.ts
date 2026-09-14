@@ -2,14 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
-    categoryRule: { findMany: vi.fn() },
+    categoryRule: { findMany: vi.fn(), createMany: vi.fn() },
+    category: { findMany: vi.fn() },
     transaction: { findMany: vi.fn() },
   },
 }));
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
-const { listCategoryRules } = await import('@/lib/services/categoryRules');
+const { listCategoryRules, exportCategoryRules, importCategoryRules, previewCategoryRuleImport } =
+  await import('@/lib/services/categoryRules');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -47,5 +49,116 @@ describe('listCategoryRules', () => {
         appliedCount: 2,
       },
     ]);
+  });
+});
+
+describe('exportCategoryRules', () => {
+  it('exports by category name, not id', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { matchText: 'whole foods', priority: 0, category: { name: 'Groceries' } },
+      { matchText: 'amzn mktp', priority: 1, category: { name: 'Shopping' } },
+    ]);
+
+    const result = await exportCategoryRules('user-1');
+
+    expect(result).toEqual([
+      { matchText: 'whole foods', categoryName: 'Groceries', priority: 0 },
+      { matchText: 'amzn mktp', categoryName: 'Shopping', priority: 1 },
+    ]);
+  });
+});
+
+describe('importCategoryRules', () => {
+  beforeEach(() => {
+    prismaMock.category.findMany.mockResolvedValue([
+      { id: 'cat-1', name: 'Groceries' },
+      { id: 'cat-2', name: 'Shopping' },
+    ]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+  });
+
+  it('imports rows matched by category name, case-insensitively', async () => {
+    const result = await importCategoryRules('user-1', [
+      { matchText: 'whole foods', categoryName: 'groceries', priority: 0 },
+    ]);
+
+    expect(result).toEqual({ imported: 1, skipped: [] });
+    expect(prismaMock.categoryRule.createMany).toHaveBeenCalledWith({
+      data: [{ userId: 'user-1', categoryId: 'cat-1', matchText: 'whole foods', priority: 0 }],
+    });
+  });
+
+  it('skips a row whose category does not exist for this user, with a reason', async () => {
+    const result = await importCategoryRules('user-1', [
+      { matchText: 'rent', categoryName: 'Nonexistent', priority: 0 },
+    ]);
+
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toEqual([
+      { matchText: 'rent', reason: 'Category "Nonexistent" not found' },
+    ]);
+    expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
+  });
+
+  it('skips a row that already exists for this user (idempotent re-import)', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { categoryId: 'cat-1', matchText: 'whole foods' },
+    ]);
+
+    const result = await importCategoryRules('user-1', [
+      { matchText: 'whole foods', categoryName: 'Groceries', priority: 0 },
+    ]);
+
+    expect(result).toEqual({
+      imported: 0,
+      skipped: [{ matchText: 'whole foods', reason: 'Already exists' }],
+    });
+    expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates identical rows within the same file', async () => {
+    const result = await importCategoryRules('user-1', [
+      { matchText: 'rent', categoryName: 'Groceries', priority: 0 },
+      { matchText: 'rent', categoryName: 'Groceries', priority: 0 },
+    ]);
+
+    expect(result.imported).toBe(1);
+    expect(result.skipped).toEqual([{ matchText: 'rent', reason: 'Already exists' }]);
+  });
+});
+
+describe('previewCategoryRuleImport', () => {
+  beforeEach(() => {
+    prismaMock.category.findMany.mockResolvedValue([{ id: 'cat-1', name: 'Groceries' }]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { categoryId: 'cat-1', matchText: 'existing rule' },
+    ]);
+  });
+
+  it('classifies rows as ready/skip without writing anything', async () => {
+    const result = await previewCategoryRuleImport('user-1', [
+      { matchText: 'whole foods', categoryName: 'Groceries', priority: 0 },
+      { matchText: 'rent', categoryName: 'Nonexistent', priority: 0 },
+      { matchText: 'existing rule', categoryName: 'Groceries', priority: 0 },
+    ]);
+
+    expect(result).toEqual([
+      { matchText: 'whole foods', categoryName: 'Groceries', priority: 0, status: 'ready' },
+      {
+        matchText: 'rent',
+        categoryName: 'Nonexistent',
+        priority: 0,
+        status: 'skip',
+        reason: 'Category "Nonexistent" not found',
+      },
+      {
+        matchText: 'existing rule',
+        categoryName: 'Groceries',
+        priority: 0,
+        status: 'skip',
+        reason: 'Already exists',
+      },
+    ]);
+    expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
   });
 });
