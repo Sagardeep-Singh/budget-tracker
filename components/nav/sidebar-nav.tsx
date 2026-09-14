@@ -16,7 +16,15 @@ export type SidebarNavItem = {
   alert?: boolean;
 };
 
-export const SidebarNav = ({ items }: { items: SidebarNavItem[] }): React.ReactElement => {
+export const SidebarNav = ({
+  items,
+  onNavigate,
+}: {
+  items: SidebarNavItem[];
+  /** Called when an item is tapped — lets the mobile "More" modal close itself,
+   * since BottomNav lives in the layout and survives the route change. */
+  onNavigate?: () => void;
+}): React.ReactElement => {
   const pathname = usePathname();
 
   return (
@@ -27,6 +35,7 @@ export const SidebarNav = ({ items }: { items: SidebarNavItem[] }): React.ReactE
           <Link
             key={item.href}
             href={item.href}
+            onClick={onNavigate}
             className={cn(
               'flex items-center justify-between gap-2 rounded-full px-3 py-2.5 text-sm font-medium transition-colors',
               active ? 'bg-iris text-paper-raised' : 'text-ink hover:bg-paper',

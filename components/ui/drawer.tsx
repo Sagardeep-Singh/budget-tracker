@@ -76,7 +76,9 @@ export const Drawer = ({
       aria-modal="true"
       aria-label={title}
       className={cn(
-        'border-line bg-paper-raised fixed top-0 right-0 bottom-0 z-40 w-[420px] overflow-auto border-l p-7 pb-8 shadow-[-18px_0_48px_rgba(0,0,0,.16)]',
+        // Full-screen below lg (a fixed 420px panel overflows a ~402px phone
+        // viewport); unchanged right-side drawer at lg+.
+        'border-line bg-paper-raised fixed inset-0 z-40 w-full overflow-auto border-l p-7 pb-8 shadow-[-18px_0_48px_rgba(0,0,0,.16)] lg:inset-y-0 lg:right-0 lg:left-auto lg:w-[420px]',
         className,
       )}
     >

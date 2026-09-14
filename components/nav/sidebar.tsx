@@ -1,82 +1,26 @@
 import Link from 'next/link';
-import {
-  LogOut,
-  Plus,
-  LayoutDashboard,
-  Receipt,
-  Tag,
-  PiggyBank,
-  TrendingUp,
-  Wallet,
-  ListFilter,
-  Settings,
-  Download,
-} from 'lucide-react';
-import { getServerAuthSession } from '@/lib/auth/session';
-import { getNavCounts } from '@/lib/services/nav';
-import { listAccounts } from '@/lib/services/accounts';
+import { LogOut, Plus } from 'lucide-react';
 import { signOutAction } from '@/lib/auth/actions';
-import { SidebarNav, type SidebarNavItem } from '@/components/nav/sidebar-nav';
+import { SidebarNav } from '@/components/nav/sidebar-nav';
 import { LogoMark } from '@/components/ui/logo-mark';
+import { buildSidebarItems } from '@/lib/nav/items';
+import type { FrontendAccount } from '@/lib/services/accounts';
+import type { NavCounts } from '@/lib/services/nav';
 
-export const Sidebar = async (): Promise<React.ReactElement> => {
-  const session = await getServerAuthSession();
-  const userId = session!.user.id;
-  const [counts, accounts] = await Promise.all([getNavCounts(userId), listAccounts(userId)]);
-
-  const navIconClassName = 'size-4 shrink-0';
-  const navItems: SidebarNavItem[] = [
-    {
-      href: '/dashboard',
-      label: 'Overview',
-      icon: <LayoutDashboard className={navIconClassName} />,
-    },
-    {
-      href: '/trends',
-      label: 'Trends',
-      icon: <TrendingUp className={navIconClassName} />,
-    },
-    {
-      href: '/transactions',
-      label: 'Transactions',
-      icon: <Receipt className={navIconClassName} />,
-      badge: counts.transactions,
-    },
-    {
-      href: '/categorize',
-      label: 'Categorize',
-      icon: <Tag className={navIconClassName} />,
-      badge: counts.categorize,
-      alert: true,
-    },
-    {
-      href: '/budgets',
-      label: 'Budgets',
-      icon: <PiggyBank className={navIconClassName} />,
-      badge: counts.budgets,
-    },
-    {
-      href: '/accounts',
-      label: 'Accounts',
-      icon: <Wallet className={navIconClassName} />,
-      badge: counts.accounts,
-    },
-    {
-      href: '/rules',
-      label: 'Rules',
-      icon: <ListFilter className={navIconClassName} />,
-      badge: counts.rules,
-    },
-    {
-      href: '/import',
-      label: 'Import',
-      icon: <Download className={navIconClassName} />,
-    },
-    { href: '/settings', label: 'Settings', icon: <Settings className={navIconClassName} /> },
-  ];
+export const Sidebar = ({
+  accounts,
+  counts,
+}: {
+  accounts: FrontendAccount[];
+  counts: NavCounts;
+}): React.ReactElement => {
+  const navItems = buildSidebarItems(counts);
 
   return (
-    <nav className="border-line bg-paper-raised sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r px-4 py-6.5">
+    <nav
+      aria-label="Primary"
+      className="border-line bg-paper-raised sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r px-4 py-6.5 lg:flex"
+    >
       <div className="font-display text-ink mb-5.5 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight">
         <LogoMark size={22} />
         Ledger

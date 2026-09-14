@@ -23,7 +23,7 @@ const APPEARANCE_LABELS: Record<Appearance, string> = {
   dark: 'Dark',
 };
 
-const pillGroup = 'flex gap-1.5';
+const pillGroup = 'flex flex-wrap justify-end gap-1.5';
 const pillOption = (active: boolean): string =>
   cn(
     'rounded-full border px-3.5 py-2 text-[13px] font-medium',

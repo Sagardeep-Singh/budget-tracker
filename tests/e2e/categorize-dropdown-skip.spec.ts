@@ -61,3 +61,31 @@ test('picking a category from the dropdown categorizes immediately, no separate 
   await page.reload();
   await expect(page.locator('.ledger-row').filter({ hasText: payee })).toHaveCount(0);
 });
+
+test.describe('mobile width', () => {
+  test.use({ viewport: { width: 402, height: 874 } });
+
+  test('tapping a category chip categorizes immediately, no dropdown involved', async ({
+    page,
+  }) => {
+    const payee = `E2E Chip ${Date.now()}`;
+    await login(page);
+    await addUncategorizedTransaction(page, payee);
+
+    await page.goto('/categorize');
+    const card = page.getByTestId('categorize-card-mobile').filter({ hasText: payee });
+    await expect(card).toBeVisible();
+
+    // the mobile card has no <select> at all — only chip buttons and Skip
+    await expect(card.locator('select')).toHaveCount(0);
+
+    const firstChip = card.getByRole('button').filter({ hasNotText: 'Skip' }).first();
+    await firstChip.click();
+    await expect(card).toBeHidden();
+
+    await page.reload();
+    await expect(page.getByTestId('categorize-card-mobile').filter({ hasText: payee })).toHaveCount(
+      0,
+    );
+  });
+});

@@ -58,7 +58,7 @@ const TrendsPage = async ({
           </p>
         </div>
       ) : (
-        <div className="mt-6.5 grid grid-cols-[1.5fr_1fr] items-start gap-5">
+        <div className="mt-6.5 grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.5fr_1fr]">
           <div className="flex min-w-0 flex-col gap-5">
             <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">
               <div className="mb-4.5 flex items-baseline justify-between">

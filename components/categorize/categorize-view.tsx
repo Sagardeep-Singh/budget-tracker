@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCheck, SkipForward } from 'lucide-react';
+import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
 import { Toast } from '@/components/ui/toast';
@@ -132,12 +133,22 @@ export const CategorizeView = ({
       </div>
 
       {reviewOne && (
-        <p className="text-ink-muted mt-2 text-xs">
-          {index + 1} of {queue.length}
-        </p>
+        <div className="mt-3">
+          <p className="text-ink-muted text-xs">
+            {index + 1} of {queue.length}
+          </p>
+          <div className="bg-paper-sunk mt-1.5 h-1 overflow-hidden rounded-full">
+            <div
+              className="bg-iris h-full rounded-full transition-[width]"
+              style={{ width: `${((index + 1) / queue.length) * 100}%` }}
+            />
+          </div>
+        </div>
       )}
 
-      <div className="border-line bg-paper-raised mt-4 rounded-[18px] border px-6">
+      {/* Desktop: table-style rows with a category dropdown — plenty of
+          width for a fixed-column layout. */}
+      <div className="border-line bg-paper-raised mt-4 hidden rounded-[18px] border px-6 lg:block">
         {visibleRows.map((row) => (
           <div key={row.id} className="ledger-row flex items-center gap-5 py-4.5">
             <div className="w-[230px] min-w-0 shrink-0">
@@ -183,6 +194,69 @@ export const CategorizeView = ({
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Mobile: one card, category chips instead of a dropdown — tapping a
+          chip confirms immediately (no separate confirm step), so
+          reassigning is a single tap. The rule's suggestion (if any) sorts
+          first and gets an accent ring so it's the easiest chip to reach. */}
+      <div className="mt-4 flex flex-col gap-3 lg:hidden">
+        {visibleRows.map((row) => {
+          const sortedCategories = row.suggestedCategoryId
+            ? [
+                ...categories.filter((c) => c.id === row.suggestedCategoryId),
+                ...categories.filter((c) => c.id !== row.suggestedCategoryId),
+              ]
+            : categories;
+          return (
+            <div
+              key={row.id}
+              data-testid="categorize-card-mobile"
+              className="border-line bg-paper-raised flex flex-col gap-4 rounded-[18px] border p-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[15px] font-medium">{row.payee}</div>
+                  <div className="text-ink-muted mt-0.5 text-xs">{row.meta}</div>
+                </div>
+                <span className="text-rose shrink-0 font-mono text-base tabular-nums">
+                  -{row.amount}
+                </span>
+              </div>
+              <p className="text-ink-muted text-[12.5px] leading-snug">
+                {row.why ?? 'No rule matches this transaction.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {sortedCategories.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={pending}
+                    onClick={() => void confirm(row, c.id)}
+                    className={cn(
+                      'rounded-full border px-3.5 py-2 text-[13px] font-medium disabled:opacity-50',
+                      c.id === row.suggestedCategoryId
+                        ? 'border-iris bg-iris-soft text-iris'
+                        : 'border-line text-ink',
+                    )}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void skip(row)}
+                icon={SkipForward}
+                loading={pending}
+                className="justify-center py-2.5 text-[13px]"
+              >
+                Skip
+              </Button>
+            </div>
+          );
+        })}
       </div>
 
       {toast && (

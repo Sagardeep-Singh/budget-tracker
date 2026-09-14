@@ -182,10 +182,15 @@ export const TransactionsView = ({
   const days = Array.from(dayGroups.entries()).reverse();
 
   return (
-    <div className="mt-6.5">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="mt-6.5 pb-20 lg:pb-0">
+      {/* Chips scroll horizontally below lg (keeps the header height constant as
+          filters are added) and wrap as before at lg+. */}
+      <div
+        data-testid="transaction-filters"
+        className="flex flex-nowrap items-center gap-2 overflow-x-auto lg:flex-wrap"
+      >
         <Select
-          className={pillSelect}
+          className={cn(pillSelect, 'shrink-0')}
           value={accountFilter}
           onChange={(e) => handleAccountFilterChange(e.target.value)}
         >
@@ -197,7 +202,7 @@ export const TransactionsView = ({
           ))}
         </Select>
         <Select
-          className={pillSelect}
+          className={cn(pillSelect, 'shrink-0')}
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
         >
@@ -208,10 +213,10 @@ export const TransactionsView = ({
             </option>
           ))}
         </Select>
-        <div className="flex-1" />
+        <div className="hidden flex-1 lg:block" />
         <Link
           href="/import"
-          className="border-line text-ink inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm"
+          className="border-line text-ink inline-flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-sm"
         >
           <Upload size={15} />
           Import CSV
@@ -222,11 +227,11 @@ export const TransactionsView = ({
           onClick={handleMatchTransfers}
           icon={ArrowLeftRight}
           loading={matchPending}
-          className="px-4 py-2"
+          className="shrink-0 px-4 py-2"
         >
           Match transfers
         </Button>
-        <Button type="button" onClick={openCreate} icon={Plus} className="px-4 py-2">
+        <Button type="button" onClick={openCreate} icon={Plus} className="shrink-0 px-4 py-2">
           Add transaction
         </Button>
       </div>
@@ -258,12 +263,14 @@ export const TransactionsView = ({
         </div>
       )}
 
-      <div className="border-line bg-paper-raised mt-3.5 flex items-center justify-between gap-6 rounded-[14px] border px-6 py-3.5">
+      <div className="border-line bg-paper-raised mt-3.5 flex flex-col items-start gap-3 rounded-[14px] border px-6 py-3.5 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
         <span className="text-ink-muted text-[12.5px] font-medium whitespace-nowrap">
           {filtered.length} transaction{filtered.length === 1 ? '' : 's'}
           {period ? ' in this period' : ''}
         </span>
-        <div className="flex items-center gap-6.5 text-[13.5px]">
+        {/* Wraps rather than scrolls below lg: a scroll container would hide Net
+            off-screen with no affordance. */}
+        <div className="flex flex-wrap items-center gap-x-6.5 gap-y-2.5 text-[13.5px] lg:flex-nowrap">
           <span className="flex items-baseline gap-1.5">
             <span className="text-ink-muted text-xs">Credit</span>
             <span className="text-sky font-mono tabular-nums">
@@ -276,7 +283,7 @@ export const TransactionsView = ({
               −{Number(summary.debit).toFixed(2)}
             </span>
           </span>
-          <span className="border-line flex items-baseline gap-1.5 border-l pl-6.5">
+          <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
             <span className="text-ink-muted text-xs">Net</span>
             <span className={cn('font-mono tabular-nums', net >= 0 ? 'text-sky' : 'text-rose')}>
               {net >= 0 ? '+' : '−'}
@@ -284,13 +291,13 @@ export const TransactionsView = ({
             </span>
           </span>
           {summary.payments > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l pl-6.5">
+            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
               <span className="text-ink-muted text-xs">Payments (excluded)</span>
               <Money value={summary.payments} tone="neutral" />
             </span>
           )}
           {summary.transfers > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l pl-6.5">
+            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
               <span className="text-ink-muted text-xs">Transfers (excluded)</span>
               <Money value={summary.transfers} tone="neutral" />
             </span>
@@ -325,7 +332,7 @@ export const TransactionsView = ({
                   <div
                     key={t.id}
                     onClick={() => openDetail(t)}
-                    className="ledger-row flex cursor-pointer items-center gap-5 py-3.5"
+                    className="ledger-row flex cursor-pointer items-center gap-3 py-3.5 lg:gap-5"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">
@@ -354,14 +361,16 @@ export const TransactionsView = ({
                     </span>
                     <span
                       className={cn(
-                        'w-[100px] shrink-0 text-right font-mono text-sm tabular-nums',
+                        'shrink-0 text-right font-mono text-sm tabular-nums lg:w-[100px]',
                         t.type === 'INCOME' ? 'text-sky' : 'text-rose',
                       )}
                     >
                       {t.type === 'INCOME' ? '+' : '−'}
                       {Number(t.amount).toFixed(2)}
                     </span>
-                    <span className="text-ink-muted w-[86px] shrink-0 text-right font-mono text-xs tabular-nums">
+                    {/* Running balance is a desktop-only column: at 402px it squeezed
+                        the payee cell to zero width. */}
+                    <span className="text-ink-muted hidden w-[86px] shrink-0 text-right font-mono text-xs tabular-nums lg:block">
                       {(runningBalance.get(t.id) ?? 0).toFixed(2)}
                     </span>
                   </div>
@@ -431,6 +440,14 @@ export const TransactionsView = ({
         onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
         onCancel={() => setConfirmDeleteId(null)}
       />
+
+      <Link
+        href="?overlay=add"
+        className="border-line bg-iris text-paper-raised focus-visible:outline-paper-raised fixed inset-x-5 z-20 flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold shadow-[0_8px_24px_rgba(0,0,0,.18)] focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
+        style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}
+      >
+        <Plus size={16} /> Log a spend
+      </Link>
     </div>
   );
 };

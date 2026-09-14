@@ -12,7 +12,9 @@ export const ScreenHeader = ({
 }): React.ReactElement => (
   <div className="relative flex items-end justify-between gap-6">
     <div className="min-w-0">
-      <div className="flex items-center gap-3">
+      {/* Wraps so a wide period control (e.g. Trends' range toggle) drops below
+          the title at mobile width instead of overflowing the screen. */}
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="font-display text-ink text-[32px] font-semibold tracking-[-0.025em]">
           {title}
         </h1>
