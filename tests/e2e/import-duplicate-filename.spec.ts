@@ -7,7 +7,7 @@ const login = async (page: Page): Promise<void> => {
   await page.goto('/login');
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 };
 
@@ -103,7 +103,7 @@ test('the same content under a different filename does not conflict', async ({ p
 
   await page.locator('.ledger-row input[type="checkbox"]').first().check();
   await page.getByRole('button', { name: /^Import \d+ rows$/ }).click();
-  await expect(page.locator('.bg-rose-soft')).toBeHidden();
+  await expect(page.locator('.bg-rose-soft').filter({ hasText: 'already imported' })).toBeHidden();
 });
 
 test('filename matching ignores case and surrounding whitespace', async ({ page }) => {

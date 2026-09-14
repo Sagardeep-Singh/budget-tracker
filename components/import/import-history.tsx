@@ -28,6 +28,17 @@ export const ImportHistory = ({
   const [undoKey, setUndoKey] = useState(0);
   const linkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
 
+  // router.refresh() re-fetches initialBatches from the server, but this state
+  // was only seeded from it on mount — resync during render (React's documented
+  // pattern for adjusting state from props) or an undo never shows as undone
+  // without a full reload. handleLoadMore's appended pages fall away too, which
+  // matches a refresh resetting back to the first page.
+  const [prevInitialBatches, setPrevInitialBatches] = useState(initialBatches);
+  if (initialBatches !== prevInitialBatches) {
+    setPrevInitialBatches(initialBatches);
+    setBatches(initialBatches);
+  }
+
   const handleLoadMore = async (): Promise<void> => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
