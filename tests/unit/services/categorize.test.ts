@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchCategoryRule } from '@/lib/services/categorize';
+import { compileRuleMatcher, matchCategoryRule } from '@/lib/services/categorize';
 
 describe('matchCategoryRule', () => {
   it('matches case-insensitively against payee/note text', () => {
@@ -22,5 +22,15 @@ describe('matchCategoryRule', () => {
   it('ignores rules whose matchText does not appear', () => {
     const rules = [{ categoryId: 'cat-rent', matchText: 'landlord llc', priority: 0 }];
     expect(matchCategoryRule(rules, 'Grocery Store')).toBeNull();
+  });
+});
+
+describe('compileRuleMatcher', () => {
+  it('matches a literal case-insensitively', () => {
+    expect(compileRuleMatcher('whole foods').test('WHOLE FOODS #123')).toBe(true);
+  });
+
+  it('does not match when the substring is absent', () => {
+    expect(compileRuleMatcher('landlord llc').test('Grocery Store')).toBe(false);
   });
 });

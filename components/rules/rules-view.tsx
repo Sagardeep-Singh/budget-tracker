@@ -1,14 +1,28 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { Check, Download, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Modal } from '@/components/ui/modal';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
 import type { FrontendCategory } from '@/lib/services/categories';
+
+type ImportResult = {
+  imported: number;
+  skipped: Array<{ matchText: string; reason: string }>;
+};
+
+type PreviewRow = {
+  matchText: string;
+  categoryName: string;
+  priority: number;
+  status: 'ready' | 'skip';
+  reason?: string;
+};
 
 export const RulesView = ({
   initialRules,
@@ -18,6 +32,7 @@ export const RulesView = ({
   categories: FrontendCategory[];
 }): React.ReactElement => {
   const router = useRouter();
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [matchText, setMatchText] = useState('');
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
   const [priority, setPriority] = useState('0');
@@ -30,6 +45,12 @@ export const RulesView = ({
   const [editPriority, setEditPriority] = useState('0');
   const [editPending, setEditPending] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null);
+  const [included, setIncluded] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
 
   const query = search.trim().toLowerCase();
   const visibleRules = useMemo(
@@ -106,8 +127,117 @@ export const RulesView = ({
     router.refresh();
   };
 
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportError(null);
+    setImportResult(null);
+    setImporting(true);
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch('/api/rules/import/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      });
+      if (!res.ok) {
+        setImportError('Could not read that file. Check it was exported from Rules.');
+        return;
+      }
+      const { rows }: { rows: PreviewRow[] } = await res.json();
+      setPreviewRows(rows);
+      setIncluded(new Set(rows.flatMap((r, i) => (r.status === 'ready' ? [i] : []))));
+    } catch {
+      setImportError('That file is not valid JSON.');
+    } finally {
+      setImporting(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const toggleIncluded = (index: number): void => {
+    setIncluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const cancelImport = (): void => {
+    setPreviewRows(null);
+    setIncluded(new Set());
+  };
+
+  const confirmImport = async (): Promise<void> => {
+    if (!previewRows || included.size === 0) return;
+    setConfirming(true);
+    setImportError(null);
+    const rules = previewRows
+      .filter((_, i) => included.has(i))
+      .map(({ matchText, categoryName, priority }) => ({ matchText, categoryName, priority }));
+
+    const res = await fetch('/api/rules/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rules }),
+    });
+    setConfirming(false);
+    if (!res.ok) {
+      setImportError('Could not import the selected rules.');
+      return;
+    }
+    setImportResult(await res.json());
+    setPreviewRows(null);
+    setIncluded(new Set());
+    router.refresh();
+  };
+
   return (
     <div className="mt-6.5">
+      <div className="mb-4.5 flex justify-end gap-2">
+        <a
+          href="/api/rules/export"
+          download="ledger-rules.json"
+          className="border-line text-ink hover:border-iris inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150"
+        >
+          <Download size={16} />
+          Export rules
+        </a>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImportFile}
+          className="hidden"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          icon={Upload}
+          loading={importing}
+          onClick={() => importInputRef.current?.click()}
+        >
+          Import rules
+        </Button>
+      </div>
+
+      {importError && <p className="text-rose mb-4 text-sm">{importError}</p>}
+      {importResult && (
+        <p className="bg-sky-soft text-sky mb-4 rounded-lg px-4 py-3 text-sm">
+          Imported {importResult.imported} rule{importResult.imported === 1 ? '' : 's'}.
+          {importResult.skipped.length > 0 &&
+            ` Skipped ${importResult.skipped.length}: ${importResult.skipped
+              .map((s) => `"${s.matchText}" (${s.reason})`)
+              .join(', ')}.`}
+        </p>
+      )}
+
       {categories.length === 0 ? (
         <div className="border-line bg-paper-raised flex flex-col items-center gap-3 rounded-2xl border border-dashed p-8 text-center">
           <p className="text-ink-muted text-sm">
@@ -293,6 +423,62 @@ export const RulesView = ({
         onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
         onCancel={() => setConfirmDeleteId(null)}
       />
+      <Modal
+        open={previewRows !== null}
+        onClose={cancelImport}
+        title="Review rules to import"
+        className="max-w-lg"
+      >
+        {previewRows && (
+          <>
+            <p className="text-ink-muted mb-3 text-sm">
+              {included.size} of {previewRows.length} selected. Uncheck any row to leave it out.
+            </p>
+            <div className="border-line max-h-80 overflow-y-auto rounded-lg border">
+              {previewRows.map((row, i) => (
+                <label
+                  key={`${row.matchText}-${row.categoryName}-${i}`}
+                  className="border-line flex cursor-pointer items-start gap-2.5 border-b p-2.5 text-sm last:border-b-0"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={included.has(i)}
+                    onChange={() => toggleIncluded(i)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono text-[12.5px]">
+                      &ldquo;{row.matchText}&rdquo;
+                    </span>
+                    <span className="text-ink-muted block text-[12px]">
+                      {row.status === 'ready' ? (
+                        <>→ {row.categoryName}</>
+                      ) : (
+                        <span className="text-rose">Skipped: {row.reason}</span>
+                      )}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {importError && <p className="text-rose mt-3 text-sm">{importError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={cancelImport}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmImport}
+                loading={confirming}
+                disabled={included.size === 0}
+              >
+                Import {included.size > 0 ? included.size : ''} rule
+                {included.size === 1 ? '' : 's'}
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 };
