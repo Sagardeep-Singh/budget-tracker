@@ -6,6 +6,7 @@ import {
   Receipt,
   Tag,
   PiggyBank,
+  TrendingUp,
   Wallet,
   ListFilter,
   Settings,
@@ -47,6 +48,11 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
       label: 'Budgets',
       icon: <PiggyBank className={navIconClassName} />,
       badge: counts.budgets,
+    },
+    {
+      href: '/trends',
+      label: 'Trends',
+      icon: <TrendingUp className={navIconClassName} />,
     },
     {
       href: '/accounts',

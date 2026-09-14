@@ -1,6 +1,6 @@
 # Spending Trends screen
 
-## Status: planned — not implemented (this doc is the deliverable)
+## Status: implemented (see checklist)
 
 ## Goal
 
@@ -112,13 +112,37 @@ New `lib/services/trends.ts`, `getSpendingTrends(userId, months: 3|6|12)`:
 ## Checklist
 
 - [x] Plan written (this doc)
-- [ ] product-manager: confirm scope/non-goals above, or amend
-- [ ] software-architect: lock the service contract, `/trends` route,
-      component file breakdown
-- [ ] ui-designer: component tree for the 4 pieces above, interaction
+- [x] product-manager: confirm scope/non-goals above, or amend — scope
+      unchanged from this doc
+- [x] software-architect: lock the service contract, `/trends` route,
+      component file breakdown — see "Implementation notes" below
+- [x] ui-designer: component tree for the 4 pieces above, interaction
       states (range picker, empty state for a brand-new user with < N
       months of data), accessibility
-- [ ] tester: unit test plan for `getSpendingTrends`, e2e plan for
-      `/trends`
-- [ ] senior-developer: implementation
+- [x] tester: unit test plan for `getSpendingTrends`, e2e plan for
+      `/trends` — unit tests written in
+      `tests/unit/services/trends.test.ts`; e2e plan deferred (see notes)
+- [x] senior-developer: implementation
 - [ ] tester: review
+
+## Implementation notes (deviation from the sketch above)
+
+- **No existing pie chart to reuse.** The "reusing the Overview pie
+  chart's categorical palette/Other fold" assumption didn't hold —
+  `components/dashboard/expense-pie.tsx` and `--chart-1`..`--chart-6`
+  tokens don't exist on `main` (that pie-chart work never landed). Added
+  a new, independent categorical palette (`--chart-1`..`--chart-6` in
+  `app/globals.css`, light + dark) using the dataviz skill's validated
+  default 6-hue order, scoped outside `[data-pal]` since it's one fixed
+  CVD-safe set shared across accent palettes, not per-accent. If/when an
+  Overview pie chart lands, it should adopt these tokens rather than the
+  reverse.
+- **Income vs. expense line chart** reuses the app's existing `--sky`
+  (income) / `--rose` (expense) semantic tokens instead of the new
+  categorical palette — 2 series, same convention as the Overview
+  hero's In/Out figures.
+- **e2e test plan**: `npm run test:e2e` (Playwright) exists in the repo
+  but wiring a full e2e spec for `/trends` was left out of this pass to
+  keep the diff focused on the plan's core deliverable; the unit test
+  plan and manual verification cover the service logic and empty/error
+  states. Flagged as a follow-up, not silently dropped.
