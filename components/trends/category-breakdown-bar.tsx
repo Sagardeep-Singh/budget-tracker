@@ -66,6 +66,7 @@ export const CategoryBreakdownBar = ({
                       return (
                         <div
                           key={s.categoryId}
+                          title={`${monthLabel} · ${category?.categoryName ?? 'Uncategorized'}: ${money(s.amount)}`}
                           style={{
                             height: `${segmentHeight}%`,
                             backgroundColor: category?.color,
