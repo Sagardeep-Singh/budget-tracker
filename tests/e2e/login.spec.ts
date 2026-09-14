@@ -8,7 +8,7 @@ test('signs in with valid credentials and reaches the dashboard', async ({ page 
 
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
 
   await expect(page).toHaveURL(/\/dashboard/);
 });
@@ -18,7 +18,7 @@ test('shows an error for invalid credentials', async ({ page }) => {
 
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill('wrong-password');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
 
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page).toHaveURL(/\/login/);
