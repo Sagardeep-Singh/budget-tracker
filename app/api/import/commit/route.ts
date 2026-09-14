@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { commitImportSchema } from '@/lib/validators/csv-import';
 import { commitImport } from '@/lib/services/csvImport';
-import { ServiceValidationError } from '@/lib/services/common';
+import { DuplicateFilenameError, ServiceValidationError } from '@/lib/services/common';
 
 export const POST = async (request: Request): Promise<NextResponse> => {
   const session = await getServerAuthSession();
@@ -17,6 +17,18 @@ export const POST = async (request: Request): Promise<NextResponse> => {
     const result = await commitImport(session.user.id, parsed.data);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    if (error instanceof DuplicateFilenameError) {
+      // the `code` discriminator is what lets the client replace its blanket
+      // "Import failed." with the named-batch error and an explicit override
+      return NextResponse.json(
+        {
+          code: 'DUPLICATE_FILENAME',
+          error: error.message,
+          batch: error.batch,
+        },
+        { status: 409 },
+      );
+    }
     if (error instanceof ServiceValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
