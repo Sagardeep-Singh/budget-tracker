@@ -9,14 +9,13 @@ import { z } from 'zod';
 export type ExportedCategoryRule = { matchText: string; categoryName: string; priority: number };
 
 /**
- * Deliberately lenient — no regex-validity check here (unlike
- * createCategoryRuleSchema). A batch import skips individual bad rows and
- * reports why, rather than rejecting the whole file for one bad row; the
- * service does that per-row leniency. This layer only guards against
- * structurally malformed input (missing fields, wrong types, absurd sizes).
+ * Deliberately lenient on category — a bad row (category not found) is
+ * skipped with a reason, not a reason to reject the whole file; the service
+ * does that per-row leniency. This layer only guards against structurally
+ * malformed input (missing fields, wrong types, absurd sizes).
  */
 export const importedCategoryRuleSchema = z.object({
-  matchText: z.string().trim().min(1).max(300),
+  matchText: z.string().trim().min(1).max(80),
   categoryName: z.string().trim().min(1).max(60),
   priority: z.coerce.number().int().min(0).default(0),
 });

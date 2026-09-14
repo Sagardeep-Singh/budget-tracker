@@ -2,34 +2,8 @@ import { prisma } from '@/lib/db/prisma';
 
 export type CategoryRuleMatcher = { categoryId: string; matchText: string; priority: number };
 
-/** `/pattern/flags` — a leading and trailing slash, valid JS regex flags only.
- * Restricting flags to the real set (not any `[a-z]*`) keeps a plain literal
- * like "/home/user" from back-matching as body "home" + bogus flags "user". */
-const REGEX_RULE = /^\/(.+)\/([gimsuy]*)$/;
-
-/**
- * Compiles a rule's matchText into a matcher against raw (non-lowered) text.
- *
- * `/pattern/flags` is a regex — matched with flags exactly as written, so
- * (unlike literal mode) it is case-sensitive unless the rule includes `i`.
- * That's standard regex-literal semantics and the least surprising choice
- * for anyone deliberately opting into regex syntax.
- *
- * Anything else — including a `/.../`-shaped pattern that fails to compile —
- * falls back to a case-insensitive substring match. Invalid regexes are
- * rejected up front at create/update time (see the Zod schema); this
- * fallback is defense-in-depth so matching itself never throws.
- */
+/** Case-insensitive substring matcher for a rule's matchText. */
 export const compileRuleMatcher = (matchText: string): { test: (haystack: string) => boolean } => {
-  const parsed = REGEX_RULE.exec(matchText);
-  if (parsed) {
-    try {
-      const regex = new RegExp(parsed[1], parsed[2]);
-      return { test: (haystack: string) => regex.test(haystack) };
-    } catch {
-      // falls through to the literal match below
-    }
-  }
   const needle = matchText.toLowerCase();
   return { test: (haystack: string) => haystack.toLowerCase().includes(needle) };
 };

@@ -10,7 +10,7 @@ const { prismaMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
-const { listCategoryRules, exportCategoryRules, importCategoryRules } =
+const { listCategoryRules, exportCategoryRules, importCategoryRules, previewCategoryRuleImport } =
   await import('@/lib/services/categoryRules');
 
 beforeEach(() => {
@@ -50,41 +50,20 @@ describe('listCategoryRules', () => {
       },
     ]);
   });
-
-  it('applies a regex matchText, case-sensitively per its own flags', async () => {
-    prismaMock.categoryRule.findMany.mockResolvedValue([
-      {
-        id: 'r1',
-        categoryId: 'cat-1',
-        matchText: '/^AMZN/',
-        priority: 0,
-        category: { name: 'Shopping' },
-      },
-    ]);
-    prismaMock.transaction.findMany.mockResolvedValue([
-      { categoryId: 'cat-1', payee: 'AMZN Mktp US', note: null },
-      // lowercase — the pattern has no `i` flag, so this should NOT count
-      { categoryId: 'cat-1', payee: 'amzn mktp us', note: null },
-    ]);
-
-    const result = await listCategoryRules('user-1');
-
-    expect(result[0].appliedCount).toBe(1);
-  });
 });
 
 describe('exportCategoryRules', () => {
   it('exports by category name, not id', async () => {
     prismaMock.categoryRule.findMany.mockResolvedValue([
       { matchText: 'whole foods', priority: 0, category: { name: 'Groceries' } },
-      { matchText: '/^AMZN/i', priority: 1, category: { name: 'Shopping' } },
+      { matchText: 'amzn mktp', priority: 1, category: { name: 'Shopping' } },
     ]);
 
     const result = await exportCategoryRules('user-1');
 
     expect(result).toEqual([
       { matchText: 'whole foods', categoryName: 'Groceries', priority: 0 },
-      { matchText: '/^AMZN/i', categoryName: 'Shopping', priority: 1 },
+      { matchText: 'amzn mktp', categoryName: 'Shopping', priority: 1 },
     ]);
   });
 });
@@ -121,18 +100,6 @@ describe('importCategoryRules', () => {
     expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
   });
 
-  it('skips a row with an invalid regex, with a reason, instead of failing the batch', async () => {
-    const result = await importCategoryRules('user-1', [
-      { matchText: '/[/', categoryName: 'Groceries', priority: 0 },
-      { matchText: 'valid one', categoryName: 'Groceries', priority: 0 },
-    ]);
-
-    expect(result.imported).toBe(1);
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0].matchText).toBe('/[/');
-    expect(result.skipped[0].reason).toMatch(/Invalid regular expression/);
-  });
-
   it('skips a row that already exists for this user (idempotent re-import)', async () => {
     prismaMock.categoryRule.findMany.mockResolvedValue([
       { categoryId: 'cat-1', matchText: 'whole foods' },
@@ -157,5 +124,41 @@ describe('importCategoryRules', () => {
 
     expect(result.imported).toBe(1);
     expect(result.skipped).toEqual([{ matchText: 'rent', reason: 'Already exists' }]);
+  });
+});
+
+describe('previewCategoryRuleImport', () => {
+  beforeEach(() => {
+    prismaMock.category.findMany.mockResolvedValue([{ id: 'cat-1', name: 'Groceries' }]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { categoryId: 'cat-1', matchText: 'existing rule' },
+    ]);
+  });
+
+  it('classifies rows as ready/skip without writing anything', async () => {
+    const result = await previewCategoryRuleImport('user-1', [
+      { matchText: 'whole foods', categoryName: 'Groceries', priority: 0 },
+      { matchText: 'rent', categoryName: 'Nonexistent', priority: 0 },
+      { matchText: 'existing rule', categoryName: 'Groceries', priority: 0 },
+    ]);
+
+    expect(result).toEqual([
+      { matchText: 'whole foods', categoryName: 'Groceries', priority: 0, status: 'ready' },
+      {
+        matchText: 'rent',
+        categoryName: 'Nonexistent',
+        priority: 0,
+        status: 'skip',
+        reason: 'Category "Nonexistent" not found',
+      },
+      {
+        matchText: 'existing rule',
+        categoryName: 'Groceries',
+        priority: 0,
+        status: 'skip',
+        reason: 'Already exists',
+      },
+    ]);
+    expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();
   });
 });

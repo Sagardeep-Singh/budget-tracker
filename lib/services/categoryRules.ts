@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
 import { compileRuleMatcher } from '@/lib/services/categorize';
-import { invalidRuleRegexError } from '@/lib/validators/category-rules';
 import type {
   CreateCategoryRuleInput,
   UpdateCategoryRuleInput,
@@ -126,22 +125,23 @@ export const exportCategoryRules = async (userId: string): Promise<ExportedCateg
   }));
 };
 
-export type ImportCategoryRulesResult = {
-  imported: number;
-  skipped: Array<{ matchText: string; reason: string }>;
+type ClassifiedImportRow = ImportedCategoryRule & {
+  categoryId: string | null;
+  status: 'ready' | 'skip';
+  reason?: string;
 };
 
 /**
- * Lenient by design (decision 4 in the plan): a bad row is skipped with a
- * reason, not a reason to reject the whole file. Matches by category name
- * against the importing user's own existing categories — never creates a
- * category as a side effect. Skips a row whose (categoryId, matchText)
- * already exists, so re-running the same import is a no-op the second time.
+ * Shared by preview (read-only) and commit: category-not-found and
+ * duplicate-row skip decisions are made once here so a row that's shown as
+ * "will import" in the preview is classified the same way at commit time.
+ * Dedup guards both against rows already in the DB and against duplicate
+ * rows within the same uploaded file.
  */
-export const importCategoryRules = async (
+const classifyImportRows = async (
   userId: string,
   rows: ImportedCategoryRule[],
-): Promise<ImportCategoryRulesResult> => {
+): Promise<ClassifiedImportRow[]> => {
   const [categories, existingRules] = await Promise.all([
     prisma.category.findMany({ where: { userId }, select: { id: true, name: true } }),
     prisma.categoryRule.findMany({
@@ -152,36 +152,84 @@ export const importCategoryRules = async (
   const categoryIdByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
   const existingKeys = new Set(existingRules.map((r) => `${r.categoryId}|${r.matchText}`));
 
-  const toCreate: Array<{
-    userId: string;
-    categoryId: string;
-    matchText: string;
-    priority: number;
-  }> = [];
-  const skipped: Array<{ matchText: string; reason: string }> = [];
-
-  for (const row of rows) {
-    const regexError = invalidRuleRegexError(row.matchText);
-    if (regexError) {
-      skipped.push({ matchText: row.matchText, reason: regexError });
-      continue;
-    }
+  return rows.map((row) => {
+    // Missing category is a skip, never an auto-create (decision 6): creating
+    // a category as a side effect of a rules import would be a surprising,
+    // hard-to-undo action. The preview surfaces this so the user can create
+    // the category first and re-import, instead of it happening silently.
     const categoryId = categoryIdByName.get(row.categoryName.toLowerCase());
     if (!categoryId) {
-      skipped.push({
-        matchText: row.matchText,
+      return {
+        ...row,
+        categoryId: null,
+        status: 'skip',
         reason: `Category "${row.categoryName}" not found`,
-      });
-      continue;
+      };
     }
     const key = `${categoryId}|${row.matchText}`;
     if (existingKeys.has(key)) {
-      skipped.push({ matchText: row.matchText, reason: 'Already exists' });
-      continue;
+      return { ...row, categoryId, status: 'skip', reason: 'Already exists' };
     }
     existingKeys.add(key); // guard against duplicate rows within the same file
-    toCreate.push({ userId, categoryId, matchText: row.matchText, priority: row.priority });
-  }
+    return { ...row, categoryId, status: 'ready' };
+  });
+};
+
+export type ImportPreviewRow = {
+  matchText: string;
+  categoryName: string;
+  priority: number;
+  status: 'ready' | 'skip';
+  reason?: string;
+};
+
+/**
+ * Read-only classification for the import confirmation step: lets the UI
+ * show what each row will do before anything is written, so the user can
+ * deselect any row (not just skipped ones) before committing.
+ */
+export const previewCategoryRuleImport = async (
+  userId: string,
+  rows: ImportedCategoryRule[],
+): Promise<ImportPreviewRow[]> => {
+  const classified = await classifyImportRows(userId, rows);
+  return classified.map(({ matchText, categoryName, priority, status, reason }) => ({
+    matchText,
+    categoryName,
+    priority,
+    status,
+    reason,
+  }));
+};
+
+export type ImportCategoryRulesResult = {
+  imported: number;
+  skipped: Array<{ matchText: string; reason: string }>;
+};
+
+/**
+ * Lenient by design (decision 4 in the plan): a bad row is skipped with a
+ * reason, not a reason to reject the whole file. Re-classifies at write
+ * time rather than trusting the caller's preview — the DB state (existing
+ * rules, categories) may have changed between preview and confirm.
+ */
+export const importCategoryRules = async (
+  userId: string,
+  rows: ImportedCategoryRule[],
+): Promise<ImportCategoryRulesResult> => {
+  const classified = await classifyImportRows(userId, rows);
+
+  const toCreate = classified
+    .filter((r) => r.status === 'ready')
+    .map((r) => ({
+      userId,
+      categoryId: r.categoryId as string,
+      matchText: r.matchText,
+      priority: r.priority,
+    }));
+  const skipped = classified
+    .filter((r) => r.status === 'skip')
+    .map((r) => ({ matchText: r.matchText, reason: r.reason as string }));
 
   if (toCreate.length > 0) {
     await prisma.categoryRule.createMany({ data: toCreate });

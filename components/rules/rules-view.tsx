@@ -7,12 +7,21 @@ import { Check, Download, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Modal } from '@/components/ui/modal';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
 import type { FrontendCategory } from '@/lib/services/categories';
 
 type ImportResult = {
   imported: number;
   skipped: Array<{ matchText: string; reason: string }>;
+};
+
+type PreviewRow = {
+  matchText: string;
+  categoryName: string;
+  priority: number;
+  status: 'ready' | 'skip';
+  reason?: string;
 };
 
 export const RulesView = ({
@@ -39,6 +48,9 @@ export const RulesView = ({
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null);
+  const [included, setIncluded] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
 
   const query = search.trim().toLowerCase();
   const visibleRules = useMemo(
@@ -125,23 +137,65 @@ export const RulesView = ({
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const res = await fetch('/api/rules/import', {
+      const res = await fetch('/api/rules/import/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed),
       });
       if (!res.ok) {
-        setImportError('Could not import that file. Check it was exported from Rules.');
+        setImportError('Could not read that file. Check it was exported from Rules.');
         return;
       }
-      setImportResult(await res.json());
-      router.refresh();
+      const { rows }: { rows: PreviewRow[] } = await res.json();
+      setPreviewRows(rows);
+      setIncluded(new Set(rows.flatMap((r, i) => (r.status === 'ready' ? [i] : []))));
     } catch {
       setImportError('That file is not valid JSON.');
     } finally {
       setImporting(false);
       if (importInputRef.current) importInputRef.current.value = '';
     }
+  };
+
+  const toggleIncluded = (index: number): void => {
+    setIncluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const cancelImport = (): void => {
+    setPreviewRows(null);
+    setIncluded(new Set());
+  };
+
+  const confirmImport = async (): Promise<void> => {
+    if (!previewRows || included.size === 0) return;
+    setConfirming(true);
+    setImportError(null);
+    const rules = previewRows
+      .filter((_, i) => included.has(i))
+      .map(({ matchText, categoryName, priority }) => ({ matchText, categoryName, priority }));
+
+    const res = await fetch('/api/rules/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rules }),
+    });
+    setConfirming(false);
+    if (!res.ok) {
+      setImportError('Could not import the selected rules.');
+      return;
+    }
+    setImportResult(await res.json());
+    setPreviewRows(null);
+    setIncluded(new Set());
+    router.refresh();
   };
 
   return (
@@ -369,6 +423,62 @@ export const RulesView = ({
         onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
         onCancel={() => setConfirmDeleteId(null)}
       />
+      <Modal
+        open={previewRows !== null}
+        onClose={cancelImport}
+        title="Review rules to import"
+        className="max-w-lg"
+      >
+        {previewRows && (
+          <>
+            <p className="text-ink-muted mb-3 text-sm">
+              {included.size} of {previewRows.length} selected. Uncheck any row to leave it out.
+            </p>
+            <div className="border-line max-h-80 overflow-y-auto rounded-lg border">
+              {previewRows.map((row, i) => (
+                <label
+                  key={`${row.matchText}-${row.categoryName}-${i}`}
+                  className="border-line flex cursor-pointer items-start gap-2.5 border-b p-2.5 text-sm last:border-b-0"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={included.has(i)}
+                    onChange={() => toggleIncluded(i)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono text-[12.5px]">
+                      &ldquo;{row.matchText}&rdquo;
+                    </span>
+                    <span className="text-ink-muted block text-[12px]">
+                      {row.status === 'ready' ? (
+                        <>→ {row.categoryName}</>
+                      ) : (
+                        <span className="text-rose">Skipped: {row.reason}</span>
+                      )}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {importError && <p className="text-rose mt-3 text-sm">{importError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={cancelImport}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmImport}
+                loading={confirming}
+                disabled={included.size === 0}
+              >
+                Import {included.size > 0 ? included.size : ''} rule
+                {included.size === 1 ? '' : 's'}
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 };
