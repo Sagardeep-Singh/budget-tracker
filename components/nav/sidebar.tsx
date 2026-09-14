@@ -10,7 +10,7 @@ import {
   Wallet,
   ListFilter,
   Settings,
-  Upload,
+  Download,
 } from 'lucide-react';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { getNavCounts } from '@/lib/services/nav';
@@ -32,6 +32,11 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
       icon: <LayoutDashboard className={navIconClassName} />,
     },
     {
+      href: '/trends',
+      label: 'Trends',
+      icon: <TrendingUp className={navIconClassName} />,
+    },
+    {
       href: '/transactions',
       label: 'Transactions',
       icon: <Receipt className={navIconClassName} />,
@@ -51,11 +56,6 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
       badge: counts.budgets,
     },
     {
-      href: '/trends',
-      label: 'Trends',
-      icon: <TrendingUp className={navIconClassName} />,
-    },
-    {
       href: '/accounts',
       label: 'Accounts',
       icon: <Wallet className={navIconClassName} />,
@@ -70,7 +70,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
     {
       href: '/import',
       label: 'Import',
-      icon: <Upload className={navIconClassName} />,
+      icon: <Download className={navIconClassName} />,
     },
     { href: '/settings', label: 'Settings', icon: <Settings className={navIconClassName} /> },
   ];

@@ -208,7 +208,7 @@ export const RulesView = ({
           download="ledger-rules.json"
           className="border-line text-ink hover:border-iris inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150"
         >
-          <Download size={16} />
+          <Upload size={16} />
           Export rules
         </a>
         <input
@@ -221,7 +221,7 @@ export const RulesView = ({
         <Button
           type="button"
           variant="secondary"
-          icon={Upload}
+          icon={Download}
           loading={importing}
           onClick={() => importInputRef.current?.click()}
         >
