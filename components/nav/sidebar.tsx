@@ -6,10 +6,11 @@ import {
   Receipt,
   Tag,
   PiggyBank,
+  TrendingUp,
   Wallet,
   ListFilter,
   Settings,
-  Upload,
+  Download,
 } from 'lucide-react';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { getNavCounts } from '@/lib/services/nav';
@@ -29,6 +30,11 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
       href: '/dashboard',
       label: 'Overview',
       icon: <LayoutDashboard className={navIconClassName} />,
+    },
+    {
+      href: '/trends',
+      label: 'Trends',
+      icon: <TrendingUp className={navIconClassName} />,
     },
     {
       href: '/transactions',
@@ -64,7 +70,7 @@ export const Sidebar = async (): Promise<React.ReactElement> => {
     {
       href: '/import',
       label: 'Import',
-      icon: <Upload className={navIconClassName} />,
+      icon: <Download className={navIconClassName} />,
     },
     { href: '/settings', label: 'Settings', icon: <Settings className={navIconClassName} /> },
   ];
