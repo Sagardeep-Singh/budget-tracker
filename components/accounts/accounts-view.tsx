@@ -55,7 +55,7 @@ export const AccountsView = ({
           No accounts yet. Add one to start logging transactions.
         </p>
       )}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {initialAccounts.map((account) => (
           <div key={account.id} className="border-line bg-paper-raised rounded-2xl border p-5.5">
             <div className="flex items-start justify-between gap-3">

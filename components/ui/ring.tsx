@@ -1,11 +1,15 @@
 import { cn } from '@/lib/cn';
 
-export type RingSize = 'hero' | 'budget' | 'category' | 'day' | 'row';
+export type RingSize =
+  'hero' | 'hero-mobile' | 'budget' | 'category' | 'category-mobile' | 'day' | 'row';
 
-const SIZE: Record<RingSize, { box: number; radius: number; stroke: number }> = {
+/** Exported for the geometry regression test — these values are the design spec. */
+export const RING_SIZES: Record<RingSize, { box: number; radius: number; stroke: number }> = {
   hero: { box: 152, radius: 64, stroke: 14 },
+  'hero-mobile': { box: 132, radius: 56, stroke: 12 },
   budget: { box: 96, radius: 40, stroke: 9 },
   category: { box: 88, radius: 36, stroke: 9 },
+  'category-mobile': { box: 66, radius: 27, stroke: 7 },
   day: { box: 108, radius: 46, stroke: 10 },
   row: { box: 76, radius: 31, stroke: 8 },
 };
@@ -30,12 +34,12 @@ export const Ring = ({
   className,
   children,
 }: RingProps): React.ReactElement => {
-  const { box, radius, stroke } = SIZE[size];
+  const { box, radius, stroke } = RING_SIZES[size];
   const clamped = Math.min(Math.max(fraction, 0), 1);
   const circumference = 2 * Math.PI * radius;
   const center = box / 2;
   const color = clamped > alertAt ? 'var(--rose)' : 'var(--iris)';
-  const markerRadius = size === 'hero' ? 4 : 3.5;
+  const markerRadius = size === 'hero' || size === 'hero-mobile' ? 4 : 3.5;
 
   return (
     <div

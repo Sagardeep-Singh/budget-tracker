@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { Plus } from 'lucide-react';
 import { getServerAuthSession } from '@/lib/auth/session';
-import { getOverviewData } from '@/lib/services/overview';
+import { getOverviewData, type OverviewDayBar } from '@/lib/services/overview';
 import { ScreenHeader } from '@/components/nav/screen-header';
 import { Ring } from '@/components/ui/ring';
 import { PeriodPopover } from '@/components/dashboard/period-popover';
 import { ExpensePie } from '@/components/dashboard/expense-pie';
+import { getByDayBars } from '@/lib/dashboard/day-bars';
 import { cn } from '@/lib/cn';
 
 const money = (value: string): string =>
@@ -39,6 +41,68 @@ const DashboardPage = async ({
   const maxBar = Math.max(1, ...dayBars.flatMap((d) => [d.income, d.expense]));
   const barScale = (amount: number): number => Math.round((amount / maxBar) * 100);
 
+  // Written once, rendered at two sizes: the desktop hero ring and its smaller
+  // mobile twin (both stay in the DOM, visibility is CSS-only — there is no
+  // reliable server-side viewport check).
+  const heroRingLabel = (sizeClass: string): React.ReactElement => (
+    <>
+      <span className={cn('font-mono tabular-nums', sizeClass)}>
+        {Math.round(Math.min(hero.usedFraction, 1) * 100)}%
+      </span>
+      <span className="text-ink-muted mt-0.5 text-[10px] tracking-[0.09em] uppercase">used</span>
+    </>
+  );
+
+  const byDayBars = (
+    bars: OverviewDayBar[],
+    className: string,
+    mode: 'week' | 'month',
+  ): React.ReactElement => (
+    <div className={className}>
+      <div className="flex h-[120px] items-end gap-1">
+        {bars.map((d) => {
+          const isSelected = d.day === selectedDay.day;
+          const isOverPace = Number(dailyPace) > 0 && d.expense > Number(dailyPace);
+          return (
+            <Link
+              key={d.day}
+              href={dayHref(d.day)}
+              title={`Sep ${d.day} · in ${money(d.income.toFixed(2))} · out ${money(d.expense.toFixed(2))}`}
+              className="flex h-full flex-1 flex-col justify-end gap-[3px]"
+            >
+              <span
+                className="bg-sky block rounded-[3px]"
+                style={{ height: `${barScale(d.income)}px` }}
+              />
+              <span
+                className={cn(
+                  'block rounded-[3px]',
+                  isSelected ? 'bg-iris' : isOverPace ? 'bg-rose' : 'bg-line',
+                )}
+                style={{ height: `${barScale(d.expense)}px` }}
+              />
+            </Link>
+          );
+        })}
+      </div>
+      <div className="bg-line mt-2 h-px" />
+      <div className="text-ink-muted mt-2 flex justify-between font-mono text-[11px]">
+        {mode === 'month' ? (
+          <>
+            <span>Day 1</span>
+            <span>Day {Math.round(data.daysInMonth / 2)}</span>
+            <span>Day {data.daysInMonth}</span>
+          </>
+        ) : (
+          <>
+            <span>Day {bars[0]?.day ?? 1}</span>
+            <span>Day {bars[bars.length - 1]?.day ?? 1}</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const isEmpty =
     budgetRings.length === 0 &&
     Number(hero.income) === 0 &&
@@ -46,7 +110,7 @@ const DashboardPage = async ({
     !cycleCard;
 
   return (
-    <div className="animate-[fade-up_0.3s_ease-out]">
+    <div className="animate-[fade-up_0.3s_ease-out] pb-20 lg:pb-0">
       <ScreenHeader
         title="Overview"
         description="Here's where things stand this month."
@@ -93,18 +157,25 @@ const DashboardPage = async ({
           </div>
         </div>
       ) : (
-        <div className="mt-6.5 grid grid-cols-[1.5fr_1fr] items-start gap-5">
+        <div className="mt-6.5 grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.5fr_1fr]">
           <div className="flex min-w-0 flex-col gap-5">
             <div className="border-line bg-paper-raised rounded-[18px] border p-6.5">
-              <div className="flex items-center gap-7.5">
-                <Ring size="hero" fraction={hero.usedFraction}>
-                  <span className="font-mono text-[21px] tabular-nums">
-                    {Math.round(Math.min(hero.usedFraction, 1) * 100)}%
-                  </span>
-                  <span className="text-ink-muted mt-0.5 text-[10px] tracking-[0.09em] uppercase">
-                    used
-                  </span>
-                </Ring>
+              {/* Ring beside the figures at lg+; stacked below it, where a 132px
+                  ring plus the 40px amount can't share one row at 402px. */}
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-7.5">
+                {/* Visibility lives on a wrapper, not on Ring's className: `cn` is a
+                    plain join (no tailwind-merge), so `hidden` passed into Ring would
+                    lose to its own base `inline-flex`. */}
+                <div className="hidden shrink-0 lg:block">
+                  <Ring size="hero" fraction={hero.usedFraction}>
+                    {heroRingLabel('text-[21px]')}
+                  </Ring>
+                </div>
+                <div className="shrink-0 lg:hidden">
+                  <Ring size="hero-mobile" fraction={hero.usedFraction}>
+                    {heroRingLabel('text-lg')}
+                  </Ring>
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-ink-muted text-[11px] font-semibold tracking-[0.08em] uppercase">
                     {hero.leftLabel}
@@ -125,7 +196,7 @@ const DashboardPage = async ({
                       </>
                     )}
                   </div>
-                  <div className="border-line mt-4.5 flex gap-6.5 border-t pt-4">
+                  <div className="border-line mt-4.5 flex flex-wrap gap-x-6.5 gap-y-3 border-t pt-4 lg:flex-nowrap">
                     <div>
                       <div className="text-ink-muted text-[10.5px] font-semibold tracking-[0.08em] uppercase">
                         In
@@ -179,28 +250,54 @@ const DashboardPage = async ({
                   .
                 </p>
               ) : (
-                <div className="grid grid-cols-4 gap-2.5">
-                  {budgetRings.map((r) => (
-                    <div key={r.id} className="flex flex-col items-center gap-2.5">
-                      <Ring size="category" fraction={r.fraction}>
-                        <span className="font-mono text-sm">{r.pctLabel}</span>
-                      </Ring>
-                      <div className="text-center text-[12.5px] leading-tight">
-                        {r.categoryName}
-                        <br />
-                        <span
-                          className={cn(
-                            'font-mono text-xs',
-                            r.over ? 'text-rose' : 'text-ink-muted',
-                          )}
-                        >
-                          {money(r.left.replace('Over by ', ''))}
-                          {r.over && ' over'}
-                        </span>
+                <>
+                  <div className="hidden grid-cols-4 gap-2.5 lg:grid">
+                    {budgetRings.map((r) => (
+                      <div key={r.id} className="flex flex-col items-center gap-2.5">
+                        <Ring size="category" fraction={r.fraction}>
+                          <span className="font-mono text-sm">{r.pctLabel}</span>
+                        </Ring>
+                        <div className="text-center text-[12.5px] leading-tight">
+                          {r.categoryName}
+                          <br />
+                          <span
+                            className={cn(
+                              'font-mono text-xs',
+                              r.over ? 'text-rose' : 'text-ink-muted',
+                            )}
+                          >
+                            {money(r.left.replace('Over by ', ''))}
+                            {r.over && ' over'}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  {/* Mobile twin: smaller ring, and min-w-0/break-words so a long
+                      category name or amount can't widen the 4-up grid track. */}
+                  <div className="grid grid-cols-4 gap-2.5 lg:hidden">
+                    {budgetRings.map((r) => (
+                      <div key={r.id} className="flex min-w-0 flex-col items-center gap-2.5">
+                        <Ring size="category-mobile" fraction={r.fraction}>
+                          <span className="font-mono text-sm">{r.pctLabel}</span>
+                        </Ring>
+                        <div className="text-center text-[12.5px] leading-tight break-words">
+                          {r.categoryName}
+                          <br />
+                          <span
+                            className={cn(
+                              'font-mono text-xs',
+                              r.over ? 'text-rose' : 'text-ink-muted',
+                            )}
+                          >
+                            {money(r.left.replace('Over by ', ''))}
+                            {r.over && ' over'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
@@ -217,38 +314,16 @@ const DashboardPage = async ({
                 <h2 className="font-display text-base font-semibold">By day</h2>
                 <span className="text-ink-muted font-mono text-xs">click a day to inspect it</span>
               </div>
-              <div className="flex h-[120px] items-end gap-1">
-                {dayBars.map((d) => {
-                  const isSelected = d.day === selectedDay.day;
-                  const isOverPace = Number(dailyPace) > 0 && d.expense > Number(dailyPace);
-                  return (
-                    <Link
-                      key={d.day}
-                      href={dayHref(d.day)}
-                      title={`Sep ${d.day} · in ${money(d.income.toFixed(2))} · out ${money(d.expense.toFixed(2))}`}
-                      className="flex h-full flex-1 flex-col justify-end gap-[3px]"
-                    >
-                      <span
-                        className="bg-sky block rounded-[3px]"
-                        style={{ height: `${barScale(d.income)}px` }}
-                      />
-                      <span
-                        className={cn(
-                          'block rounded-[3px]',
-                          isSelected ? 'bg-iris' : isOverPace ? 'bg-rose' : 'bg-line',
-                        )}
-                        style={{ height: `${barScale(d.expense)}px` }}
-                      />
-                    </Link>
-                  );
-                })}
-              </div>
-              <div className="bg-line mt-2 h-px" />
-              <div className="text-ink-muted mt-2 flex justify-between font-mono text-[11px]">
-                <span>Day 1</span>
-                <span>Day {Math.round(data.daysInMonth / 2)}</span>
-                <span>Day {data.daysInMonth}</span>
-              </div>
+              {byDayBars(
+                getByDayBars(dayBars, 'month', selectedDay.day, data.daysInMonth),
+                'hidden lg:block',
+                'month',
+              )}
+              {byDayBars(
+                getByDayBars(dayBars, 'week', selectedDay.day, data.daysInMonth),
+                'block lg:hidden',
+                'week',
+              )}
             </div>
           </div>
 
@@ -348,7 +423,9 @@ const DashboardPage = async ({
                   Rules matched {triage.matched} of them. Confirm in a batch, and Ledger will write
                   the rule for next time.
                 </p>
-                <div className="mt-4 flex gap-1">
+                {/* One segment per item to triage: at mobile width the inter-segment
+                    gaps alone can exceed the card, so they tighten and clip. */}
+                <div className="mt-4 flex gap-0.5 overflow-hidden lg:gap-1">
                   {Array.from({ length: triage.total }).map((_, i) => (
                     <span
                       key={i}
@@ -389,6 +466,14 @@ const DashboardPage = async ({
           </div>
         </div>
       )}
+
+      <Link
+        href="?overlay=add"
+        className="border-line bg-iris text-paper-raised focus-visible:outline-paper-raised fixed inset-x-5 z-20 flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold shadow-[0_8px_24px_rgba(0,0,0,.18)] focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
+        style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}
+      >
+        <Plus size={16} /> Log a spend
+      </Link>
     </div>
   );
 };

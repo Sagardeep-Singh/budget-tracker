@@ -153,7 +153,7 @@ export const BudgetsView = ({
         available.length > 0 && (
           <form
             onSubmit={handleAdd}
-            className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-5"
+            className="border-line bg-paper-raised flex flex-col items-stretch gap-2.5 rounded-2xl border p-5 lg:flex-row lg:items-end"
           >
             <div className="flex-1">
               <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
@@ -172,7 +172,7 @@ export const BudgetsView = ({
                 ))}
               </Select>
             </div>
-            <div className="w-[150px]">
+            <div className="w-full lg:w-[150px]">
               <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
                 Monthly limit
               </label>
@@ -186,7 +186,12 @@ export const BudgetsView = ({
                 required
               />
             </div>
-            <Button type="submit" icon={Check} loading={pending} className="px-4.5 py-2.5">
+            <Button
+              type="submit"
+              icon={Check}
+              loading={pending}
+              className="w-full px-4.5 py-2.5 lg:w-auto"
+            >
               Set budget
             </Button>
           </form>
@@ -199,7 +204,7 @@ export const BudgetsView = ({
           <p className="text-ink-muted mt-6 text-sm">No budgets set for this month yet.</p>
         )
       ) : (
-        <div className="mt-4.5 grid grid-cols-2 gap-4">
+        <div className="mt-4.5 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {initialBudgets.map((budget) => {
             const limit = Number(budget.limitAmount);
             const spent = Number(budget.spent);
