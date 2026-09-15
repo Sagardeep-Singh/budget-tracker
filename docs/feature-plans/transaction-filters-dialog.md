@@ -14,7 +14,7 @@ once, or see how many filters are currently active without scanning the row.
   any dialog — it's the one filter the user wants immediate, no-friction access to.
 - Every other filter — date range, accounts, categories, transaction type, amount range, and flag
   toggles — moves into a **filter dialog**, opened from a "Filters" button. The button shows a
-  numeric badge for how many filter *groups* are currently active.
+  numeric badge for how many filter _groups_ are currently active.
 - Filter state syncs to the URL as query params, so a filtered view is shareable and survives a
   page refresh.
 
@@ -23,7 +23,7 @@ once, or see how many filters are currently active without scanning the row.
 - **"Search" is the payee-contains field**, not a second, separate control. There's one text
   input for payee matching; it lives outside the dialog. The dialog does not duplicate it.
 - **Filters sync to the URL** (`?accountIds=...&categoryIds=...&from=...&to=...&payee=...&type=...
-  &amountMin=...&amountMax=...&hideTransfers=...&hidePayments=...&uncategorizedOnly=...`), using
+&amountMin=...&amountMax=...&hideTransfers=...&hidePayments=...&uncategorizedOnly=...`), using
   the same `useSearchParams`/`useRouter` pattern already in
   `components/transactions/add-transaction-overlay.tsx`. Filtering itself stays **client-side**
   over the already-fetched transaction list — this is a UI/URL-sync change, not a move to
@@ -55,11 +55,11 @@ once, or see how many filters are currently active without scanning the row.
 
 ```ts
 type TransactionFilters = {
-  from: string | null;          // yyyy-mm-dd
+  from: string | null; // yyyy-mm-dd
   to: string | null;
   accountIds: string[];
   categoryIds: string[];
-  payee: string;                // contains match, case-insensitive; '' = no filter
+  payee: string; // contains match, case-insensitive; '' = no filter
   type: 'INCOME' | 'EXPENSE' | null;
   amountMin: string | null;
   amountMax: string | null;
@@ -102,7 +102,7 @@ type TransactionFilters = {
     already used for "Match transfers") that opens `TransactionFiltersDialog`. When
     `activeFilterCount > 0`, render a small badge on the button — reuse the pill style already in
     `components/nav/sidebar-nav.tsx` (`rounded-full px-1.5 py-0.5 font-mono text-[11px]
-    tabular-nums`), colored with the existing `iris` accent to match "active" states elsewhere.
+tabular-nums`), colored with the existing `iris` accent to match "active" states elsewhere.
 - `filtered` (the existing `.filter()` reduction) gains clauses for every new field: `payee`
   (case-insensitive `.includes()`), `accountIds`/`categoryIds` (membership check, empty array =
   no filter, replacing the old strict equality checks), `from`/`to` (in addition to the existing

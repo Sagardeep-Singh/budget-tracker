@@ -5,7 +5,7 @@ import {
   listTransactionsQuerySchema,
 } from '@/lib/validators/transactions';
 import { createTransaction, listTransactions } from '@/lib/services/transactions';
-import { ServiceValidationError } from '@/lib/services/common';
+import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
 
 export const GET = async (request: Request): Promise<NextResponse> => {
   const session = await getServerAuthSession();
@@ -39,6 +39,9 @@ export const POST = async (request: Request): Promise<NextResponse> => {
     const transaction = await createTransaction(session.user.id, parsed.data);
     return NextResponse.json(transaction, { status: 201 });
   } catch (error) {
+    if (error instanceof ReimbursementConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     if (error instanceof ServiceValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

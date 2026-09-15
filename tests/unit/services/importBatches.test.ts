@@ -4,6 +4,7 @@ const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     importBatch: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     transaction: { deleteMany: vi.fn() },
+    reimbursementLink: { count: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -17,7 +18,8 @@ const {
   getImportBatch,
   undoImportBatch,
 } = await import('@/lib/services/importBatches');
-const { BatchAlreadyUndoneError, ServiceValidationError } = await import('@/lib/services/common');
+const { BatchAlreadyUndoneError, ReimbursementConflictError, ServiceValidationError } =
+  await import('@/lib/services/common');
 
 const dbBatch = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'batch-1',
@@ -43,6 +45,7 @@ beforeEach(() => {
   prismaMock.$transaction.mockImplementation(
     async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock),
   );
+  prismaMock.reimbursementLink.count.mockResolvedValue(0);
 });
 
 describe('normalizeFilename', () => {
@@ -261,5 +264,43 @@ describe('undoImportBatch', () => {
     await expect(undoImportBatch('user-1', 'batch-x')).rejects.toThrow(ServiceValidationError);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(prismaMock.transaction.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('blocks the whole undo when any transaction in the batch has an active reimbursement link', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(dbBatch());
+    prismaMock.reimbursementLink.count.mockResolvedValue(1);
+
+    await expect(undoImportBatch('user-1', 'batch-1')).rejects.toThrow(ReimbursementConflictError);
+    expect(prismaMock.transaction.deleteMany).not.toHaveBeenCalled();
+    expect(prismaMock.importBatch.update).not.toHaveBeenCalled();
+  });
+
+  it('checks for active links inside the same transaction as the delete', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(dbBatch());
+    prismaMock.reimbursementLink.count.mockResolvedValue(0);
+    prismaMock.transaction.deleteMany.mockResolvedValue({ count: 8 });
+    prismaMock.importBatch.update.mockResolvedValue(dbBatch({ status: 'UNDONE' }));
+
+    await undoImportBatch('user-1', 'batch-1');
+
+    expect(prismaMock.reimbursementLink.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'user-1',
+          OR: [{ expense: { importBatchId: 'batch-1' } }, { income: { importBatchId: 'batch-1' } }],
+        }),
+      }),
+    );
+  });
+
+  it('undoes normally when no transaction in the batch has an active link', async () => {
+    prismaMock.importBatch.findFirst.mockResolvedValue(dbBatch());
+    prismaMock.reimbursementLink.count.mockResolvedValue(0);
+    prismaMock.transaction.deleteMany.mockResolvedValue({ count: 8 });
+    prismaMock.importBatch.update.mockResolvedValue(dbBatch({ status: 'UNDONE' }));
+
+    const result = await undoImportBatch('user-1', 'batch-1');
+
+    expect(result.deletedTransactions).toBe(8);
   });
 });

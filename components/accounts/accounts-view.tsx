@@ -6,8 +6,10 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AccountForm } from '@/components/accounts/account-form';
+import { ReimbursementSummaryCard } from '@/components/accounts/reimbursement-summary-card';
 import { formatDate } from '@/lib/format';
 import type { FrontendAccount } from '@/lib/services/accounts';
+import type { FrontendReimbursementPendingSummary } from '@/lib/services/reimbursements';
 
 const TYPE_LABELS: Record<string, string> = {
   CHECKING: 'Checking',
@@ -18,8 +20,10 @@ const TYPE_LABELS: Record<string, string> = {
 
 export const AccountsView = ({
   initialAccounts,
+  pendingReimbursement,
 }: {
   initialAccounts: FrontendAccount[];
+  pendingReimbursement: FrontendReimbursementPendingSummary;
 }): React.ReactElement => {
   const router = useRouter();
   const [dialogKey, setDialogKey] = useState(0);
@@ -50,6 +54,7 @@ export const AccountsView = ({
 
   return (
     <div className="mt-6.5">
+      <ReimbursementSummaryCard summary={pendingReimbursement} />
       {initialAccounts.length === 0 && (
         <p className="text-ink-muted mb-4 text-sm">
           No accounts yet. Add one to start logging transactions.

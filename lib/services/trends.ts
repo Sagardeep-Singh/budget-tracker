@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db/prisma';
+import { listReimbursedAmountsByExpenseDate } from '@/lib/services/reimbursements';
 
 export type TrendsRange = 3 | 6 | 12;
 
@@ -78,17 +79,38 @@ export const getSpendingTrends = async (
   const rangeEnd = shiftMonth(allMonths[allMonths.length - 1], 1);
   const rangeEndDate = monthStart(rangeEnd);
 
-  const transactions = await prisma.transaction.findMany({
-    where: { userId, date: { gte: rangeStart, lt: rangeEndDate } },
-    include: { category: { select: { id: true, name: true } } },
-  });
+  const [transactions, reimbursedExpenses] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, date: { gte: rangeStart, lt: rangeEndDate } },
+      include: {
+        category: { select: { id: true, name: true } },
+        _count: { select: { reimbursementIncomeLinks: true } },
+      },
+    }),
+    listReimbursedAmountsByExpenseDate(userId, rangeStart, rangeEndDate),
+  ]);
+
+  // Reimbursed amount per expense — nets out of every expense sum below,
+  // mirroring lib/services/budgets.ts, so movers/category totals reflect
+  // out-of-pocket spend rather than gross.
+  const reimbursedByTransaction = new Map<string, number>();
+  for (const r of reimbursedExpenses) {
+    reimbursedByTransaction.set(
+      r.expenseTransactionId,
+      (reimbursedByTransaction.get(r.expenseTransactionId) ?? 0) + Number(r.amount),
+    );
+  }
+  const netExpenseAmount = (t: (typeof transactions)[number]): number =>
+    Math.max(0, Number(t.amount) - (reimbursedByTransaction.get(t.id) ?? 0));
 
   const monthOf = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 
   // Same income/expense filters as getOverviewData: both legs of an
-  // inter-account transfer never count as spending or income.
+  // inter-account transfer never count as spending or income, and income
+  // linked as a reimbursement is excluded the same way (live link count, not
+  // a static flag).
   const isIncome = (t: (typeof transactions)[number]): boolean =>
-    t.type === 'INCOME' && !t.isPayment && !t.isTransfer;
+    t.type === 'INCOME' && !t.isPayment && !t.isTransfer && t._count.reimbursementIncomeLinks === 0;
   const isExpense = (t: (typeof transactions)[number]): boolean =>
     t.type === 'EXPENSE' && !t.isTransfer;
 
@@ -101,9 +123,9 @@ export const getSpendingTrends = async (
     const m = monthOf(t.date);
     const bucket = monthTotals.get(m);
     if (!bucket) continue;
-    const amount = Number(t.amount);
-    if (isIncome(t)) bucket.income += amount;
+    if (isIncome(t)) bucket.income += Number(t.amount);
     if (isExpense(t)) {
+      const amount = netExpenseAmount(t);
       bucket.expense += amount;
       const categoryId = t.category?.id ?? OTHER_CATEGORY_ID;
       categoryNames.set(categoryId, t.category?.name ?? 'Uncategorized');

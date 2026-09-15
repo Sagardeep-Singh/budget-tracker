@@ -7,6 +7,7 @@ const main = async (): Promise<void> => {
   const password = process.env.ADMIN_PASSWORD ?? 'devpassword123';
 
   // destructive: local dev only, never run against production
+  await prisma.reimbursementLink.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.categoryRule.deleteMany();
   await prisma.budget.deleteMany();

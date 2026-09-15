@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { undoImportBatch } from '@/lib/services/importBatches';
-import { BatchAlreadyUndoneError, ServiceValidationError } from '@/lib/services/common';
+import {
+  BatchAlreadyUndoneError,
+  ReimbursementConflictError,
+  ServiceValidationError,
+} from '@/lib/services/common';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -17,6 +21,9 @@ export const POST = async (_request: Request, { params }: RouteParams): Promise<
   } catch (error) {
     if (error instanceof BatchAlreadyUndoneError) {
       return NextResponse.json({ code: 'ALREADY_UNDONE', error: error.message }, { status: 409 });
+    }
+    if (error instanceof ReimbursementConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof ServiceValidationError) {
       return NextResponse.json({ error: error.message }, { status: 404 });

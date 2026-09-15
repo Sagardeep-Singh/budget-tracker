@@ -37,7 +37,7 @@ Locked by product discussion before design (not open for the implementer to revi
   Enforced at both the DB level (`onDelete: Restrict`) and the service level (a clear error
   instead of a raw constraint failure).
 - **Budgets net out reimbursements.** A category's "spent" total reflects `expense amount −
-  amount actually reimbursed`, clamped at 0 (overshoot is allowed but never becomes budget
+amount actually reimbursed`, clamped at 0 (overshoot is allowed but never becomes budget
   credit). Attributed to the **expense's month** — a January expense reimbursed in March
   retroactively lowers January's spent. Accepted: past months can shift when a late
   reimbursement arrives.
@@ -202,7 +202,7 @@ named constants at the top of the file — tuning, not a product requirement.
 - **`budgets.ts`**: existing `groupBy` stays untouched; a third parallel query
   (`listReimbursedAmountsByExpenseDate`) reduces into spent, clamped at 0.
 - **`overview.ts` / `trends.ts`**: income predicates gain `&& t._count.reimbursementIncomeLinks
-  === 0`, mirroring the existing `isTransfer`/`isPayment` gates. Per the locked "net out
+=== 0`, mirroring the existing `isTransfer`/`isPayment` gates. Per the locked "net out
   everywhere" decision, `hero.expense`, `expenseBreakdown`, `dayBars`, `daySpent`, and Trends'
   expense/category sums also subtract reimbursed amounts (clamped per-transaction at 0). Account
   balances and `cycleSpend` stay gross — the money genuinely arrived/left, and a credit card
@@ -232,12 +232,12 @@ named constants at the top of the file — tuning, not a product requirement.
 
 ## API routes
 
-| Path | Method | Purpose |
-|---|---|---|
-| `app/api/transactions/[id]/reimbursement/route.ts` | `GET` | Full reimbursement detail for one expense |
-| `app/api/transactions/[id]/reimbursement/candidates/route.ts` | `GET` | Ranked link-picker candidates, `?search=&limit=` |
-| `app/api/reimbursement-links/route.ts` | `POST` | Create a link (201, returns recomputed expense summary) |
-| `app/api/reimbursement-links/[id]/route.ts` | `PATCH` / `DELETE` | Edit or remove a link (200 with recomputed summary, not 204) |
+| Path                                                          | Method             | Purpose                                                      |
+| ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------ |
+| `app/api/transactions/[id]/reimbursement/route.ts`            | `GET`              | Full reimbursement detail for one expense                    |
+| `app/api/transactions/[id]/reimbursement/candidates/route.ts` | `GET`              | Ranked link-picker candidates, `?search=&limit=`             |
+| `app/api/reimbursement-links/route.ts`                        | `POST`             | Create a link (201, returns recomputed expense summary)      |
+| `app/api/reimbursement-links/[id]/route.ts`                   | `PATCH` / `DELETE` | Edit or remove a link (200 with recomputed summary, not 204) |
 
 Marking reimbursable and the manual "fully reimbursed" override are **not** separate endpoints —
 they ride the existing `PATCH /api/transactions/:id`, since the validation is cross-field against

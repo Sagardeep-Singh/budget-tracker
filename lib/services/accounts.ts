@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import { toSerializable } from '@/lib/utils';
 import { ServiceValidationError } from '@/lib/services/common';
+import { assertNoActiveLinks } from '@/lib/services/reimbursements';
 import type { CreateAccountInput, UpdateAccountInput } from '@/lib/validators/accounts';
 
 export type FrontendAccount = {
@@ -92,9 +93,20 @@ export const updateAccount = async (
 };
 
 export const deleteAccount = async (userId: string, accountId: string): Promise<void> => {
-  const existing = await prisma.account.findFirst({ where: { id: accountId, userId } });
+  const existing = await prisma.account.findFirst({
+    where: { id: accountId, userId },
+    include: { transactions: { select: { id: true } } },
+  });
   if (!existing) {
     throw new ServiceValidationError('Account not found');
   }
+  // Reimbursement links are cross-account by design, so deleting this account
+  // could otherwise silently orphan a link on another account's expense —
+  // same "blocked, not cascaded" rule as deleting a linked transaction directly.
+  await assertNoActiveLinks(
+    userId,
+    existing.transactions.map((t) => t.id),
+    'This account has transactions linked to reimbursements. Remove those links before deleting it.',
+  );
   await prisma.account.delete({ where: { id: accountId } });
 };

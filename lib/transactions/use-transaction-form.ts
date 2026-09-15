@@ -25,6 +25,11 @@ export type TransactionFormHook = {
   isTransfer: boolean;
   setIsTransfer: (value: boolean) => void;
   canBePayment: boolean;
+  isReimbursable: boolean;
+  setIsReimbursable: (value: boolean) => void;
+  reimbursementExpectedAmount: string;
+  setReimbursementExpectedAmount: (value: string) => void;
+  canBeReimbursable: boolean;
   pending: boolean;
   error: string | null;
   suggestFor: (payee: string, note: string) => void;
@@ -61,9 +66,14 @@ export const useTransactionForm = ({
   const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? '');
   const [isPayment, setIsPayment] = useState(transaction?.isPayment ?? false);
   const [isTransfer, setIsTransfer] = useState(transaction?.isTransfer ?? false);
+  const [isReimbursable, setIsReimbursable] = useState(transaction?.isReimbursable ?? false);
+  const [reimbursementExpectedAmount, setReimbursementExpectedAmount] = useState(
+    transaction?.reimbursementExpectedAmount ?? '',
+  );
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const canBePayment = type === 'INCOME' && selectedAccount?.type === 'CREDIT_CARD';
+  const canBeReimbursable = type === 'EXPENSE' && !isTransfer && !isPayment;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const suggestFor = (payee: string, note: string): void => {
@@ -104,6 +114,9 @@ export const useTransactionForm = ({
       canBePayment,
       isPayment,
       isTransfer,
+      canBeReimbursable,
+      isReimbursable,
+      reimbursementExpectedAmount,
     });
 
     const res = await fetch(
@@ -139,6 +152,11 @@ export const useTransactionForm = ({
     isTransfer,
     setIsTransfer,
     canBePayment,
+    isReimbursable,
+    setIsReimbursable,
+    reimbursementExpectedAmount,
+    setReimbursementExpectedAmount,
+    canBeReimbursable,
     pending,
     error,
     suggestFor,

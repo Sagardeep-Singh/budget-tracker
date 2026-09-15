@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth/session';
-import { updateTransactionSchema } from '@/lib/validators/transactions';
-import { deleteTransaction, updateTransaction } from '@/lib/services/transactions';
+import { updateReimbursementLinkSchema } from '@/lib/validators/reimbursements';
+import { deleteReimbursementLink, updateReimbursementLink } from '@/lib/services/reimbursements';
 import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -11,13 +11,13 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
-  const parsed = updateTransactionSchema.safeParse(await request.json());
+  const parsed = updateReimbursementLinkSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
   try {
-    return NextResponse.json(await updateTransaction(session.user.id, id, parsed.data));
+    return NextResponse.json(await updateReimbursementLink(session.user.id, id, parsed.data));
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
@@ -35,8 +35,7 @@ export const DELETE = async (_request: Request, { params }: RouteParams): Promis
 
   const { id } = await params;
   try {
-    await deleteTransaction(session.user.id, id);
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json(await deleteReimbursementLink(session.user.id, id));
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
