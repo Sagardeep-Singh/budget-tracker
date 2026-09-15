@@ -176,7 +176,7 @@ pattern instead of deleting rows outright.
 - `isDueNow(pref, lastActivityAt, now)` — pure, no I/O, unit-tested in
   isolation:
   1. **Cadence floor** — not due if `now - (lastSentAt ?? pref.createdAt) <
-     cadenceDays * 24h` (minus a small slack to avoid a daily reminder
+cadenceDays * 24h` (minus a small slack to avoid a daily reminder
      creeping later each day due to sub-second jitter in when the cron
      actually fires).
   2. **Activity gate** — `windowStart = lastSentAt ?? createdAt`; not due
@@ -219,12 +219,12 @@ optional-feature pattern.
 
 ## API routes
 
-| Path | Verb | Notes |
-|---|---|---|
-| `app/api/push/subscribe/route.ts` | POST | session → validate → `savePushSubscription` → 201 |
-| `app/api/push/unsubscribe/route.ts` | POST | session → validate → `deletePushSubscription`. POST (not DELETE) since the endpoint URL belongs in a body — matches existing precedent like `transactions/[id]/skip` |
-| `app/api/settings/reminders/route.ts` | PATCH | session → validate → `updateReminderPreference`, matching this repo's PATCH convention (`accounts/[id]`, `rules/[id]`) |
-| `app/api/cron/reminders/route.ts` | GET | no session; Vercel Cron calls it directly — see auth below |
+| Path                                  | Verb  | Notes                                                                                                                                                                |
+| ------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/api/push/subscribe/route.ts`     | POST  | session → validate → `savePushSubscription` → 201                                                                                                                    |
+| `app/api/push/unsubscribe/route.ts`   | POST  | session → validate → `deletePushSubscription`. POST (not DELETE) since the endpoint URL belongs in a body — matches existing precedent like `transactions/[id]/skip` |
+| `app/api/settings/reminders/route.ts` | PATCH | session → validate → `updateReminderPreference`, matching this repo's PATCH convention (`accounts/[id]`, `rules/[id]`)                                               |
+| `app/api/cron/reminders/route.ts`     | GET   | no session; Vercel Cron calls it directly — see auth below                                                                                                           |
 
 **Cron auth:** Vercel sends `Authorization: Bearer $CRON_SECRET` on
 cron-triggered requests when `CRON_SECRET` is set. The handler: 500 if the
@@ -269,11 +269,11 @@ call + response.
   permission, calls `pushManager.subscribe`, POSTs to `/api/push/subscribe`)
   and unsubscribe. Also handles **permission drift**: if Settings finds
   `Notification.permission === 'denied'` on a device that thinks it's
-  subscribed, it unsubscribes *that device's endpoint only* — it must not
+  subscribed, it unsubscribes _that device's endpoint only_ — it must not
   flip the account-wide `enabled` flag, or revoking permission on a laptop
   would silently kill reminders on the user's phone too.
 - `next.config.ts` gets a `headers()` entry sending `Cache-Control:
-  no-cache` for `/sw.js` so a deployed update is picked up promptly instead
+no-cache` for `/sw.js` so a deployed update is picked up promptly instead
   of being pinned by HTTP caching.
 
 ## Vercel Cron
@@ -290,12 +290,12 @@ v1 per the cron constraint above.
 
 ## New env vars (`.env.example`)
 
-| Var | Purpose |
-|---|---|
+| Var                            | Purpose                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Used both client-side (`pushManager.subscribe`) and server-side (`web-push`) — one var, not two, so the pair can't drift |
-| `VAPID_PRIVATE_KEY` | Server-only |
-| `VAPID_SUBJECT` | `mailto:`/`https:` contact URL required by the Web Push spec |
-| `CRON_SECRET` | Vercel-injected bearer token for the cron route; also usable for manual testing |
+| `VAPID_PRIVATE_KEY`            | Server-only                                                                                                              |
+| `VAPID_SUBJECT`                | `mailto:`/`https:` contact URL required by the Web Push spec                                                             |
+| `CRON_SECRET`                  | Vercel-injected bearer token for the cron route; also usable for manual testing                                          |
 
 Generate with `npx web-push generate-vapid-keys`. Leaving these unset hides
 the reminders UI and no-ops the cron, same optional-feature idiom as the
@@ -362,26 +362,37 @@ used for palette/appearance):
 
 ## Checklist
 
-- [ ] Confirm schema-change authorization (adds `ReminderCadence`,
+- [x] Confirm schema-change authorization (adds `ReminderCadence`,
       `NotificationPreference`, `PushSubscription`, two `User` relations)
       before running the migration, per CLAUDE.md.
-- [ ] `npm run prisma:migrate -- --name push_reminders` + `npm run prisma:generate`
-- [ ] Install `web-push` + `@types/web-push`; generate VAPID keys; add the
+- [x] `npm run prisma:migrate -- --name push_reminders` + `npm run prisma:generate`
+      (`prisma/migrations/20260915062353_push_reminders`)
+- [x] Install `web-push` + `@types/web-push`; generate VAPID keys; add the
       four new vars to `.env.example` and local `.env`
-- [ ] `lib/validators/push.ts`, `lib/validators/reminders.ts`
-- [ ] `lib/push/webPush.ts` (`isPushConfigured`, `sendPush`, 404/410 handling)
-- [ ] `lib/services/pushSubscriptions.ts` + unit tests
-- [ ] `lib/services/reminders.ts` (`isDueNow` first, then `sendDueReminders`) + unit tests
-- [ ] Routes: `push/subscribe`, `push/unsubscribe`, `settings/reminders` (PATCH), `cron/reminders` (GET + secret)
-- [ ] `vercel.json` daily cron entry
-- [ ] `app/manifest.ts` + `public/icons/*.png` (including maskable variant)
-- [ ] `public/sw.js`, `next.config.ts` no-cache header for `/sw.js`, `app/offline/page.tsx`
-- [ ] `components/pwa/service-worker-register.tsx`, mounted in `app/layout.tsx`
-- [ ] `lib/push/client.ts` + `components/settings/reminders-section.tsx` (per UI section above), wired through `app/(protected)/settings/page.tsx` and `components/settings/settings-view.tsx`
-- [ ] Unit tests per test plan above
-- [ ] E2E: `reminders-settings.spec.ts`
-- [ ] Manual verification: install prompt (desktop Chrome + Android), airplane-mode navigation hits `/offline`, `curl -H "Authorization: Bearer $CRON_SECRET" .../api/cron/reminders` sends a real push and returns a sane summary
-- [ ] `npm run format:fix && npm run lint`, `npm run test`, `npm run test:e2e`
+- [x] `lib/validators/push.ts`, `lib/validators/reminders.ts`
+- [x] `lib/push/webPush.ts` (`isPushConfigured`, `sendPush`, 404/410 handling)
+- [x] `lib/services/pushSubscriptions.ts` + unit tests
+- [x] `lib/services/reminders.ts` (`isDueNow` first, then `sendDueReminders`) + unit tests
+- [x] Routes: `push/subscribe`, `push/unsubscribe`, `settings/reminders` (PATCH), `cron/reminders` (GET + secret)
+- [x] `vercel.json` daily cron entry
+- [x] `app/manifest.ts` + `public/icons/*.png` (including maskable variant)
+- [x] `public/sw.js`, `next.config.ts` no-cache header for `/sw.js`, `app/offline/page.tsx`
+- [x] `components/pwa/service-worker-register.tsx`, mounted in `app/layout.tsx`
+- [x] `lib/push/client.ts` + `components/settings/reminders-section.tsx` (per UI section above), wired through `app/(protected)/settings/page.tsx` and `components/settings/settings-view.tsx`
+- [x] Unit tests per test plan above (66 new cases across
+      `reminders`, `pushSubscriptions`, and both validators)
+- [x] E2E: `reminders-settings.spec.ts` written; **not executed** — the
+      sandbox can't download a Playwright browser, so it still needs a run
+      on a machine with Chromium before merge.
+- [~] Manual verification: cron route verified by hand (401 with no/wrong
+  bearer, 200 + sane summary with the right one; an all-failed send
+  leaves `lastSentAt` null and only advances `lastEvaluatedAt`).
+  **Still outstanding:** install prompt on desktop Chrome + Android,
+  airplane-mode navigation hitting `/offline`, and a real push
+  delivered to a real device — none are reachable from the sandbox.
+- [x] `npm run format:fix && npm run lint` (clean), `npm run test`
+      (259 passing), `npm run build` (clean); `npm run test:e2e` blocked as
+      noted above.
 
 ## Known trade-offs
 
