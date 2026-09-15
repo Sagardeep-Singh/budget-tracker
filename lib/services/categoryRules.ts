@@ -21,6 +21,12 @@ export type FrontendCategoryRule = {
    * category both agree with — an approximation of "applied", since a
    * transaction's category isn't tagged with which rule (if any) set it. */
   appliedCount: number;
+  /** Other rules whose match text also matches at least one of the same
+   * transactions — priority only matters for this subset. */
+  overlapCount: number;
+  /** Set iff overlapCount > 0: the immediate rival by priority, and whether
+   * this rule wins (lower priority number) or loses to it. */
+  overlap: { matchText: string; priority: number; wins: boolean } | null;
 };
 
 const toFrontend = (
@@ -32,6 +38,8 @@ const toFrontend = (
     category: { name: string };
   },
   appliedCount: number,
+  overlapCount: number,
+  overlap: FrontendCategoryRule['overlap'],
 ): FrontendCategoryRule => ({
   id: rule.id,
   categoryId: rule.categoryId,
@@ -39,10 +47,19 @@ const toFrontend = (
   matchText: rule.matchText,
   priority: rule.priority,
   appliedCount,
+  overlapCount,
+  overlap,
 });
 
-export const listCategoryRules = async (userId: string): Promise<FrontendCategoryRule[]> => {
-  const [rules, transactions] = await Promise.all([
+export type CategoryRulesSummary = {
+  rules: FrontendCategoryRule[];
+  /** Distinct transactions matched by at least one rule (not a sum of
+   * appliedCount, which double-counts overlaps). */
+  appliedToTransactionCount: number;
+};
+
+export const listCategoryRules = async (userId: string): Promise<CategoryRulesSummary> => {
+  const [rules, categorizedTransactions, allTransactions] = await Promise.all([
     prisma.categoryRule.findMany({
       where: { userId },
       include: { category: { select: { name: true } } },
@@ -52,15 +69,65 @@ export const listCategoryRules = async (userId: string): Promise<FrontendCategor
       where: { userId, categoryId: { not: null } },
       select: { categoryId: true, payee: true, note: true },
     }),
+    prisma.transaction.findMany({
+      where: { userId },
+      select: { payee: true, note: true },
+    }),
   ]);
 
-  return rules.map((rule) => {
+  const matchers = rules.map((rule) => ({ rule, matcher: compileRuleMatcher(rule.matchText) }));
+
+  // Two rules "overlap" when some real transaction's payee/note matches both
+  // match texts — a static substring-containment check between match texts
+  // would flag pairs that never actually collide on real data, and miss
+  // pairs that do (e.g. "food" and "superstore" both matching one payee).
+  const overlapCounts = new Map<string, Map<string, number>>();
+  for (const rule of rules) overlapCounts.set(rule.id, new Map());
+  let appliedToTransactionCount = 0;
+  for (const t of allTransactions) {
+    const haystack = `${t.payee ?? ''} ${t.note ?? ''}`;
+    const matchedIds = matchers.filter((m) => m.matcher.test(haystack)).map((m) => m.rule.id);
+    if (matchedIds.length > 0) appliedToTransactionCount += 1;
+    if (matchedIds.length < 2) continue;
+    for (const a of matchedIds) {
+      for (const b of matchedIds) {
+        if (a === b) continue;
+        const counts = overlapCounts.get(a)!;
+        counts.set(b, (counts.get(b) ?? 0) + 1);
+      }
+    }
+  }
+
+  const frontendRules = rules.map((rule) => {
     const matcher = compileRuleMatcher(rule.matchText);
-    const appliedCount = transactions.filter(
+    const appliedCount = categorizedTransactions.filter(
       (t) => t.categoryId === rule.categoryId && matcher.test(`${t.payee ?? ''} ${t.note ?? ''}`),
     ).length;
-    return toFrontend(rule, appliedCount);
+
+    const rivalIds = [...overlapCounts.get(rule.id)!.keys()];
+    let overlap: FrontendCategoryRule['overlap'] = null;
+    if (rivalIds.length > 0) {
+      // The immediate rival is whichever overlapping rule is "next" in
+      // priority order to this one — the one this rule's priority actually
+      // has to beat (or lose to).
+      const rivals = rivalIds
+        .map((id) => rules.find((r) => r.id === id)!)
+        .sort((a, b) => a.priority - b.priority || a.matchText.localeCompare(b.matchText));
+      const rival =
+        rivals.find((r) => r.priority > rule.priority) ??
+        rivals.find((r) => r.priority < rule.priority) ??
+        rivals[0];
+      overlap = {
+        matchText: rival.matchText,
+        priority: rival.priority,
+        wins: rule.priority < rival.priority,
+      };
+    }
+
+    return toFrontend(rule, appliedCount, rivalIds.length, overlap);
   });
+
+  return { rules: frontendRules, appliedToTransactionCount };
 };
 
 export const createCategoryRule = async (
@@ -83,7 +150,7 @@ export const createCategoryRule = async (
     },
     include: { category: { select: { name: true } } },
   });
-  return toFrontend(rule, 0);
+  return toFrontend(rule, 0, 0, null);
 };
 
 export const updateCategoryRule = async (
@@ -101,7 +168,7 @@ export const updateCategoryRule = async (
     data: input,
     include: { category: { select: { name: true } } },
   });
-  return toFrontend(rule, 0);
+  return toFrontend(rule, 0, 0, null);
 };
 
 export const deleteCategoryRule = async (userId: string, ruleId: string): Promise<void> => {

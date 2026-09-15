@@ -15,7 +15,7 @@ const trigger = (page: import('@playwright/test').Page) =>
   page.getByRole('button', { name: /\w+ \d{4}$/ }).first();
 
 const sheet = (page: import('@playwright/test').Page) =>
-  page.getByRole('dialog', { name: 'Period' });
+  page.getByRole('dialog', { name: 'Pick a period' });
 
 test.describe('desktop', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
@@ -62,7 +62,7 @@ test.describe('mobile width', () => {
     await expect(sheet(page)).toBeVisible();
     await expect(sheet(page).getByRole('button', { name: 'This month' })).toBeVisible();
     await expect(sheet(page).getByRole('button', { name: 'Last month' })).toBeVisible();
-    await expect(sheet(page).getByRole('button', { name: '07', exact: true })).toBeVisible();
+    await expect(sheet(page).getByRole('button', { name: 'Jul', exact: true })).toBeVisible();
 
     const box = await sheet(page).boundingBox();
     const viewport = page.viewportSize();
@@ -98,7 +98,7 @@ test.describe('mobile width', () => {
     const year = new Date().getUTCFullYear();
 
     await trigger(page).click();
-    await sheet(page).getByRole('button', { name: '01', exact: true }).click();
+    await sheet(page).getByRole('button', { name: 'Jan', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`month=${year}01`));
     await expect(sheet(page)).toHaveCount(0);

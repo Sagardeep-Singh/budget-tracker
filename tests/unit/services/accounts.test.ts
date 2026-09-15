@@ -35,6 +35,7 @@ describe('listAccounts', () => {
           { amount: 50, type: 'INCOME' },
           { amount: 20, type: 'EXPENSE' },
         ],
+        importBatches: [],
       },
     ]);
 
@@ -48,6 +49,8 @@ describe('listAccounts', () => {
         startingBalance: 100,
         createdAt: '2026-01-01T00:00:00.000Z',
         balance: '130.00',
+        transactionCount: 2,
+        lastImportAt: null,
       },
     ]);
   });
@@ -62,6 +65,7 @@ describe('createAccount', () => {
       startingBalance: 0,
       createdAt: new Date('2026-01-01'),
       transactions: [],
+      importBatches: [],
     });
 
     const result = await createAccount('user-1', {
@@ -108,6 +112,7 @@ describe('updateAccount statementDay', () => {
       statementDay: null,
       createdAt: new Date('2026-01-01'),
       transactions: [],
+      importBatches: [],
     });
 
     await updateAccount('user-1', 'acc-1', { type: 'CASH' });
@@ -127,6 +132,7 @@ describe('updateAccount statementDay', () => {
       statementDay: 20,
       createdAt: new Date('2026-01-01'),
       transactions: [],
+      importBatches: [],
     });
 
     const result = await updateAccount('user-1', 'acc-1', { statementDay: 20 });

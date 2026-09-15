@@ -1,4 +1,6 @@
 import type { TrendsCategory, TrendsCategoryMonth, TrendsMonth } from '@/lib/services/trends';
+import { currentMonthNumber, daysElapsedInMonth } from '@/lib/format';
+import { cn } from '@/lib/cn';
 
 const money = (value: number): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
@@ -14,10 +16,12 @@ export const CategoryBreakdownBar = ({
   months,
   categories,
   breakdown,
+  uncategorizedCount,
 }: {
   months: TrendsMonth[];
   categories: TrendsCategory[];
   breakdown: TrendsCategoryMonth[];
+  uncategorizedCount: number;
 }): React.ReactElement => {
   const totalByMonth = new Map(
     breakdown.map((b) => [b.month, b.segments.reduce((sum, s) => sum + s.amount, 0)]),
@@ -27,6 +31,15 @@ export const CategoryBreakdownBar = ({
 
   return (
     <div>
+      {uncategorizedCount > 0 && (
+        <div className="bg-paper mb-4 flex items-start gap-2.5 rounded-xl px-3.5 py-2.5">
+          <span className="text-ink-muted mt-1 size-2.5 shrink-0 rounded-[3px] bg-current" />
+          <p className="text-ink-muted text-[12.5px] leading-snug">
+            Uncategorized is grey because it isn&rsquo;t a spending pattern — it&rsquo;s{' '}
+            {uncategorizedCount} row{uncategorizedCount === 1 ? '' : 's'} waiting on you.
+          </p>
+        </div>
+      )}
       {categories.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1.5">
           {categories.map((c) => (
@@ -51,12 +64,17 @@ export const CategoryBreakdownBar = ({
             const monthLabel = months.find((m) => m.month === monthBreakdown.month)?.label ?? '';
             const total = totalByMonth.get(monthBreakdown.month) ?? 0;
             const barHeight = Math.round((total / maxTotal) * 100);
+            const isInProgress = monthBreakdown.month === currentMonthNumber();
+            const elapsedDays = isInProgress ? daysElapsedInMonth(monthBreakdown.month) : null;
             return (
               <div key={monthBreakdown.month} className="flex h-full flex-1 flex-col justify-end">
                 <div
-                  className="flex flex-col justify-end gap-[2px] overflow-hidden rounded-t-[4px]"
+                  className={cn(
+                    'flex flex-col justify-end gap-[2px] overflow-hidden rounded-t-[4px]',
+                    isInProgress && 'opacity-55',
+                  )}
                   style={{ height: `${barHeight}%`, minHeight: total > 0 ? 2 : 0 }}
-                  title={`${monthLabel}: ${money(total)}`}
+                  title={`${monthLabel}${isInProgress ? ' (in progress)' : ''}: ${money(total)}`}
                 >
                   {monthBreakdown.segments
                     .filter((s) => s.amount > 0)
@@ -75,8 +93,8 @@ export const CategoryBreakdownBar = ({
                       );
                     })}
                 </div>
-                <div className="text-ink-muted mt-2 text-center font-mono text-[11px]">
-                  {monthLabel}
+                <div className="text-ink-muted mt-2 truncate text-center font-mono text-[11px] whitespace-nowrap">
+                  {isInProgress ? `${monthLabel} · ${elapsedDays} days` : monthLabel}
                 </div>
               </div>
             );

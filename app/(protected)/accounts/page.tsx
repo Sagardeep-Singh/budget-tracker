@@ -11,7 +11,7 @@ const AccountsPage = async (): Promise<React.ReactElement> => {
     <div className="animate-[fade-up_0.3s_ease-out]">
       <ScreenHeader
         title="Accounts"
-        description="Balances are the sum of your starting balance and every transaction logged against them."
+        description="Each balance is your starting balance plus every transaction logged against it."
       />
       <AccountsView initialAccounts={accounts} />
     </div>

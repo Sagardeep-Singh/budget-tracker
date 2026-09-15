@@ -7,7 +7,7 @@ import { ScreenHeader } from '@/components/nav/screen-header';
 const RulesPage = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
   const userId = session!.user.id;
-  const [rules, categories] = await Promise.all([
+  const [{ rules, appliedToTransactionCount }, categories] = await Promise.all([
     listCategoryRules(userId),
     listCategories(userId),
   ]);
@@ -16,7 +16,7 @@ const RulesPage = async (): Promise<React.ReactElement> => {
     <div className="animate-[fade-up_0.3s_ease-out]">
       <ScreenHeader
         title="Rules"
-        description="When a payee or note contains the match text, the transaction is auto-assigned to that category. Lower priority number wins when more than one rule matches."
+        description={`${rules.length} rule${rules.length === 1 ? '' : 's'}, applied to ${appliedToTransactionCount} transaction${appliedToTransactionCount === 1 ? '' : 's'}. When a payee matches, the category is set automatically.`}
       />
       <RulesView initialRules={rules} categories={categories} />
     </div>
