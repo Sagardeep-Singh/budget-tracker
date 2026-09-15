@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftRight, Plus, Trash2, Upload } from 'lucide-react';
+import { ArrowLeftRight, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -23,11 +23,25 @@ import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
 import { formatDate } from '@/lib/format';
+import { categoryColorVar } from '@/lib/ui/category-color';
 
 const pillSelect =
   'rounded-full border border-line bg-paper-raised px-3.5 py-2 text-[13px] font-medium text-ink outline-none focus:border-iris';
 
 const toYyyymm = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
+
+type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
+
+const groupByDay = (list: FrontendTransaction[]): [string, FrontendTransaction[]][] => {
+  const sorted = [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const groups = new Map<string, FrontendTransaction[]>();
+  for (const t of sorted) {
+    const key = formatDate(t.date);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(t);
+  }
+  return Array.from(groups.entries()).reverse();
+};
 
 export const TransactionsView = ({
   initialTransactions,
@@ -51,6 +65,8 @@ export const TransactionsView = ({
   const [categoryFilter, setCategoryFilter] = useState('');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date());
+  const [mobileSearch, setMobileSearch] = useState('');
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
 
   const selectedAccount = accounts.find((a) => a.id === accountFilter);
   const canUseStatementView =
@@ -173,21 +189,29 @@ export const TransactionsView = ({
     runningBalance.set(t.id, balance);
   }
 
-  const dayGroups = new Map<string, FrontendTransaction[]>();
-  for (const t of sortedAsc) {
-    const key = formatDate(t.date);
-    if (!dayGroups.has(key)) dayGroups.set(key, []);
-    dayGroups.get(key)!.push(t);
-  }
-  const days = Array.from(dayGroups.entries()).reverse();
+  const days = groupByDay(filtered);
+
+  const uncategorizedCount = filtered.filter((t) => !t.categoryId).length;
+  const searchLower = mobileSearch.trim().toLowerCase();
+  const mobileFiltered = filtered.filter((t) => {
+    if (quickFilter === 'uncategorized' && t.categoryId) return false;
+    if (quickFilter === 'spending' && t.type !== 'EXPENSE') return false;
+    if (quickFilter === 'income' && t.type !== 'INCOME') return false;
+    if (!searchLower) return true;
+    return (
+      (t.payee ?? '').toLowerCase().includes(searchLower) ||
+      Number(t.amount).toFixed(2).includes(searchLower)
+    );
+  });
+  const mobileDays = groupByDay(mobileFiltered);
 
   return (
     <div className="mt-6.5 pb-20 lg:pb-0">
-      {/* Chips scroll horizontally below lg (keeps the header height constant as
-          filters are added) and wrap as before at lg+. */}
+      {/* Desktop-only filter row; the mobile screen gets its own search +
+          quick-filter pills below, matching the mockup. */}
       <div
-        data-testid="transaction-filters"
-        className="flex flex-nowrap items-center gap-2 overflow-x-auto lg:flex-wrap"
+        data-testid="transaction-filters-desktop"
+        className="hidden items-center gap-2 lg:flex lg:flex-wrap"
       >
         <Select
           className={cn(pillSelect, 'shrink-0')}
@@ -250,7 +274,7 @@ export const TransactionsView = ({
       )}
 
       {accountFilter && (
-        <div className="mt-3">
+        <div className="mt-3 hidden lg:block">
           <PeriodPicker
             mode={periodMode}
             onModeChange={(m) => {
@@ -270,7 +294,7 @@ export const TransactionsView = ({
         </div>
       )}
 
-      <div className="border-line bg-paper-raised mt-3.5 flex flex-col items-start gap-3 rounded-[14px] border px-6 py-3.5 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+      <div className="border-line bg-paper-raised mt-3.5 hidden items-start gap-3 rounded-[14px] border px-6 py-3.5 lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-6">
         <span className="text-ink-muted text-[12.5px] font-medium whitespace-nowrap">
           {filtered.length} transaction{filtered.length === 1 ? '' : 's'}
           {period ? ' in this period' : ''}
@@ -312,81 +336,199 @@ export const TransactionsView = ({
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <p className="text-ink-muted mt-6 text-sm">
-          No transactions match. Log one to get started.
-        </p>
-      ) : (
-        days.map(([dateLabel, rows]) => {
-          const dayTotal = rows.reduce(
-            (sum, t) => sum + (t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount)),
-            0,
-          );
-          return (
-            <div key={dateLabel} className="mt-5.5">
-              <div className="flex items-baseline gap-3 px-0.5 pb-2">
-                <span className="text-ink-muted font-mono text-xs tracking-[0.06em]">
-                  {dateLabel}
-                </span>
-                <span className="bg-line h-px flex-1" />
-                <span className={cn('font-mono text-xs', dayTotal >= 0 ? 'text-sky' : 'text-rose')}>
-                  {dayTotal >= 0 ? '+' : '−'}
-                  {Math.abs(dayTotal).toFixed(2)}
-                </span>
-              </div>
-              <div className="border-line bg-paper-raised rounded-[14px] border px-6">
-                {[...rows].reverse().map((t) => (
-                  <div
-                    key={t.id}
-                    onClick={() => openDetail(t)}
-                    className="ledger-row flex cursor-pointer items-center gap-3 py-3.5 lg:gap-5"
+      <div className="hidden lg:block">
+        {filtered.length === 0 ? (
+          <p className="text-ink-muted mt-6 text-sm">
+            No transactions match. Log one to get started.
+          </p>
+        ) : (
+          days.map(([dateLabel, rows]) => {
+            const dayTotal = rows.reduce(
+              (sum, t) => sum + (t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount)),
+              0,
+            );
+            return (
+              <div key={dateLabel} className="mt-5.5">
+                <div className="flex items-baseline gap-3 px-0.5 pb-2">
+                  <span className="text-ink-muted font-mono text-xs tracking-[0.06em]">
+                    {dateLabel}
+                  </span>
+                  <span className="bg-line h-px flex-1" />
+                  <span
+                    className={cn('font-mono text-xs', dayTotal >= 0 ? 'text-sky' : 'text-rose')}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">
-                        {t.payee || t.categoryName || 'Transaction'}
-                      </div>
-                      <div className="text-ink-muted mt-0.5 text-xs">{t.accountName}</div>
-                      {/* non-interactive chip: the row already owns the click
+                    {dayTotal >= 0 ? '+' : '−'}
+                    {Math.abs(dayTotal).toFixed(2)}
+                  </span>
+                </div>
+                <div className="border-line bg-paper-raised rounded-[14px] border px-6">
+                  {[...rows].reverse().map((t) => (
+                    <div
+                      key={t.id}
+                      onClick={() => openDetail(t)}
+                      className="ledger-row flex cursor-pointer items-center gap-3 py-3.5 lg:gap-5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">
+                          {t.payee || t.categoryName || 'Transaction'}
+                        </div>
+                        <div className="text-ink-muted mt-0.5 text-xs">{t.accountName}</div>
+                        {/* non-interactive chip: the row already owns the click
                           (opens the detail drawer). The link to the history
                           entry lives in that drawer instead. */}
-                      {t.importBatchFilename && (
-                        <div className="text-ink-muted mt-0.5 flex items-center gap-1 text-[11px]">
-                          <Upload size={11} />
-                          <span className="truncate">{t.importBatchFilename}</span>
-                        </div>
-                      )}
-                    </div>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded-full px-2.5 py-1 text-[12.5px]',
-                        t.categoryName
-                          ? 'border-line text-ink-muted border'
-                          : 'border-rose bg-rose-soft text-rose border',
-                      )}
-                    >
-                      {t.categoryName ?? 'Uncategorized'}
-                    </span>
-                    <span
-                      className={cn(
-                        'shrink-0 text-right font-mono text-sm tabular-nums lg:w-[100px]',
-                        t.type === 'INCOME' ? 'text-sky' : 'text-rose',
-                      )}
-                    >
-                      {t.type === 'INCOME' ? '+' : '−'}
-                      {Number(t.amount).toFixed(2)}
-                    </span>
-                    {/* Running balance is a desktop-only column: at 402px it squeezed
+                        {t.importBatchFilename && (
+                          <div className="text-ink-muted mt-0.5 flex items-center gap-1 text-[11px]">
+                            <Upload size={11} />
+                            <span className="truncate">{t.importBatchFilename}</span>
+                          </div>
+                        )}
+                      </div>
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-full px-2.5 py-1 text-[12.5px]',
+                          t.categoryName
+                            ? 'border-line text-ink-muted border'
+                            : 'border-rose bg-rose-soft text-rose border',
+                        )}
+                      >
+                        {t.categoryName ?? 'Uncategorized'}
+                      </span>
+                      <span
+                        className={cn(
+                          'shrink-0 text-right font-mono text-sm tabular-nums lg:w-[100px]',
+                          t.type === 'INCOME' ? 'text-sky' : 'text-rose',
+                        )}
+                      >
+                        {t.type === 'INCOME' ? '+' : '−'}
+                        {Number(t.amount).toFixed(2)}
+                      </span>
+                      {/* Running balance is a desktop-only column: at 402px it squeezed
                         the payee cell to zero width. */}
-                    <span className="text-ink-muted hidden w-[86px] shrink-0 text-right font-mono text-xs tabular-nums lg:block">
-                      {(runningBalance.get(t.id) ?? 0).toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                      <span className="text-ink-muted hidden w-[86px] shrink-0 text-right font-mono text-xs tabular-nums lg:block">
+                        {(runningBalance.get(t.id) ?? 0).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })
-      )}
+            );
+          })
+        )}
+      </div>
+
+      <div className="lg:hidden">
+        <div className="border-line bg-paper-raised flex items-center gap-2.25 rounded-full border px-3.75 py-0">
+          <Search size={15} className="text-ink-muted shrink-0" />
+          <input
+            type="text"
+            value={mobileSearch}
+            onChange={(e) => setMobileSearch(e.target.value)}
+            placeholder="Search payee or amount"
+            className="placeholder:text-ink-muted/70 min-h-[46px] flex-1 bg-transparent text-sm outline-none"
+          />
+        </div>
+
+        <div
+          data-testid="transaction-filters"
+          className="-mx-4.5 mt-3 flex gap-2 overflow-x-auto px-4.5 pb-0.5"
+        >
+          {(
+            [
+              ['all', 'All'],
+              ['uncategorized', `Uncategorized ${uncategorizedCount}`],
+              ['spending', 'Spending'],
+              ['income', 'Income'],
+            ] as [QuickFilter, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setQuickFilter(key)}
+              className={cn(
+                'shrink-0 rounded-full px-3.5 py-2 text-[12.5px] font-medium',
+                quickFilter === key
+                  ? 'bg-ink text-paper-raised'
+                  : 'border-line text-ink bg-paper-raised border',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-ink-muted mt-3.5 text-[12.5px]">
+          {mobileFiltered.length} transaction{mobileFiltered.length === 1 ? '' : 's'} · transfers
+          excluded
+        </p>
+
+        {mobileFiltered.length === 0 ? (
+          <p className="text-ink-muted mt-6 text-sm">
+            No transactions match. Log one to get started.
+          </p>
+        ) : (
+          mobileDays.map(([dateLabel, rows]) => {
+            const dayTotal = rows.reduce(
+              (sum, t) => sum + (t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount)),
+              0,
+            );
+            return (
+              <div key={dateLabel} className="mt-5">
+                <div className="flex items-baseline justify-between gap-2.5 px-0.5 pb-2">
+                  <span className="text-ink-muted text-[11px] font-semibold tracking-[0.06em] uppercase">
+                    {dateLabel}
+                  </span>
+                  <Money
+                    value={dayTotal}
+                    tone={dayTotal >= 0 ? 'income' : 'expense'}
+                    className="text-[11.5px]"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  {[...rows].reverse().map((t) => (
+                    <div
+                      key={t.id}
+                      data-testid="transaction-row-mobile"
+                      onClick={() => openDetail(t)}
+                      className="border-line bg-paper-raised cursor-pointer rounded-2xl border p-3.5"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="truncate text-[15.5px] font-semibold tracking-[-0.01em]">
+                          {t.payee || t.categoryName || 'Transaction'}
+                        </span>
+                        <Money
+                          value={t.amount}
+                          tone={t.type === 'INCOME' ? 'income' : 'expense'}
+                          className="shrink-0 text-[15.5px]"
+                        />
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between gap-2.5">
+                        <span className="text-ink-muted min-w-0 truncate text-xs">
+                          {t.accountName}
+                        </span>
+                        {t.categoryName ? (
+                          <span
+                            className="shrink-0 rounded-full px-2.75 py-1 text-xs font-medium"
+                            style={{
+                              background: `color-mix(in srgb, ${categoryColorVar(t.categoryName)} 20%, var(--paper-raised))`,
+                              color: categoryColorVar(t.categoryName),
+                            }}
+                          >
+                            {t.categoryName}
+                          </span>
+                        ) : (
+                          <span className="border-line bg-paper text-ink-muted shrink-0 rounded-full border border-dashed px-2.75 py-1.5 text-xs font-medium">
+                            Uncategorized
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
 
       <Drawer
         key={`dialog-${dialogKey}`}
@@ -448,13 +590,23 @@ export const TransactionsView = ({
         onCancel={() => setConfirmDeleteId(null)}
       />
 
-      <Link
-        href="?overlay=add"
-        className="border-line bg-iris text-paper-raised focus-visible:outline-paper-raised fixed inset-x-5 z-20 flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold shadow-[0_8px_24px_rgba(0,0,0,.18)] focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
-        style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}
+      <div
+        className="border-line bg-paper-raised fixed inset-x-0 z-20 flex gap-2.5 border-t px-4.5 py-2.5 lg:hidden"
+        style={{ bottom: 'calc(60px + env(safe-area-inset-bottom))' }}
       >
-        <Plus size={16} /> Log a spend
-      </Link>
+        <Link
+          href="/import"
+          className="border-line text-ink flex flex-1 items-center justify-center rounded-full border py-3 text-[14px] font-medium"
+        >
+          Import CSV
+        </Link>
+        <Link
+          href="?overlay=add"
+          className="bg-iris text-paper-raised focus-visible:outline-paper-raised flex flex-[1.3] items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <Plus size={16} /> Log a spend
+        </Link>
+      </div>
     </div>
   );
 };

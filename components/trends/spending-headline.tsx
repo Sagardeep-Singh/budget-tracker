@@ -11,30 +11,33 @@ const money = (value: string): string =>
  */
 export const SpendingHeadline = ({
   headline,
-  rangeLabel,
 }: {
   headline: SpendingTrendsData['headline'];
-  rangeLabel: string;
 }): React.ReactElement => (
   <div>
     <div className="text-ink-muted text-[11px] font-semibold tracking-[0.08em] uppercase">
-      Total spend, {rangeLabel}
+      Spent, {headline.currentRangeLabel}
     </div>
-    <div className="mt-2 font-mono text-[40px] leading-none font-medium tracking-[-0.03em]">
+    <div className="mt-2 font-mono text-[32px] leading-none font-medium tracking-[-0.03em]">
       {money(headline.currentTotal)}
     </div>
     {headline.pctChange !== null ? (
-      <div
-        className={cn(
-          'mt-3 inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-medium',
-          headline.tone === 'rose' ? 'bg-rose-soft text-rose' : 'bg-sky-soft text-sky',
-        )}
-      >
-        {headline.pctChange > 0 ? '▲' : '▼'} {Math.abs(Math.round(headline.pctChange))}% vs prior{' '}
-        {rangeLabel}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            'rounded-full px-3 py-1.5 text-[13px] font-semibold',
+            headline.tone === 'rose' ? 'bg-rose-soft text-rose' : 'bg-sky-soft text-sky',
+          )}
+        >
+          {Math.abs(Math.round(headline.pctChange))}% {headline.pctChange > 0 ? 'more' : 'less'}
+        </span>
+        <span className="text-ink-muted text-[13px]">than {headline.priorRangeLabel}</span>
       </div>
     ) : (
       <div className="text-ink-muted mt-3 text-[13px]">No spending in the prior period.</div>
     )}
+    <p className="text-ink-muted mt-3 text-[11.5px] leading-relaxed">
+      Transfers between your own accounts are excluded.
+    </p>
   </div>
 );

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { getSpendingTrends, type TrendsRange } from '@/lib/services/trends';
 import { ScreenHeader } from '@/components/nav/screen-header';
@@ -7,8 +8,25 @@ import { SpendingHeadline } from '@/components/trends/spending-headline';
 import { SpendingLineChart } from '@/components/trends/spending-line-chart';
 import { CategoryBreakdownBar } from '@/components/trends/category-breakdown-bar';
 import { SpendingMovers } from '@/components/trends/spending-movers';
+import { currentMonthNumber, daysElapsedInMonth } from '@/lib/format';
 
 const VALID_RANGES: TrendsRange[] = [3, 6, 12];
+
+const DAY_MONTH_FORMAT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'short',
+  day: 'numeric',
+});
+const DAY_MONTH_YEAR_FORMAT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+const MONTH_NAME_FORMAT = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'long' });
+
+const monthStartDate = (month: number): Date =>
+  new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1));
 
 const parseRange = (value?: string): TrendsRange => {
   const n = Number(value);
@@ -35,18 +53,53 @@ const TrendsPage = async ({
 
   const isEmpty = data.months.every((m) => m.income === 0 && m.expense === 0);
 
+  const firstMonth = data.months[0]!.month;
+  const lastMonth = data.months[data.months.length - 1]!.month;
+  const lastMonthInProgress = lastMonth === currentMonthNumber();
+  const rangeStartLabel = DAY_MONTH_FORMAT.format(monthStartDate(firstMonth));
+  const rangeEndDate = lastMonthInProgress
+    ? new Date()
+    : new Date(
+        Date.UTC(Math.floor(lastMonth / 100), (lastMonth % 100) - 1, daysElapsedInMonth(lastMonth)),
+      );
+  const rangeEndLabel = DAY_MONTH_YEAR_FORMAT.format(rangeEndDate);
+  const subtitle = lastMonthInProgress
+    ? `${rangeStartLabel} – ${rangeEndLabel} · ${MONTH_NAME_FORMAT.format(monthStartDate(lastMonth))} still in progress`
+    : `${rangeStartLabel} – ${rangeEndLabel}`;
+
   return (
     <div className="animate-[fade-up_0.3s_ease-out]">
       <ScreenHeader
         title="Trends"
-        description="How your spending is changing over time."
+        description={subtitle}
         periodSlot={
-          <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 lg:flex">
             <PeriodPopover month={month} basePath="/trends" />
             <RangePopover range={range} month={month} />
           </div>
         }
       />
+
+      <div className="mt-3.5 lg:hidden">
+        <div className="flex items-center gap-2">
+          <PeriodPopover month={month} basePath="/trends" />
+        </div>
+        <div className="bg-paper-sunk mt-3 flex gap-1 rounded-full p-1">
+          {VALID_RANGES.map((r) => (
+            <Link
+              key={r}
+              href={`/trends?${new URLSearchParams({ ...(month ? { month: String(month) } : {}), range: String(r) }).toString()}`}
+              className={
+                r === range
+                  ? 'bg-paper-raised text-ink flex-1 rounded-full py-2.5 text-center text-[13.5px] font-semibold shadow-sm'
+                  : 'text-ink-muted flex-1 rounded-full py-2.5 text-center text-[13.5px] font-medium'
+              }
+            >
+              {r} months
+            </Link>
+          ))}
+        </div>
+      </div>
 
       {isEmpty ? (
         <div className="border-line bg-paper-raised mt-6.5 rounded-[20px] border border-dashed p-18 text-center">
@@ -75,13 +128,14 @@ const TrendsPage = async ({
                 months={data.months}
                 categories={data.categories}
                 breakdown={data.categoryBreakdown}
+                uncategorizedCount={data.uncategorizedCount}
               />
             </div>
           </div>
 
           <div className="flex min-w-0 flex-col gap-5">
             <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">
-              <SpendingHeadline headline={data.headline} rangeLabel={rangeLabel} />
+              <SpendingHeadline headline={data.headline} />
             </div>
 
             <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">

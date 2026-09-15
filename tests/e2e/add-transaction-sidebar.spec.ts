@@ -71,5 +71,8 @@ test('Transactions screen "Add transaction" button opens the same drawer pattern
   await drawer.getByRole('button', { name: 'Save transaction' }).click();
 
   await expect(drawer).toBeHidden();
-  await expect(page.getByText(payee)).toBeVisible();
+  // Desktop and mobile transaction rows both render (CSS-hidden, not
+  // unmounted); this test runs at the default desktop viewport, so the
+  // desktop copy (first in the DOM) is the visible one.
+  await expect(page.getByText(payee).first()).toBeVisible();
 });

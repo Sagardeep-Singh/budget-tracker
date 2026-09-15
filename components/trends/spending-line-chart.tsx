@@ -1,4 +1,5 @@
 import type { TrendsMonth } from '@/lib/services/trends';
+import { currentMonthNumber } from '@/lib/format';
 
 const money = (value: number): string =>
   new Intl.NumberFormat('en-US', {
@@ -7,16 +8,21 @@ const money = (value: number): string =>
     maximumFractionDigits: 0,
   }).format(value);
 
+/** Compact axis tick label, e.g. $40,000 -> "$40k". */
+const moneyCompact = (value: number): string =>
+  value >= 1000 ? `$${Math.round(value / 1000)}k` : `$${Math.round(value)}`;
+
 const WIDTH = 600;
 const HEIGHT = 160;
+const PAD_LEFT = 44;
 const PAD_X = 8;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 22;
-const USABLE_WIDTH = WIDTH - PAD_X * 2;
+const USABLE_WIDTH = WIDTH - PAD_LEFT - PAD_X;
 const USABLE_HEIGHT = HEIGHT - PAD_TOP - PAD_BOTTOM;
 
 const xAt = (i: number, count: number): number =>
-  count > 1 ? PAD_X + (i / (count - 1)) * USABLE_WIDTH : WIDTH / 2;
+  count > 1 ? PAD_LEFT + (i / (count - 1)) * USABLE_WIDTH : (PAD_LEFT + WIDTH) / 2;
 
 const yAt = (value: number, max: number): number =>
   PAD_TOP + USABLE_HEIGHT - (max > 0 ? (value / max) * USABLE_HEIGHT : 0);
@@ -72,10 +78,10 @@ export const SpendingLineChart = ({ months }: { months: TrendsMonth[] }): React.
     <div>
       <div className="mb-3.5 flex items-center gap-4">
         <span className="text-ink-muted flex items-center gap-1.5 text-[12.5px]">
-          <span className="bg-sky inline-block size-2.5 rounded-full" /> Income
+          <span className="bg-sky inline-block size-2.5 rounded-full" /> In
         </span>
         <span className="text-ink-muted flex items-center gap-1.5 text-[12.5px]">
-          <span className="bg-rose inline-block size-2.5 rounded-full" /> Expense
+          <span className="bg-rose inline-block size-2.5 rounded-full" /> Out
         </span>
       </div>
       {isEmpty ? (
@@ -88,13 +94,41 @@ export const SpendingLineChart = ({ months }: { months: TrendsMonth[] }): React.
           aria-label="Income and expense by month"
         >
           <line
-            x1={PAD_X}
+            x1={PAD_LEFT}
+            y1={PAD_TOP}
+            x2={WIDTH - PAD_X}
+            y2={PAD_TOP}
+            stroke="var(--line)"
+            strokeWidth={1}
+          />
+          <line
+            x1={PAD_LEFT}
+            y1={PAD_TOP + USABLE_HEIGHT / 2}
+            x2={WIDTH - PAD_X}
+            y2={PAD_TOP + USABLE_HEIGHT / 2}
+            stroke="var(--line)"
+            strokeWidth={1}
+          />
+          <line
+            x1={PAD_LEFT}
             y1={HEIGHT - PAD_BOTTOM}
             x2={WIDTH - PAD_X}
             y2={HEIGHT - PAD_BOTTOM}
             stroke="var(--line)"
             strokeWidth={1}
           />
+          {[max, max / 2, 0].map((v, i) => (
+            <text
+              key={i}
+              x={PAD_LEFT - 8}
+              y={PAD_TOP + (i / 2) * USABLE_HEIGHT + 3}
+              textAnchor="end"
+              fill="var(--ink-muted)"
+              className="font-mono text-[9px]"
+            >
+              {moneyCompact(v)}
+            </text>
+          ))}
           <path
             d={smoothPath(income, max)}
             fill="none"
@@ -111,18 +145,26 @@ export const SpendingLineChart = ({ months }: { months: TrendsMonth[] }): React.
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          {months.map((m, i) => (
-            <text
-              key={m.month}
-              x={xAt(i, months.length)}
-              y={HEIGHT - 4}
-              textAnchor="middle"
-              fill="var(--ink-muted)"
-              className="font-mono text-[9px]"
-            >
-              {m.label}
-            </text>
-          ))}
+          {months.map((m, i) => {
+            const isPartial = m.month === currentMonthNumber();
+            return (
+              <text
+                key={m.month}
+                x={xAt(i, months.length)}
+                y={HEIGHT - 4}
+                textAnchor="middle"
+                fill="var(--ink-muted)"
+                className="font-mono text-[9px]"
+              >
+                {/* "*" rather than "· partial": at a dense range (12 points
+                    across 600px) the longer suffix collides with its
+                    neighbor's label — the bar chart below already spells out
+                    "in progress" in full where there's room per month. */}
+                {isPartial ? `${m.label}*` : m.label}
+                {isPartial && <title>{`${m.label} is still in progress`}</title>}
+              </text>
+            );
+          })}
           <circle
             cx={lastX}
             cy={yAt(income[income.length - 1], max)}

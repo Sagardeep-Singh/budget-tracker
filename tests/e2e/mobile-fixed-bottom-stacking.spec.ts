@@ -34,7 +34,7 @@ test('the last transaction row clears the fixed bottom nav', async ({ page }) =>
   await login(page);
   await page.goto('/transactions');
 
-  const rows = page.locator('.ledger-row');
+  const rows = page.getByTestId('transaction-row-mobile');
   const count = await rows.count();
   test.skip(count === 0, 'no transactions seeded for this user');
 

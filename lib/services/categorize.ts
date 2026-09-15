@@ -101,3 +101,46 @@ export const getCategorizeQueueStats = async (userId: string): Promise<Categoriz
 
   return { total: uncategorized.length, matched };
 };
+
+export type UncategorizedMonthSummary = { count: number; amount: string };
+
+/** Uncategorized, unskipped expense spend within one calendar month — used
+ * by the Budgets summary card to flag that its totals are understated. */
+export const getUncategorizedMonthSummary = async (
+  userId: string,
+  month: number,
+): Promise<UncategorizedMonthSummary> => {
+  const year = Math.floor(month / 100);
+  const monthIndex = (month % 100) - 1;
+  const start = new Date(Date.UTC(year, monthIndex, 1));
+  const end = new Date(Date.UTC(year, monthIndex + 1, 1));
+
+  const rows = await prisma.transaction.findMany({
+    where: {
+      userId,
+      categoryId: null,
+      skippedAt: null,
+      type: 'EXPENSE',
+      isTransfer: false,
+      date: { gte: start, lt: end },
+    },
+    select: { amount: true },
+  });
+
+  return {
+    count: rows.length,
+    amount: rows.reduce((sum, t) => sum + Number(t.amount), 0).toFixed(2),
+  };
+};
+
+export type CategorizeProgress = { categorizedCount: number; totalCount: number };
+
+/** "N of M categorized" for the progress bar — M is every transaction ever
+ * logged (skipped ones included, since they still count as "handled"). */
+export const getCategorizeProgress = async (userId: string): Promise<CategorizeProgress> => {
+  const [totalCount, uncategorizedUnskipped] = await Promise.all([
+    prisma.transaction.count({ where: { userId } }),
+    prisma.transaction.count({ where: { userId, categoryId: null, skippedAt: null } }),
+  ]);
+  return { categorizedCount: totalCount - uncategorizedUnskipped, totalCount };
+};

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, ChevronDown } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { cn } from '@/lib/cn';
 
@@ -16,6 +16,10 @@ const monthLabel = (month: number): string => {
   const date = new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1));
   return MONTH_LABEL.format(date);
 };
+
+const MONTH_SHORT = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' });
+const monthShort = (monthIndex: number): string =>
+  MONTH_SHORT.format(new Date(Date.UTC(2000, monthIndex, 1)));
 
 const currentMonth = (): number => {
   const now = new Date();
@@ -33,12 +37,16 @@ const shiftMonth = (month: number, delta: number): number => {
 const PeriodPickerBody = ({
   month,
   now,
-  year,
+  viewYear,
+  onPrevYear,
+  onNextYear,
   goTo,
 }: {
   month: number;
   now: number;
-  year: number;
+  viewYear: number;
+  onPrevYear: () => void;
+  onNextYear: () => void;
   goTo: (m: number) => void;
 }): React.ReactElement => (
   <>
@@ -67,13 +75,26 @@ const PeriodPickerBody = ({
       </button>
     </div>
     <div className="mt-5 flex items-center justify-between">
-      <span className="text-ink-muted text-[11px] font-semibold tracking-[0.1em] uppercase">
-        Month
-      </span>
-      <span className="text-ink-muted font-mono text-xs">{year}</span>
+      <button
+        type="button"
+        onClick={onPrevYear}
+        aria-label="Previous year"
+        className="text-ink-muted hover:text-ink -ml-2 flex size-9 items-center justify-center"
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <span className="font-mono text-[13px] font-medium">{viewYear}</span>
+      <button
+        type="button"
+        onClick={onNextYear}
+        aria-label="Next year"
+        className="text-ink-muted hover:text-ink -mr-2 flex size-9 items-center justify-center"
+      >
+        <ChevronRight size={16} />
+      </button>
     </div>
     <div className="mt-2.5 grid grid-cols-4 gap-1.5">
-      {Array.from({ length: 12 }, (_, i) => year * 100 + i + 1).map((m) => (
+      {Array.from({ length: 12 }, (_, i) => viewYear * 100 + i + 1).map((m) => (
         <button
           key={m}
           type="button"
@@ -83,7 +104,7 @@ const PeriodPickerBody = ({
             m === month ? 'bg-iris text-paper-raised' : 'text-ink hover:bg-paper',
           )}
         >
-          {(m % 100).toString().padStart(2, '0')}
+          {monthShort((m % 100) - 1)}
         </button>
       ))}
     </div>
@@ -113,7 +134,15 @@ export const PeriodPopover = ({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const now = currentMonth();
-  const year = Math.floor((open ? month : now) / 100);
+  const year = Math.floor(month / 100);
+  // Independent of the selected month's year, so ‹ › can browse years that
+  // have no selection in them yet without changing what's actually applied.
+  const [viewYear, setViewYear] = useState(year);
+
+  const openPicker = (): void => {
+    setViewYear(year);
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -131,13 +160,22 @@ export const PeriodPopover = ({
     router.push(m === now ? basePath : `${basePath}?month=${m}`);
   };
 
-  const body = <PeriodPickerBody month={month} now={now} year={year} goTo={goTo} />;
+  const body = (
+    <PeriodPickerBody
+      month={month}
+      now={now}
+      viewYear={viewYear}
+      onPrevYear={() => setViewYear((y) => y - 1)}
+      onNextYear={() => setViewYear((y) => y + 1)}
+      goTo={goTo}
+    />
+  );
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? setOpen(false) : openPicker())}
         className="border-line bg-paper-raised text-ink flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium"
       >
         <Calendar size={14} />
@@ -152,7 +190,7 @@ export const PeriodPopover = ({
         </div>
       )}
       <div className="lg:hidden">
-        <BottomSheet open={open} onClose={close} title="Period">
+        <BottomSheet open={open} onClose={close} title="Pick a period">
           {body}
         </BottomSheet>
       </div>
