@@ -12,6 +12,8 @@ export type FrontendAccount = {
   balance: string;
   createdAt: string;
   statementDay: number | null;
+  transactionCount: number;
+  lastImportAt: string | null;
 };
 
 const toFrontendAccount = (account: {
@@ -22,12 +24,17 @@ const toFrontendAccount = (account: {
   createdAt: Date;
   statementDay: number | null;
   transactions: { amount: unknown; type: string }[];
+  importBatches: { createdAt: Date }[];
 }): FrontendAccount => {
   const starting = Number(account.startingBalance);
   const net = account.transactions.reduce((sum, t) => {
     const amount = Number(t.amount);
     return sum + (t.type === 'INCOME' ? amount : -amount);
   }, 0);
+  const lastImportAt = account.importBatches.reduce<Date | null>(
+    (latest, b) => (!latest || b.createdAt > latest ? b.createdAt : latest),
+    null,
+  );
 
   return {
     id: account.id,
@@ -37,13 +44,18 @@ const toFrontendAccount = (account: {
     createdAt: account.createdAt.toISOString(),
     balance: (starting + net).toFixed(2),
     statementDay: account.statementDay,
+    transactionCount: account.transactions.length,
+    lastImportAt: lastImportAt?.toISOString() ?? null,
   };
 };
 
 export const listAccounts = async (userId: string): Promise<FrontendAccount[]> => {
   const accounts = await prisma.account.findMany({
     where: { userId },
-    include: { transactions: { select: { amount: true, type: true } } },
+    include: {
+      transactions: { select: { amount: true, type: true } },
+      importBatches: { where: { status: 'ACTIVE' }, select: { createdAt: true } },
+    },
     orderBy: { createdAt: 'asc' },
   });
   return accounts.map(toFrontendAccount);
@@ -61,7 +73,10 @@ export const createAccount = async (
       startingBalance: input.startingBalance,
       statementDay: input.type === 'CREDIT_CARD' ? (input.statementDay ?? null) : null,
     },
-    include: { transactions: { select: { amount: true, type: true } } },
+    include: {
+      transactions: { select: { amount: true, type: true } },
+      importBatches: { where: { status: 'ACTIVE' }, select: { createdAt: true } },
+    },
   });
   return toFrontendAccount(account);
 };
@@ -87,7 +102,10 @@ export const updateAccount = async (
       ...input,
       statementDay: nextType === 'CREDIT_CARD' ? input.statementDay : input.type ? null : undefined,
     },
-    include: { transactions: { select: { amount: true, type: true } } },
+    include: {
+      transactions: { select: { amount: true, type: true } },
+      importBatches: { where: { status: 'ACTIVE' }, select: { createdAt: true } },
+    },
   });
   return toFrontendAccount(account);
 };

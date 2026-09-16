@@ -42,13 +42,15 @@ test('the Transactions filter row scrolls horizontally instead of wrapping', asy
   await expect(filters).toBeVisible();
 
   const metrics = await filters.evaluate((el) => ({
-    scrollWidth: el.scrollWidth,
-    clientWidth: el.clientWidth,
+    overflowX: getComputedStyle(el).overflowX,
+    flexWrap: getComputedStyle(el).flexWrap,
     height: el.getBoundingClientRect().height,
   }));
 
-  // Scrolling (not wrapping) keeps the header a single row tall while the
-  // content extends past the container's visible width.
-  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+  // Scrolling (not wrapping) keeps the pill row a single row tall regardless
+  // of how many quick-filter pills fit — content-dependent scrollWidth isn't
+  // a reliable signal since the "Uncategorized N" count varies by fixture.
+  expect(metrics.overflowX).toBe('auto');
+  expect(metrics.flexWrap).not.toBe('wrap');
   expect(metrics.height).toBeLessThan(100);
 });

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getServerAuthSession } from '@/lib/auth/session';
-import { getCategorizeQueue } from '@/lib/services/categorize';
+import { getCategorizeProgress, getCategorizeQueue } from '@/lib/services/categorize';
 import { listCategories } from '@/lib/services/categories';
 import { CategorizeView } from '@/components/categorize/categorize-view';
 import { ScreenHeader } from '@/components/nav/screen-header';
@@ -8,16 +8,17 @@ import { ScreenHeader } from '@/components/nav/screen-header';
 const CategorizePage = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
   const userId = session!.user.id;
-  const [queue, categories] = await Promise.all([
+  const [queue, categories, progress] = await Promise.all([
     getCategorizeQueue(userId),
     listCategories(userId),
+    getCategorizeProgress(userId),
   ]);
 
   return (
     <div className="animate-[fade-up_0.3s_ease-out]">
       <ScreenHeader
         title="Categorize"
-        description="Confirm a category for anything the rules engine couldn't place."
+        description={`${queue.length} left. Grouped by payee so you can clear them in batches.`}
         actions={
           <Link
             href="/categories"
@@ -27,7 +28,7 @@ const CategorizePage = async (): Promise<React.ReactElement> => {
           </Link>
         }
       />
-      <CategorizeView initialQueue={queue} categories={categories} />
+      <CategorizeView initialQueue={queue} categories={categories} progress={progress} />
     </div>
   );
 };

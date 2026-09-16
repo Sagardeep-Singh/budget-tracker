@@ -81,7 +81,10 @@ test('a transaction can be created with the keypad', async ({ page }) => {
 
   await expect(shell(page)).toHaveCount(0);
   await expect(page).not.toHaveURL(/overlay=add/);
-  await expect(page.getByText(payee)).toBeVisible();
+  // Desktop and mobile transaction rows both render (CSS-hidden, not
+  // unmounted); at this mobile viewport the mobile copy (last in the DOM)
+  // is the visible one.
+  await expect(page.getByText(payee).last()).toBeVisible();
 });
 
 test('Save stays blocked until the keypad holds a valid amount', async ({ page }) => {

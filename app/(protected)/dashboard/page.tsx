@@ -13,6 +13,21 @@ import { cn } from '@/lib/cn';
 const money = (value: string): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
 
+const RANGE_MONTH = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' });
+
+const monthRangeLabel = (month: number): string => {
+  const year = Math.floor(month / 100);
+  const monthIndex = (month % 100) - 1;
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const label = RANGE_MONTH.format(new Date(Date.UTC(year, monthIndex, 1)));
+  return `${label} 1–${daysInMonth}, ${year}`;
+};
+
+const currentMonthNum = (): number => {
+  const now = new Date();
+  return now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
+};
+
 const DashboardPage = async ({
   searchParams,
 }: {
@@ -121,19 +136,27 @@ const DashboardPage = async ({
       <div className={dayFocus ? 'hidden lg:block' : undefined}>
         <ScreenHeader
           title="Overview"
-          description="Here's where things stand this month."
+          description={
+            <>
+              <span className="hidden lg:inline">Here&rsquo;s where things stand this month.</span>
+              <span className="lg:hidden">
+                {data.month < currentMonthNum() ? 'Closed month' : 'Open month'} ·{' '}
+                {monthRangeLabel(data.month)}
+              </span>
+            </>
+          }
           periodSlot={<PeriodPopover month={data.month} />}
           actions={
             <>
               <Link
                 href="/import"
-                className="border-line text-ink rounded-full border px-4 py-2 text-sm"
+                className="border-line text-ink hidden rounded-full border px-4 py-2 text-sm lg:inline-flex"
               >
                 Import CSV
               </Link>
               <Link
                 href="?overlay=add"
-                className="bg-iris text-paper-raised rounded-full px-4 py-2 text-sm font-semibold"
+                className="bg-iris text-paper-raised hidden rounded-full px-4 py-2 text-sm font-semibold lg:inline-flex"
               >
                 Add transaction
               </Link>
@@ -165,23 +188,13 @@ const DashboardPage = async ({
             </div>
           </div>
         ) : (
-          <div className="mt-6.5 grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.5fr_1fr]">
+          <div className="hidden items-start gap-5 lg:mt-6.5 lg:grid lg:grid-cols-[1.5fr_1fr]">
             <div className="flex min-w-0 flex-col gap-5">
               <div className="border-line bg-paper-raised rounded-[18px] border p-6.5">
-                {/* Ring beside the figures at lg+; stacked below it, where a 132px
-                  ring plus the 40px amount can't share one row at 402px. */}
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-7.5">
-                  {/* Visibility lives on a wrapper, not on Ring's className: `cn` is a
-                    plain join (no tailwind-merge), so `hidden` passed into Ring would
-                    lose to its own base `inline-flex`. */}
-                  <div className="hidden shrink-0 lg:block">
+                <div className="flex items-center gap-7.5">
+                  <div className="shrink-0">
                     <Ring size="hero" fraction={hero.usedFraction}>
                       {heroRingLabel('text-[21px]')}
-                    </Ring>
-                  </div>
-                  <div className="shrink-0 lg:hidden">
-                    <Ring size="hero-mobile" fraction={hero.usedFraction}>
-                      {heroRingLabel('text-lg')}
                     </Ring>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -260,54 +273,28 @@ const DashboardPage = async ({
                     .
                   </p>
                 ) : (
-                  <>
-                    <div className="hidden grid-cols-4 gap-2.5 lg:grid">
-                      {budgetRings.map((r) => (
-                        <div key={r.id} className="flex flex-col items-center gap-2.5">
-                          <Ring size="category" fraction={r.fraction}>
-                            <span className="font-mono text-sm">{r.pctLabel}</span>
-                          </Ring>
-                          <div className="text-center text-[12.5px] leading-tight">
-                            {r.categoryName}
-                            <br />
-                            <span
-                              className={cn(
-                                'font-mono text-xs',
-                                r.over ? 'text-rose' : 'text-ink-muted',
-                              )}
-                            >
-                              {money(r.left.replace('Over by ', ''))}
-                              {r.over && ' over'}
-                            </span>
-                          </div>
+                  <div className="grid grid-cols-4 gap-2.5">
+                    {budgetRings.map((r) => (
+                      <div key={r.id} className="flex flex-col items-center gap-2.5">
+                        <Ring size="category" fraction={r.fraction}>
+                          <span className="font-mono text-sm">{r.pctLabel}</span>
+                        </Ring>
+                        <div className="text-center text-[12.5px] leading-tight">
+                          {r.categoryName}
+                          <br />
+                          <span
+                            className={cn(
+                              'font-mono text-xs',
+                              r.over ? 'text-rose' : 'text-ink-muted',
+                            )}
+                          >
+                            {money(r.left.replace('Over by ', ''))}
+                            {r.over && ' over'}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                    {/* Mobile twin: smaller ring, and min-w-0/break-words so a long
-                      category name or amount can't widen the 4-up grid track. */}
-                    <div className="grid grid-cols-4 gap-2.5 lg:hidden">
-                      {budgetRings.map((r) => (
-                        <div key={r.id} className="flex min-w-0 flex-col items-center gap-2.5">
-                          <Ring size="category-mobile" fraction={r.fraction}>
-                            <span className="font-mono text-sm">{r.pctLabel}</span>
-                          </Ring>
-                          <div className="text-center text-[12.5px] leading-tight break-words">
-                            {r.categoryName}
-                            <br />
-                            <span
-                              className={cn(
-                                'font-mono text-xs',
-                                r.over ? 'text-rose' : 'text-ink-muted',
-                              )}
-                            >
-                              {money(r.left.replace('Over by ', ''))}
-                              {r.over && ' over'}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -328,13 +315,8 @@ const DashboardPage = async ({
                 </div>
                 {byDayBars(
                   getByDayBars(dayBars, 'month', selectedDay.day, data.daysInMonth),
-                  'hidden lg:block',
+                  'block',
                   'month',
-                )}
-                {byDayBars(
-                  getByDayBars(dayBars, 'week', selectedDay.day, data.daysInMonth),
-                  'block lg:hidden',
-                  'week',
                 )}
               </div>
             </div>
@@ -407,6 +389,132 @@ const DashboardPage = async ({
             </div>
           </div>
         )}
+
+        {!isEmpty && (
+          <div className="mt-5 flex flex-col gap-3 lg:hidden">
+            <div className="border-line bg-paper-raised rounded-[18px] border p-4.5">
+              <div className="flex items-center gap-4.5">
+                <div className="shrink-0">
+                  <Ring size="hero-mobile" fraction={hero.usedFraction}>
+                    <span className="font-mono text-lg font-medium">
+                      {Math.round(Math.min(hero.usedFraction, 1) * 100)}%
+                    </span>
+                    <span className="text-ink-muted mt-0.5 text-[9px] tracking-[0.08em] uppercase">
+                      of budget
+                    </span>
+                  </Ring>
+                </div>
+                <div className="min-w-0">
+                  {hero.hasBudget && (
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          'size-1.5 rounded-full',
+                          hero.paceTone === 'rose' ? 'bg-rose' : 'bg-iris',
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'text-[11px] font-semibold tracking-[0.04em] uppercase',
+                          hero.paceTone === 'rose' ? 'text-rose' : 'text-iris',
+                        )}
+                      >
+                        {hero.paceTone === 'rose' ? 'Over pace' : 'On pace'}
+                      </span>
+                    </div>
+                  )}
+                  <div className="font-display text-[20px] leading-[1.2] font-semibold tracking-[-0.01em]">
+                    {hero.hasBudget
+                      ? `${hero.leftLabel} ${money(hero.leftAmount)}`
+                      : 'No budget set'}
+                  </div>
+                  <p className="text-ink-muted mt-1.5 text-[12.5px] leading-snug">
+                    {hero.paceNote}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {triage.total > 0 && (
+              <div className="border-iris bg-iris-soft rounded-[18px] border p-4">
+                <div className="font-display text-[16.5px] font-semibold tracking-[-0.01em]">
+                  {triage.total} transaction{triage.total === 1 ? '' : 's'} need
+                  {triage.total === 1 ? 's' : ''} a category
+                </div>
+                <p className="text-ink/80 mt-1.5 text-[12.5px] leading-relaxed">
+                  Rules matched {triage.matched} of them. Confirm in a batch, and Ledger will write
+                  the rule for next time.
+                </p>
+                <Link
+                  href="/categorize"
+                  className="bg-iris text-paper-raised mt-3.5 block w-full rounded-full py-2.5 text-center text-[14.5px] font-semibold"
+                >
+                  Categorize in batches
+                </Link>
+              </div>
+            )}
+
+            <div className="border-line bg-paper-raised rounded-[18px] border p-4">
+              <div className="flex items-baseline justify-between gap-2.5">
+                <span className="font-display text-base font-semibold">Cash flow</span>
+                <span className="text-ink-muted text-[11.5px]">separate from budgets</span>
+              </div>
+              <div className="mt-3.5 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-ink-muted text-[10px] tracking-[0.08em] uppercase">In</div>
+                  <div className="text-sky mt-0.5 font-mono text-[17px]">{money(hero.income)}</div>
+                </div>
+                <div>
+                  <div className="text-ink-muted text-[10px] tracking-[0.08em] uppercase">Out</div>
+                  <div className="text-rose mt-0.5 font-mono text-[17px]">
+                    {money(hero.expense)}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-line my-3.5 h-px" />
+              <div className="flex items-baseline justify-between gap-2.5">
+                <span className="text-ink-muted text-[13px]">Net this month</span>
+                <span className="font-mono text-[17px] font-medium">{money(hero.net)}</span>
+              </div>
+              <p className="text-ink-muted mt-2.5 text-[11.5px] leading-relaxed">
+                Excludes transfers between your own accounts.
+              </p>
+            </div>
+
+            {budgetRings.length > 0 && (
+              <div className="border-line bg-paper-raised rounded-[18px] border p-4">
+                <div className="mb-3.5 flex items-baseline justify-between gap-2.5">
+                  <span className="font-display text-base font-semibold">Budgets</span>
+                  <Link href="/budgets" className="text-iris text-[11.5px] font-medium">
+                    See all
+                  </Link>
+                </div>
+                <div className="flex flex-col gap-3.5">
+                  {budgetRings.map((r) => {
+                    const alert = r.fraction > 0.85;
+                    return (
+                      <div key={r.id}>
+                        <div className="flex items-baseline justify-between gap-2 text-[13px]">
+                          <span className="font-medium">{r.categoryName}</span>
+                          <span className={cn('font-mono', alert ? 'text-rose' : 'text-iris')}>
+                            {money(r.left.replace('Over by ', ''))}
+                            {r.over ? ' over' : ' left'}
+                          </span>
+                        </div>
+                        <div className="bg-paper-sunk mt-1.5 flex h-1.5 overflow-hidden rounded-full">
+                          <span
+                            className={cn('block', alert ? 'bg-rose' : 'bg-iris')}
+                            style={{ width: `${Math.round(Math.min(r.fraction, 1) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {dayFocus && (
@@ -421,13 +529,23 @@ const DashboardPage = async ({
         </div>
       )}
 
-      <Link
-        href="?overlay=add"
-        className="border-line bg-iris text-paper-raised focus-visible:outline-paper-raised fixed inset-x-5 z-20 flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold shadow-[0_8px_24px_rgba(0,0,0,.18)] focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
-        style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}
+      <div
+        className="border-line bg-paper-raised fixed inset-x-0 z-20 flex gap-2.5 border-t px-4.5 py-2.5 lg:hidden"
+        style={{ bottom: 'calc(60px + env(safe-area-inset-bottom))' }}
       >
-        <Plus size={16} /> Log a spend
-      </Link>
+        <Link
+          href="/import"
+          className="border-line text-ink flex flex-1 items-center justify-center rounded-full border py-3 text-[14px] font-medium"
+        >
+          Import CSV
+        </Link>
+        <Link
+          href="?overlay=add"
+          className="bg-iris text-paper-raised focus-visible:outline-paper-raised flex flex-[1.3] items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <Plus size={16} /> Log a spend
+        </Link>
+      </div>
     </div>
   );
 };

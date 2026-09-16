@@ -43,6 +43,7 @@ export const RulesView = ({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
   const [search, setSearch] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPriority, setEditPriority] = useState('0');
   const [editPending, setEditPending] = useState(false);
@@ -82,6 +83,7 @@ export const RulesView = ({
       return;
     }
     setMatchText('');
+    setShowAddForm(false);
     router.refresh();
   };
 
@@ -262,55 +264,150 @@ export const RulesView = ({
           </Link>
         </div>
       ) : (
-        <form
-          onSubmit={handleAdd}
-          className="border-line bg-paper-raised flex items-end gap-2.5 rounded-2xl border p-4.5"
-        >
-          <div className="flex-1">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              When the description contains
-            </label>
-            <Input
-              className="rounded-[9px]"
-              value={matchText}
-              onChange={(e) => setMatchText(e.target.value)}
-              placeholder="e.g. superstore"
-              required
-            />
+        <>
+          {/* Desktop: always-visible inline form, plenty of width for four
+              fields in a row. */}
+          <form
+            onSubmit={handleAdd}
+            className="border-line bg-paper-raised hidden items-end gap-2.5 rounded-2xl border p-4.5 lg:flex"
+          >
+            <div className="flex-1">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                When the description contains
+              </label>
+              <Input
+                className="rounded-[9px]"
+                value={matchText}
+                onChange={(e) => setMatchText(e.target.value)}
+                placeholder="e.g. superstore"
+                required
+              />
+            </div>
+            <div className="w-[200px]">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                Categorize as
+              </label>
+              <Select
+                className="rounded-[9px]"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                required
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="w-20">
+              <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                Priority
+              </label>
+              <Input
+                className="rounded-[9px] font-mono"
+                type="number"
+                min="0"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              />
+            </div>
+            <Button type="submit" icon={Plus} loading={pending} className="px-4.5 py-2.5">
+              Add rule
+            </Button>
+          </form>
+
+          {/* Mobile: search bar + a dashed "New rule" CTA that reveals the
+              same form fields stacked, instead of squeezing four fields
+              into 402px. */}
+          <div className="lg:hidden">
+            <div className="border-line bg-paper-raised flex items-center gap-2.25 rounded-full border px-3.75 py-0">
+              <Search size={15} className="text-ink-muted shrink-0" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search rules"
+                className="placeholder:text-ink-muted/70 min-h-[46px] flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+
+            {showAddForm ? (
+              <form
+                onSubmit={handleAdd}
+                className="border-line bg-paper-raised mt-2.5 flex flex-col gap-2.5 rounded-2xl border p-4.5"
+              >
+                <div>
+                  <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                    When the description contains
+                  </label>
+                  <Input
+                    className="rounded-[9px]"
+                    value={matchText}
+                    onChange={(e) => setMatchText(e.target.value)}
+                    placeholder="e.g. superstore"
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                    Categorize as
+                  </label>
+                  <Select
+                    className="rounded-[9px]"
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    required
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
+                    Priority
+                  </label>
+                  <Input
+                    className="rounded-[9px] font-mono"
+                    type="number"
+                    min="0"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="border-line text-ink flex-1 rounded-full border py-2.5 text-[14px] font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <Button
+                    type="submit"
+                    icon={Plus}
+                    loading={pending}
+                    className="flex-[1.3] justify-center py-2.5"
+                  >
+                    Add rule
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                className="border-iris/45 bg-iris-soft text-iris mt-2.5 block w-full rounded-full border border-dashed py-3 text-[14px] font-semibold"
+              >
+                + New rule
+              </button>
+            )}
           </div>
-          <div className="w-[200px]">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Categorize as
-            </label>
-            <Select
-              className="rounded-[9px]"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              required
-            >
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="w-20">
-            <label className="text-ink-muted mb-1.5 block text-[11px] font-semibold tracking-[0.06em] uppercase">
-              Priority
-            </label>
-            <Input
-              className="rounded-[9px] font-mono"
-              type="number"
-              min="0"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-            />
-          </div>
-          <Button type="submit" icon={Plus} loading={pending} className="px-4.5 py-2.5">
-            Add rule
-          </Button>
-        </form>
+        </>
       )}
       {error && <p className="text-rose mt-2 text-sm">{error}</p>}
 
@@ -323,7 +420,7 @@ export const RulesView = ({
       ) : (
         <>
           {initialRules.length > 10 && (
-            <div className="relative mt-4.5">
+            <div className="relative mt-4.5 hidden lg:block">
               <Search
                 size={15}
                 className="text-ink-muted pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2"
@@ -336,7 +433,7 @@ export const RulesView = ({
               />
             </div>
           )}
-          <div className="border-line bg-paper-raised mt-4.5 rounded-2xl border px-6">
+          <div className="border-line bg-paper-raised mt-4.5 hidden rounded-2xl border px-6 lg:block">
             <div className="border-line text-ink-muted flex items-center gap-5 border-b py-3.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
               <span className="flex-1">Match</span>
               <span className="w-[150px]">Category</span>
@@ -421,6 +518,119 @@ export const RulesView = ({
                   </span>
                 </div>
               ))
+            )}
+          </div>
+
+          {/* Mobile: one card per rule — the desktop table's fixed columns
+              don't fit at 402px. */}
+          <div className="mt-4.5 lg:hidden">
+            {visibleRules.some((r) => r.overlapCount > 0) && (
+              <div className="border-iris/35 bg-iris-soft mb-3 flex items-start gap-2.5 rounded-xl border p-3.5">
+                <span className="bg-iris text-paper-raised mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold">
+                  !
+                </span>
+                <p className="text-ink-muted text-[12.5px] leading-snug">
+                  Some rules can match the same payee. Only those need a priority — the rest
+                  don&rsquo;t show one.
+                </p>
+              </div>
+            )}
+
+            {visibleRules.length === 0 ? (
+              <p className="text-ink-muted py-6 text-center text-sm">
+                No rules match &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {visibleRules.map((rule) => (
+                  <div key={rule.id} className="border-line bg-paper-raised rounded-2xl border p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-mono text-[13.5px] break-words">
+                          contains &ldquo;{rule.matchText}&rdquo;
+                        </div>
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <span className="text-ink-muted text-[11px]">→</span>
+                          <span className="border-line text-ink-muted rounded-full border px-2.5 py-1 text-[12.5px]">
+                            {rule.categoryName}
+                          </span>
+                        </div>
+                        {rule.overlapCount > 0 ? (
+                          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                            <span className="bg-rose-soft text-rose rounded-full px-2.25 py-1 text-[11px] font-semibold">
+                              Overlaps {rule.overlapCount} rule{rule.overlapCount === 1 ? '' : 's'}
+                            </span>
+                            {rule.overlap && (
+                              <span className="text-ink-muted text-[11.5px]">
+                                {rule.overlap.wins ? 'Wins over' : 'Loses to'} &ldquo;
+                                {rule.overlap.matchText}&rdquo; · priority {rule.overlap.priority}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-ink-muted mt-2.5 text-[11.5px]">
+                            {rule.appliedCount > 0
+                              ? `Applied to ${rule.appliedCount} transaction${rule.appliedCount === 1 ? '' : 's'}`
+                              : 'Never matched — check the spelling'}
+                          </div>
+                        )}
+                        {editingId === rule.id && (
+                          <div className="mt-2.5 flex items-center gap-1.5">
+                            <span className="text-ink-muted text-[11.5px]">Priority</span>
+                            <Input
+                              className="w-16 shrink-0 rounded-[9px] px-2 py-1 text-right font-mono text-[13px]"
+                              type="number"
+                              min="0"
+                              autoFocus
+                              value={editPriority}
+                              onChange={(e) => setEditPriority(e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveEditPriority(rule.id)}
+                              disabled={editPending}
+                              className="text-sky hover:text-ink inline-flex items-center p-1 disabled:opacity-50"
+                              aria-label="Save priority"
+                            >
+                              <Check size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditPriority}
+                              disabled={editPending}
+                              className="text-ink-muted hover:text-ink inline-flex items-center p-1 disabled:opacity-50"
+                              aria-label="Cancel edit"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        )}
+                        {editError && editingId === rule.id && (
+                          <p className="text-rose mt-1 text-xs">{editError}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditPriority(rule)}
+                          aria-label="Edit rule"
+                          className="text-ink-muted flex size-9 items-center justify-center"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(rule.id)}
+                          aria-label="Delete rule"
+                          className="text-ink-muted hover:text-rose flex size-9 items-center justify-center"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </>

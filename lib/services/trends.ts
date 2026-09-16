@@ -28,11 +28,15 @@ export type SpendingTrendsData = {
     currentTotal: string;
     priorTotal: string;
     pctChange: number | null;
+    currentRangeLabel: string;
+    priorRangeLabel: string;
     tone: 'rose' | 'sky' | 'neutral';
   };
   movers: TrendsMover[];
+  uncategorizedCount: number;
 };
 
+const UNCATEGORIZED_ID = '__uncategorized__';
 const OTHER_CATEGORY_ID = '__other__';
 const CHART_COLORS = [
   'var(--chart-1)',
@@ -118,6 +122,8 @@ export const getSpendingTrends = async (
   for (const m of allMonths) monthTotals.set(m, { income: 0, expense: 0 });
   const categoryMonthTotals = new Map<string, Map<number, number>>();
   const categoryNames = new Map<string, string>();
+  const currentMonthSet = new Set(currentMonths);
+  let uncategorizedCount = 0;
 
   for (const t of transactions) {
     const m = monthOf(t.date);
@@ -127,11 +133,12 @@ export const getSpendingTrends = async (
     if (isExpense(t)) {
       const amount = netExpenseAmount(t);
       bucket.expense += amount;
-      const categoryId = t.category?.id ?? OTHER_CATEGORY_ID;
+      const categoryId = t.category?.id ?? UNCATEGORIZED_ID;
       categoryNames.set(categoryId, t.category?.name ?? 'Uncategorized');
       if (!categoryMonthTotals.has(categoryId)) categoryMonthTotals.set(categoryId, new Map());
       const perMonth = categoryMonthTotals.get(categoryId)!;
       perMonth.set(m, (perMonth.get(m) ?? 0) + amount);
+      if (categoryId === UNCATEGORIZED_ID && currentMonthSet.has(m)) uncategorizedCount += 1;
     }
   }
 
@@ -144,13 +151,21 @@ export const getSpendingTrends = async (
 
   // Top categories by total spend across the current range determine the
   // stacked-bar's fixed color slots; everything past the cap folds to
-  // "Other" so the legend never grows past MAX_CATEGORY_SLOTS + 1.
-  const categoryCurrentTotals = Array.from(categoryMonthTotals.entries()).map(
-    ([categoryId, perMonth]) => ({
+  // "Other" so the legend never grows past MAX_CATEGORY_SLOTS + 1. Truly
+  // uncategorized spend (no category at all) is tracked separately — it's
+  // not a spending pattern to rank against real categories, so it never
+  // competes for a color slot and always renders in the same fixed grey,
+  // last in the stack, regardless of how large it is.
+  const uncategorizedTotal = currentMonths.reduce(
+    (sum, m) => sum + (categoryMonthTotals.get(UNCATEGORIZED_ID)?.get(m) ?? 0),
+    0,
+  );
+  const categoryCurrentTotals = Array.from(categoryMonthTotals.entries())
+    .filter(([categoryId]) => categoryId !== UNCATEGORIZED_ID)
+    .map(([categoryId, perMonth]) => ({
       categoryId,
       total: currentMonths.reduce((sum, m) => sum + (perMonth.get(m) ?? 0), 0),
-    }),
-  );
+    }));
   const rankedCategories = categoryCurrentTotals
     .filter((c) => c.total > 0)
     .sort((a, b) => b.total - a.total);
@@ -169,6 +184,13 @@ export const getSpendingTrends = async (
       color: 'var(--ink-muted)',
     });
   }
+  if (uncategorizedTotal > 0) {
+    categories.push({
+      categoryId: UNCATEGORIZED_ID,
+      categoryName: 'Uncategorized',
+      color: 'var(--ink-muted)',
+    });
+  }
 
   const categoryBreakdown: TrendsCategoryMonth[] = currentMonths.map((m) => {
     const segments = topCategoryIds.map((categoryId) => ({
@@ -180,6 +202,12 @@ export const getSpendingTrends = async (
         .slice(MAX_CATEGORY_SLOTS)
         .reduce((sum, c) => sum + (categoryMonthTotals.get(c.categoryId)?.get(m) ?? 0), 0);
       segments.push({ categoryId: OTHER_CATEGORY_ID, amount: otherAmount });
+    }
+    if (uncategorizedTotal > 0) {
+      segments.push({
+        categoryId: UNCATEGORIZED_ID,
+        amount: categoryMonthTotals.get(UNCATEGORIZED_ID)?.get(m) ?? 0,
+      });
     }
     return { month: m, segments };
   });
@@ -193,6 +221,8 @@ export const getSpendingTrends = async (
     currentTotal: currentTotal.toFixed(2),
     priorTotal: priorTotal.toFixed(2),
     pctChange: headlinePctChange,
+    currentRangeLabel: `${MONTH_LABEL.format(monthStart(currentMonths[0]))}–${MONTH_LABEL.format(monthStart(currentMonths[currentMonths.length - 1]))}`,
+    priorRangeLabel: `${MONTH_LABEL.format(monthStart(priorMonths[0]))}–${MONTH_LABEL.format(monthStart(priorMonths[priorMonths.length - 1]))}`,
     tone: (headlinePctChange === null ? 'neutral' : headlinePctChange > 0 ? 'rose' : 'sky') as
       'rose' | 'sky' | 'neutral',
   };
@@ -200,7 +230,10 @@ export const getSpendingTrends = async (
   // Movers: every category that had spend in either period, ranked by the
   // size of its absolute dollar swing — independent of the stacked bar's
   // top-N cap, since a mover worth flagging can sit outside it.
-  const allCategoryIds = new Set(categoryMonthTotals.keys());
+  // Uncategorized isn't a spending pattern, so it's excluded from movers too.
+  const allCategoryIds = new Set(
+    [...categoryMonthTotals.keys()].filter((id) => id !== UNCATEGORIZED_ID),
+  );
   const movers: TrendsMover[] = Array.from(allCategoryIds)
     .map((categoryId) => {
       const perMonth = categoryMonthTotals.get(categoryId)!;
@@ -218,5 +251,5 @@ export const getSpendingTrends = async (
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     .slice(0, 5);
 
-  return { range, months, categories, categoryBreakdown, headline, movers };
+  return { range, months, categories, categoryBreakdown, headline, movers, uncategorizedCount };
 };

@@ -5,7 +5,7 @@ export const ScreenHeader = ({
   actions,
 }: {
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   /** Period pill + popover, rendered beside the title. */
   periodSlot?: React.ReactNode;
   actions?: React.ReactNode;

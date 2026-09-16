@@ -3,12 +3,14 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Papa from 'papaparse';
-import { Eye, Upload } from 'lucide-react';
+import { Check, Eye, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label, Select } from '@/components/ui/field';
 import { Money } from '@/components/ui/money';
 import { formatDate } from '@/lib/format';
+import { cn } from '@/lib/cn';
+import { categoryColorVar } from '@/lib/ui/category-color';
 import { resolveImportedTransactionType } from '@/lib/import';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
@@ -55,6 +57,7 @@ export const ImportView = ({
   const [amountCol, setAmountCol] = useState('');
   const [payeeCol, setPayeeCol] = useState('');
   const [noteCol, setNoteCol] = useState('');
+  const [flipSigns, setFlipSigns] = useState(false);
   const [preview, setPreview] = useState<PreviewRow[] | null>(null);
   const [filenameWarning, setFilenameWarning] = useState<FilenameWarning | null>(null);
   const [duplicateBatch, setDuplicateBatch] = useState<FrontendImportBatch | null>(null);
@@ -108,7 +111,7 @@ export const ImportView = ({
     setDuplicateBatch(null);
 
     const rows = rawRows.map((row) => {
-      const amount = Number(row[amountCol]);
+      const amount = Number(row[amountCol]) * (flipSigns ? -1 : 1);
       return {
         accountId,
         date: row[dateCol],
@@ -205,6 +208,11 @@ export const ImportView = ({
     router.refresh();
   };
 
+  const skippedCount = preview ? preview.filter((r) => !r.include).length : 0;
+  const skippedDuplicateCount = preview
+    ? preview.filter((r) => !r.include && r.duplicate).length
+    : 0;
+
   return (
     <div className="mt-6 flex flex-col gap-6">
       <Card>
@@ -219,7 +227,7 @@ export const ImportView = ({
         />
 
         {headers.length > 0 && (
-          <div className="mt-5 grid grid-cols-3 gap-4">
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <Label htmlFor="account">Account</Label>
               <Select id="account" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
@@ -285,12 +293,23 @@ export const ImportView = ({
             </div>
           </div>
         )}
-        <p className="text-ink-muted mt-2 text-xs">
-          {isCreditAccount
-            ? 'This is a credit card account: positive amounts are treated as charges (expenses), negative as payments or refunds (income).'
-            : 'Negative amounts are treated as expenses, positive as income.'}{' '}
-          Flip the sign in your CSV first if your export uses the opposite convention.
-        </p>
+        <div className="bg-paper mt-3 flex items-center justify-between gap-3 rounded-xl px-3.5 py-3">
+          <p className="text-ink-muted text-xs leading-snug">
+            {isCreditAccount
+              ? 'Positive amounts are treated as charges (expenses), negative as payments or refunds (income).'
+              : 'Negative amounts are treated as expenses, positive as income.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setFlipSigns((v) => !v)}
+            className={cn(
+              'shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium',
+              flipSigns ? 'border-iris bg-iris-soft text-iris' : 'border-line text-ink',
+            )}
+          >
+            {flipSigns ? 'Signs flipped' : 'Flip signs'}
+          </button>
+        </div>
       </Card>
 
       {error && <p className="text-rose text-sm">{error}</p>}
@@ -327,58 +346,198 @@ export const ImportView = ({
       )}
 
       {preview && (
-        <Card className="p-0">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="text-ink-muted text-sm">
-              {preview.length} row{preview.length === 1 ? '' : 's'} parsed ·{' '}
-              {preview.filter((r) => r.duplicate).length} possible duplicate
-              {preview.filter((r) => r.duplicate).length === 1 ? '' : 's'}
-            </div>
-            <Button
-              onClick={() => handleCommit()}
-              icon={Upload}
-              loading={loading}
-              disabled={preview.every((r) => !r.include)}
-            >
-              Import {preview.filter((r) => r.include).length} rows
-            </Button>
-          </div>
-          {preview.map((row, i) => (
-            <div
-              key={i}
-              className="ledger-row grid grid-cols-[auto_1fr_auto_1fr] items-center gap-4 px-6 py-3"
-            >
-              <input
-                type="checkbox"
-                checked={row.include}
-                onChange={() => toggleInclude(i)}
-                className="accent-iris h-4 w-4"
-              />
-              <div className="min-w-0">
-                <div className="text-ink truncate text-sm">
-                  {row.payee || row.note || 'Row ' + (i + 1)}
-                </div>
-                <div className="text-ink-muted text-xs">
-                  {row.date} {row.duplicate && '· possible duplicate'}
-                </div>
+        <>
+          {/* Desktop: one card, flat divided rows, plenty of width for a
+              fixed-column layout. */}
+          <Card className="hidden p-0 lg:block">
+            <div className="flex items-center justify-between px-6 py-4">
+              <div className="text-ink-muted text-sm">
+                {preview.length} row{preview.length === 1 ? '' : 's'} parsed ·{' '}
+                {preview.filter((r) => r.duplicate).length} possible duplicate
+                {preview.filter((r) => r.duplicate).length === 1 ? '' : 's'}
               </div>
-              <Money value={row.amount} tone={row.type === 'INCOME' ? 'income' : 'expense'} />
-              <Select
-                value={row.categoryId ?? NONE}
-                onChange={(e) =>
-                  overrideCategory(i, e.target.value === NONE ? null : e.target.value)
-                }
+              <Button
+                onClick={() => handleCommit()}
+                icon={Upload}
+                loading={loading}
+                disabled={preview.every((r) => !r.include)}
               >
-                <option value={NONE}>Uncategorized</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+                Import {preview.filter((r) => r.include).length} rows
+              </Button>
             </div>
-          ))}
-        </Card>
+            {preview.map((row, i) => (
+              <div
+                key={i}
+                className="ledger-row grid grid-cols-[auto_1fr_auto_1fr] items-center gap-4 px-6 py-3"
+              >
+                <input
+                  type="checkbox"
+                  checked={row.include}
+                  onChange={() => toggleInclude(i)}
+                  className="accent-iris h-4 w-4"
+                />
+                <div className="min-w-0">
+                  <div className="text-ink truncate text-sm">
+                    {row.payee || row.note || 'Row ' + (i + 1)}
+                  </div>
+                  <div className="text-ink-muted text-xs">
+                    {formatDate(row.date)} {row.duplicate && '· possible duplicate'}
+                  </div>
+                </div>
+                <Money value={row.amount} tone={row.type === 'INCOME' ? 'income' : 'expense'} />
+                <Select
+                  value={row.categoryId ?? NONE}
+                  onChange={(e) =>
+                    overrideCategory(i, e.target.value === NONE ? null : e.target.value)
+                  }
+                >
+                  <option value={NONE}>Uncategorized</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ))}
+          </Card>
+
+          {/* Mobile: one card per row — a flat divided list crushes the
+              payee/date column at 402px. */}
+          <div className="lg:hidden">
+            <div className="flex items-baseline justify-between gap-2.5">
+              <span className="font-display text-base font-semibold">Preview</span>
+              <span className="text-ink-muted text-xs">
+                {preview.filter((r) => r.include).length} of {preview.length} selected
+              </span>
+            </div>
+
+            <div className="mt-3 flex flex-col gap-2.5">
+              {preview.map((row, i) =>
+                row.duplicate ? (
+                  <div key={i} className="border-iris/35 bg-paper-raised rounded-2xl border p-4">
+                    <span className="bg-iris-soft text-iris rounded-full px-2.5 py-1 text-[10.5px] font-semibold tracking-[0.05em] uppercase">
+                      Possible duplicate
+                    </span>
+                    <div className="mt-2.5 text-[14.5px] font-semibold">
+                      {row.payee || row.note || 'Row ' + (i + 1)}
+                    </div>
+                    <div className="text-ink-muted mt-1 font-mono text-[12.5px]">
+                      {formatDate(row.date)} ·{' '}
+                      <Money
+                        value={row.amount}
+                        tone={row.type === 'INCOME' ? 'income' : 'expense'}
+                        className="text-[12.5px]"
+                      />
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => row.include && toggleInclude(i)}
+                        className={cn(
+                          'flex-1 rounded-full py-2.5 text-[13px] font-semibold',
+                          !row.include
+                            ? 'bg-iris text-paper-raised'
+                            : 'border-line text-ink border',
+                        )}
+                      >
+                        Skip it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => !row.include && toggleInclude(i)}
+                        className={cn(
+                          'flex-1 rounded-full py-2.5 text-[13px] font-medium',
+                          row.include ? 'bg-iris-soft text-iris' : 'border-line text-ink border',
+                        )}
+                      >
+                        Import anyway
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="border-line bg-paper-raised rounded-2xl border p-4">
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleInclude(i)}
+                        aria-label={row.include ? 'Exclude row' : 'Include row'}
+                        className={cn(
+                          'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md',
+                          row.include ? 'bg-iris' : 'border-line border',
+                        )}
+                      >
+                        {row.include && (
+                          <Check size={12} className="text-paper-raised" strokeWidth={2.5} />
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="min-w-0 truncate text-[14.5px] font-semibold">
+                            {row.payee || row.note || 'Row ' + (i + 1)}
+                          </span>
+                          <Money
+                            value={row.amount}
+                            tone={row.type === 'INCOME' ? 'income' : 'expense'}
+                            className="shrink-0 text-[14.5px]"
+                          />
+                        </div>
+                        <div className="text-ink-muted mt-1 font-mono text-[12px]">
+                          {formatDate(row.date)}
+                        </div>
+                        <div className="mt-2">
+                          <Select
+                            value={row.categoryId ?? NONE}
+                            onChange={(e) =>
+                              overrideCategory(i, e.target.value === NONE ? null : e.target.value)
+                            }
+                            className="w-auto rounded-full border-0 py-1.5 pr-7 pl-2.5 text-xs font-medium"
+                            style={
+                              row.categoryName
+                                ? {
+                                    background: `color-mix(in srgb, ${categoryColorVar(row.categoryName)} 20%, var(--paper-raised))`,
+                                    color: categoryColorVar(row.categoryName),
+                                  }
+                                : undefined
+                            }
+                          >
+                            <option value={NONE}>Uncategorized</option>
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+
+            <div
+              className="border-line bg-paper-raised fixed inset-x-0 z-20 flex items-center gap-3 border-t px-4.5 py-3"
+              style={{ bottom: 'calc(60px + env(safe-area-inset-bottom))' }}
+            >
+              <span className="text-ink-muted min-w-0 text-[12px] leading-tight">
+                {skippedCount} skipped
+                <br />
+                {skippedCount > 0 && skippedCount === skippedDuplicateCount ? 'as duplicate' : ''}
+              </span>
+              <Button
+                onClick={() => handleCommit()}
+                icon={Upload}
+                loading={loading}
+                disabled={preview.every((r) => !r.include)}
+                className="flex-1 justify-center py-3"
+              >
+                Import {preview.filter((r) => r.include).length} rows
+              </Button>
+            </div>
+            <div className="h-24" />
+          </div>
+        </>
       )}
 
       {committed !== null && (
