@@ -57,7 +57,9 @@ export const getCategorizeQueue = async (userId: string): Promise<CategorizeQueu
     orderBy: { priority: 'asc' },
   });
   const transactions = await prisma.transaction.findMany({
-    where: { userId, categoryId: null, skippedAt: null },
+    // a transfer leg or a card payment isn't spending or income — it never
+    // needs a category, so keep it out of the triage queue entirely
+    where: { userId, categoryId: null, skippedAt: null, isTransfer: false, isPayment: false },
     include: { account: { select: { name: true } } },
     orderBy: { date: 'desc' },
   });
@@ -88,7 +90,9 @@ export const getCategorizeQueueStats = async (userId: string): Promise<Categoriz
       select: { categoryId: true, matchText: true, priority: true },
     }),
     prisma.transaction.findMany({
-      where: { userId, categoryId: null, skippedAt: null },
+      // a transfer leg or a card payment isn't spending or income — it never
+      // needs a category, so keep it out of the triage queue entirely
+      where: { userId, categoryId: null, skippedAt: null, isTransfer: false, isPayment: false },
       select: { payee: true, note: true },
     }),
   ]);
