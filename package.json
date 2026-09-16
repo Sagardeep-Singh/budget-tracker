@@ -18,6 +18,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:bootstrap-admin": "tsx prisma/bootstrap-admin.ts",
     "prisma:seed:dev": "tsx prisma/seed.ts",
+    "prisma:seed:demo": "tsx prisma/run-demo-seed.ts",
     "db:setup": "npm run prisma:generate && npm run prisma:migrate -- --name init && npm run prisma:seed:dev"
   },
   "dependencies": {

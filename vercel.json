@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/reseed-demo",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}
