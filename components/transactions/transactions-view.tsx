@@ -102,9 +102,18 @@ export const TransactionsView = ({
   // state to a prop change, rather than in an effect (which would commit
   // the stale draft for one extra frame first).
   const [payeeSyncedFrom, setPayeeSyncedFrom] = useState(filters.payee);
+  // The value we last pushed to the URL ourselves — when the URL's payee
+  // catches up to exactly this, it's the echo of our own debounced push
+  // completing, not an external change, and must not stomp on whatever the
+  // user has kept typing in the meantime (this used to happen: the URL
+  // round-trip for one keystroke could land after the user had already typed
+  // several more, snapping the input back to the older value mid-word).
+  const [lastPushedPayee, setLastPushedPayee] = useState(filters.payee);
   if (filters.payee !== payeeSyncedFrom) {
     setPayeeSyncedFrom(filters.payee);
-    setPayeeDraft(filters.payee);
+    if (filters.payee !== lastPushedPayee) {
+      setPayeeDraft(filters.payee);
+    }
   }
 
   const pushFilters = useCallback(
@@ -117,7 +126,10 @@ export const TransactionsView = ({
 
   useEffect(() => {
     if (payeeDraft === filters.payee) return;
-    const timeout = setTimeout(() => pushFilters({ ...filters, payee: payeeDraft }), 300);
+    const timeout = setTimeout(() => {
+      setLastPushedPayee(payeeDraft);
+      pushFilters({ ...filters, payee: payeeDraft });
+    }, 300);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on payeeDraft changes; `filters`/`pushFilters` reacting here would restart the debounce on every unrelated filter change
   }, [payeeDraft]);
