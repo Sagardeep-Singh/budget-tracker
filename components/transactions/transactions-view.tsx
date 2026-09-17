@@ -18,6 +18,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
 import { TransactionForm } from '@/components/transactions/transaction-form';
 import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
+import { MatchTransfersDialog } from '@/components/transactions/match-transfers-dialog';
 import { PeriodPicker, type PeriodMode } from '@/components/transactions/period-picker';
 import { cn } from '@/lib/cn';
 import {
@@ -81,6 +82,8 @@ export const TransactionsView = ({
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
   const [filtersDialogKey, setFiltersDialogKey] = useState(0);
+  const [matchDialogOpen, setMatchDialogOpen] = useState(false);
+  const [matchDialogKey, setMatchDialogKey] = useState(0);
 
   // The URL is the source of truth for every filter except the payee search
   // box (below) — re-derived on every searchParams change rather than
@@ -194,15 +197,25 @@ export const TransactionsView = ({
     router.refresh();
   };
 
-  const handleMatchTransfers = async (): Promise<void> => {
+  const openMatchDialog = (): void => {
+    setMatchDialogKey((k) => k + 1);
+    setMatchDialogOpen(true);
+  };
+
+  const handleMatchTransfers = async (range: { from: Date; to: Date }): Promise<void> => {
     setMatchPending(true);
     setMatchResult(null);
-    const res = await fetch('/api/transactions/match-transfers', { method: 'POST' });
+    const res = await fetch('/api/transactions/match-transfers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(range),
+    });
     setMatchPending(false);
     if (!res.ok) {
       setMatchResult('Could not match transfers. Try again.');
       return;
     }
+    setMatchDialogOpen(false);
     const data: { matched: number } = await res.json();
     setMatchResult(
       data.matched === 0
@@ -320,7 +333,7 @@ export const TransactionsView = ({
         <Button
           type="button"
           variant="secondary"
-          onClick={handleMatchTransfers}
+          onClick={openMatchDialog}
           icon={ArrowLeftRight}
           loading={matchPending}
           className="shrink-0 px-4 py-2"
@@ -693,6 +706,13 @@ export const TransactionsView = ({
         onApply={handleApplyFilters}
         accounts={accounts}
         categories={categories}
+      />
+      <MatchTransfersDialog
+        key={matchDialogKey}
+        open={matchDialogOpen}
+        onClose={() => setMatchDialogOpen(false)}
+        onConfirm={handleMatchTransfers}
+        pending={matchPending}
       />
 
       <div
