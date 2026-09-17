@@ -185,12 +185,12 @@ export const RemindersSection = ({
         </button>
       </div>
 
-      <div className="flex items-center gap-5 py-3.5">
+      <div className="flex flex-col gap-2.5 py-3.5 sm:flex-row sm:items-center sm:gap-5">
         <div className="min-w-0 flex-1">
           <div className={cn('text-sm font-medium', !enabled && 'text-ink-muted')}>How often</div>
           <div className="text-ink-muted mt-0.5 text-[12.5px]">At most one nudge per period</div>
         </div>
-        <div className={pillGroup}>
+        <div className={cn(pillGroup, 'justify-start sm:justify-end')}>
           {REMINDER_CADENCES.map((option) => (
             <button
               key={option}
