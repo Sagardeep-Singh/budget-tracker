@@ -134,7 +134,11 @@ test('turning reminders on with notifications blocked shows the blocked notice a
 
   // A silently no-op toggle would be worse than an error: the user would believe
   // reminders were on.
-  await expect(page.getByRole('alert')).toContainText('Notifications are blocked in your browser');
+  // Scoped by text: Next.js's route announcer is also role="alert" and would
+  // otherwise make this locator ambiguous.
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Notifications are blocked in your browser' }),
+  ).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByRole('button', { name: 'Weekly' })).toBeDisabled();
 });
