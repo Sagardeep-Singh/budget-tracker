@@ -82,7 +82,7 @@ test('the reminders card renders off by default, with the cadence pills disabled
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
 
   for (const cadence of ['Daily', 'Weekly', 'Biweekly', 'Monthly']) {
-    await expect(page.getByRole('button', { name: cadence })).toBeDisabled();
+    await expect(page.getByRole('button', { name: cadence, exact: true })).toBeDisabled();
   }
   await expect(page.getByText('We check once a day, so delivery time varies.')).toBeVisible();
 });
@@ -98,7 +98,7 @@ test('turning reminders on enables the cadence pills and persists a choice acros
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
-  const weekly = page.getByRole('button', { name: 'Weekly' });
+  const weekly = page.getByRole('button', { name: 'Weekly', exact: true });
   await expect(weekly).toBeEnabled();
 
   const saved = page.waitForResponse(
@@ -112,7 +112,7 @@ test('turning reminders on enables the cadence pills and persists a choice acros
     'aria-checked',
     'true',
   );
-  await expect(page.getByRole('button', { name: 'Weekly' })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Weekly', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -140,7 +140,7 @@ test('turning reminders on with notifications blocked shows the blocked notice a
     page.getByRole('alert').filter({ hasText: 'Notifications are blocked in your browser' }),
   ).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await expect(page.getByRole('button', { name: 'Weekly' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Weekly', exact: true })).toBeDisabled();
 });
 
 test('a registered device is listed and can be removed on its own', async ({ page }) => {
