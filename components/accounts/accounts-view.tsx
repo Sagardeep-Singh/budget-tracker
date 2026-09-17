@@ -6,8 +6,11 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AccountForm } from '@/components/accounts/account-form';
-import { formatDate } from '@/lib/format';
+import { ReimbursementSummaryCard } from '@/components/accounts/reimbursement-summary-card';
+import { formatDate, ordinal } from '@/lib/format';
+import { cn } from '@/lib/cn';
 import type { FrontendAccount } from '@/lib/services/accounts';
+import type { FrontendReimbursementPendingSummary } from '@/lib/services/reimbursements';
 
 const TYPE_LABELS: Record<string, string> = {
   CHECKING: 'Checking',
@@ -16,10 +19,15 @@ const TYPE_LABELS: Record<string, string> = {
   CASH: 'Cash',
 };
 
+const money = (value: number): string =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(value));
+
 export const AccountsView = ({
   initialAccounts,
+  pendingReimbursement,
 }: {
   initialAccounts: FrontendAccount[];
+  pendingReimbursement: FrontendReimbursementPendingSummary;
 }): React.ReactElement => {
   const router = useRouter();
   const [dialogKey, setDialogKey] = useState(0);
@@ -48,56 +56,132 @@ export const AccountsView = ({
     router.refresh();
   };
 
+  const netWorth = initialAccounts.reduce((sum, a) => sum + Number(a.balance), 0);
+  const totalTransactions = initialAccounts.reduce((sum, a) => sum + a.transactionCount, 0);
+  const lastImportAt = initialAccounts.reduce<string | null>(
+    (latest, a) =>
+      a.lastImportAt && (!latest || a.lastImportAt > latest) ? a.lastImportAt : latest,
+    null,
+  );
+
   return (
     <div className="mt-6.5">
+      <ReimbursementSummaryCard summary={pendingReimbursement} />
       {initialAccounts.length === 0 && (
         <p className="text-ink-muted mb-4 text-sm">
           No accounts yet. Add one to start logging transactions.
         </p>
       )}
+
+      {initialAccounts.length > 0 && (
+        <div className="border-line bg-paper-raised mb-4 rounded-2xl border p-5.5">
+          <div className="text-ink-muted text-[11px] tracking-[0.08em] uppercase">
+            Net across {initialAccounts.length} account{initialAccounts.length === 1 ? '' : 's'}
+          </div>
+          <div
+            className={cn(
+              'mt-1.5 font-mono text-[28px] font-medium tracking-[-0.02em] tabular-nums',
+              netWorth < 0 ? 'text-rose' : 'text-ink',
+            )}
+          >
+            {netWorth < 0 ? '−' : ''}
+            {money(netWorth)}
+          </div>
+          <div className="text-ink-muted mt-1.5 text-[12.5px]">
+            {lastImportAt ? `As of your ${formatDate(lastImportAt)} import · ` : ''}
+            {totalTransactions} transaction{totalTransactions === 1 ? '' : 's'}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {initialAccounts.map((account) => (
-          <div key={account.id} className="border-line bg-paper-raised rounded-2xl border p-5.5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-display text-[17px] font-semibold">{account.name}</div>
-                <div className="text-ink-muted mt-0.5 text-[12.5px]">
-                  {TYPE_LABELS[account.type]}
-                  {account.type === 'CREDIT_CARD' &&
-                    account.statementDay &&
-                    ` · statement day ${account.statementDay}`}
+        {initialAccounts.map((account) => {
+          const balance = Number(account.balance);
+          const isCreditCard = account.type === 'CREDIT_CARD';
+          const owing = isCreditCard && balance < 0;
+          const noStartingBalance = Number(account.startingBalance) === 0 && balance < 0;
+          return (
+            <div
+              key={account.id}
+              className={cn(
+                'bg-paper-raised rounded-2xl border p-5.5',
+                noStartingBalance ? 'border-iris/35' : 'border-line',
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-display text-[17px] font-semibold">{account.name}</div>
+                  <div className="text-ink-muted mt-0.5 text-[12.5px]">
+                    {TYPE_LABELS[account.type]}
+                  </div>
                 </div>
               </div>
-              <span className="bg-sky-soft text-sky rounded-full px-2.5 py-1 text-[11.5px] font-semibold">
-                Active
-              </span>
+              <div className="mt-2.5 flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    'font-mono text-[26px] font-medium tracking-[-0.02em] tabular-nums',
+                    !isCreditCard && balance < 0 && 'text-rose',
+                  )}
+                >
+                  {!isCreditCard && balance < 0 ? '−' : ''}
+                  {money(balance)}
+                </span>
+                {owing && <span className="text-ink-muted text-[12.5px]">owing</span>}
+              </div>
+
+              {noStartingBalance && (
+                <div className="bg-iris-soft mt-3 flex items-start gap-2.5 rounded-xl px-3.5 py-3">
+                  <span className="bg-iris text-paper-raised mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold">
+                    !
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-ink-muted text-[12.5px] leading-snug">
+                      This is negative because no starting balance was set — it&rsquo;s the sum of
+                      transactions only.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(account)}
+                      className="bg-iris text-paper-raised mt-2 rounded-full px-3.5 py-2 text-[12.5px] font-semibold"
+                    >
+                      Set starting balance
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="text-ink-muted mt-3 text-[11.5px]">
+                {isCreditCard && account.statementDay
+                  ? `Statement closes the ${ordinal(account.statementDay)} · `
+                  : ''}
+                {account.transactionCount} transaction{account.transactionCount === 1 ? '' : 's'}
+                {!isCreditCard &&
+                  (account.lastImportAt
+                    ? ` · last import ${formatDate(account.lastImportAt)}`
+                    : '')}
+              </div>
+
+              <div className="border-line mt-4.5 flex gap-2 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => openEdit(account)}
+                  className="border-line text-ink inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px]"
+                >
+                  <Pencil size={13} />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(account.id)}
+                  className="text-ink-muted hover:text-rose inline-flex items-center gap-1.5 px-1 py-2 text-[13px]"
+                >
+                  <Trash2 size={13} />
+                  Delete
+                </button>
+              </div>
             </div>
-            <div className="mt-4 font-mono text-[28px] tracking-[-0.03em] tabular-nums">
-              ${Number(account.balance).toFixed(2)}
-            </div>
-            <div className="text-ink-muted mt-1 text-[12.5px]">
-              Added {formatDate(account.createdAt)}
-            </div>
-            <div className="border-line mt-4.5 flex gap-2 border-t pt-4">
-              <button
-                type="button"
-                onClick={() => openEdit(account)}
-                className="border-line text-ink inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px]"
-              >
-                <Pencil size={13} />
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteId(account.id)}
-                className="text-ink-muted hover:text-rose inline-flex items-center gap-1.5 px-1 py-2 text-[13px]"
-              >
-                <Trash2 size={13} />
-                Delete
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <button
           type="button"
           onClick={openCreate}

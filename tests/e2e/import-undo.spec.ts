@@ -79,7 +79,10 @@ test('confirming undo removes the transactions and marks the batch undone', asyn
   await importFile(page, filename, payee);
 
   await page.goto('/transactions');
-  await expect(page.getByText(payee)).toBeVisible();
+  // Desktop and mobile transaction rows both render (CSS-hidden, not
+  // unmounted); this test runs at the default desktop viewport, so the
+  // desktop copy (first in the DOM) is the visible one.
+  await expect(page.getByText(payee).first()).toBeVisible();
 
   await page.goto('/import/history');
   const row = page.locator('.ledger-row').filter({ hasText: filename });

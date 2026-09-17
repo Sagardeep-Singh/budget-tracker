@@ -39,12 +39,13 @@ model User {
   passwordHash String?
   createdAt    DateTime @default(now())
 
-  accounts      Account[]
-  categories    Category[]
-  transactions  Transaction[]
-  budgets       Budget[]
-  categoryRules CategoryRule[]
-  importBatches ImportBatch[]
+  accounts           Account[]
+  categories         Category[]
+  transactions       Transaction[]
+  budgets            Budget[]
+  categoryRules      CategoryRule[]
+  importBatches      ImportBatch[]
+  reimbursementLinks ReimbursementLink[]
 
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
@@ -104,6 +105,17 @@ model Transaction {
   /// soft correlation id shared by both legs of one matched transfer pair; not
   /// a foreign key — it exists for display, debugging, and future unlinking
   transferMatchId String?
+  /// marks an EXPENSE the user expects to be paid back for (work expense, split
+  /// bill). Mutually exclusive with isTransfer/isPayment. Invariant:
+  /// isReimbursable === true <=> reimbursementExpectedAmount !== null
+  isReimbursable  Boolean         @default(false)
+  /// how much of this expense is expected back; <= amount. equal = fully
+  /// reimbursable, less = partially. null when !isReimbursable
+  reimbursementExpectedAmount Decimal? @db.Decimal(12, 2)
+  /// set only by the manual "mark fully reimbursed" override. A derived COMPLETE
+  /// (linked total >= expected) reverts to PARTIAL/PENDING if links shrink; a
+  /// manual one only reverts when the user explicitly un-marks it
+  reimbursementCompletedAt DateTime?
   skippedAt     DateTime?
   createdAt     DateTime        @default(now())
 
@@ -111,12 +123,37 @@ model Transaction {
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  reimbursementExpenseLinks ReimbursementLink[] @relation("ReimbursementExpense")
+  reimbursementIncomeLinks  ReimbursementLink[] @relation("ReimbursementIncome")
 
   @@index([userId, date])
   @@index([accountId])
   @@index([categoryId])
   @@index([importBatchId])
   @@index([transferMatchId])
+  @@index([userId, isReimbursable])
+}
+
+/// one income transaction contributing `amount` toward one reimbursable
+/// expense. Many-to-many with a per-link amount: one income can partially
+/// reimburse several expenses, one expense can be paid back over several
+/// incomes. Unlike Transaction.transferMatchId (a soft correlation id), this
+/// is a real join table with real FKs because it carries its own money.
+model ReimbursementLink {
+  id                   String   @id @default(cuid())
+  userId               String
+  expenseTransactionId String
+  incomeTransactionId  String
+  amount               Decimal  @db.Decimal(12, 2)
+  createdAt            DateTime @default(now())
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expense Transaction @relation("ReimbursementExpense", fields: [expenseTransactionId], references: [id], onDelete: Restrict)
+  income  Transaction @relation("ReimbursementIncome", fields: [incomeTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([expenseTransactionId, incomeTransactionId])
+  @@index([userId])
+  @@index([incomeTransactionId])
 }
 
 /// one CSV commit; groups the transactions it created so the whole import can be

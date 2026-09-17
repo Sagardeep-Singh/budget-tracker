@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import { toSerializable } from '@/lib/utils';
 import { ServiceValidationError } from '@/lib/services/common';
+import { assertNoActiveLinks } from '@/lib/services/reimbursements';
 import type { CreateAccountInput, UpdateAccountInput } from '@/lib/validators/accounts';
 
 export type FrontendAccount = {
@@ -11,6 +12,8 @@ export type FrontendAccount = {
   balance: string;
   createdAt: string;
   statementDay: number | null;
+  transactionCount: number;
+  lastImportAt: string | null;
 };
 
 const toFrontendAccount = (account: {
@@ -21,12 +24,17 @@ const toFrontendAccount = (account: {
   createdAt: Date;
   statementDay: number | null;
   transactions: { amount: unknown; type: string }[];
+  importBatches: { createdAt: Date }[];
 }): FrontendAccount => {
   const starting = Number(account.startingBalance);
   const net = account.transactions.reduce((sum, t) => {
     const amount = Number(t.amount);
     return sum + (t.type === 'INCOME' ? amount : -amount);
   }, 0);
+  const lastImportAt = account.importBatches.reduce<Date | null>(
+    (latest, b) => (!latest || b.createdAt > latest ? b.createdAt : latest),
+    null,
+  );
 
   return {
     id: account.id,
@@ -36,13 +44,18 @@ const toFrontendAccount = (account: {
     createdAt: account.createdAt.toISOString(),
     balance: (starting + net).toFixed(2),
     statementDay: account.statementDay,
+    transactionCount: account.transactions.length,
+    lastImportAt: lastImportAt?.toISOString() ?? null,
   };
 };
 
 export const listAccounts = async (userId: string): Promise<FrontendAccount[]> => {
   const accounts = await prisma.account.findMany({
     where: { userId },
-    include: { transactions: { select: { amount: true, type: true } } },
+    include: {
+      transactions: { select: { amount: true, type: true } },
+      importBatches: { where: { status: 'ACTIVE' }, select: { createdAt: true } },
+    },
     orderBy: { createdAt: 'asc' },
   });
   return accounts.map(toFrontendAccount);
@@ -60,7 +73,10 @@ export const createAccount = async (
       startingBalance: input.startingBalance,
       statementDay: input.type === 'CREDIT_CARD' ? (input.statementDay ?? null) : null,
     },
-    include: { transactions: { select: { amount: true, type: true } } },
+    include: {
+      transactions: { select: { amount: true, type: true } },
+      importBatches: { where: { status: 'ACTIVE' }, select: { createdAt: true } },
+    },
   });
   return toFrontendAccount(account);
 };
@@ -86,15 +102,29 @@ export const updateAccount = async (
       ...input,
       statementDay: nextType === 'CREDIT_CARD' ? input.statementDay : input.type ? null : undefined,
     },
-    include: { transactions: { select: { amount: true, type: true } } },
+    include: {
+      transactions: { select: { amount: true, type: true } },
+      importBatches: { where: { status: 'ACTIVE' }, select: { createdAt: true } },
+    },
   });
   return toFrontendAccount(account);
 };
 
 export const deleteAccount = async (userId: string, accountId: string): Promise<void> => {
-  const existing = await prisma.account.findFirst({ where: { id: accountId, userId } });
+  const existing = await prisma.account.findFirst({
+    where: { id: accountId, userId },
+    include: { transactions: { select: { id: true } } },
+  });
   if (!existing) {
     throw new ServiceValidationError('Account not found');
   }
+  // Reimbursement links are cross-account by design, so deleting this account
+  // could otherwise silently orphan a link on another account's expense —
+  // same "blocked, not cascaded" rule as deleting a linked transaction directly.
+  await assertNoActiveLinks(
+    userId,
+    existing.transactions.map((t) => t.id),
+    'This account has transactions linked to reimbursements. Remove those links before deleting it.',
+  );
   await prisma.account.delete({ where: { id: accountId } });
 };

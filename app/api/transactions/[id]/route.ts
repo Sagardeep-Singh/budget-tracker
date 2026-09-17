@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { updateTransactionSchema } from '@/lib/validators/transactions';
 import { deleteTransaction, updateTransaction } from '@/lib/services/transactions';
-import { ServiceValidationError } from '@/lib/services/common';
+import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -19,6 +19,9 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
   try {
     return NextResponse.json(await updateTransaction(session.user.id, id, parsed.data));
   } catch (error) {
+    if (error instanceof ReimbursementConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     if (error instanceof ServiceValidationError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
@@ -35,6 +38,9 @@ export const DELETE = async (_request: Request, { params }: RouteParams): Promis
     await deleteTransaction(session.user.id, id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    if (error instanceof ReimbursementConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     if (error instanceof ServiceValidationError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }

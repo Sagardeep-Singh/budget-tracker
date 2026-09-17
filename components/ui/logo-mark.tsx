@@ -7,7 +7,7 @@ type LogoMarkProps = {
    * paper-raised for the track instead of paper-sunk, for use on top of an
    * iris-soft surface (the tile fill would otherwise vanish into it).
    */
-  variant?: 'tile' | 'bare';
+  variant?: 'tile' | 'bare' | 'spiral';
 };
 
 const OUTER_R = 25.83;
@@ -28,6 +28,40 @@ export const LogoMark = ({
   variant = 'tile',
 }: LogoMarkProps): React.ReactElement => {
   const track = variant === 'tile' ? 'var(--paper-sunk)' : 'var(--paper-raised)';
+
+  if (variant === 'spiral') {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 30 30"
+        fill="none"
+        className={className}
+        aria-hidden="true"
+      >
+        <circle
+          cx="15"
+          cy="15"
+          r="12.4"
+          stroke="var(--iris)"
+          strokeWidth="3.4"
+          strokeLinecap="round"
+          strokeDasharray="58 20"
+          transform="rotate(-95 15 15)"
+        />
+        <circle
+          cx="15"
+          cy="15"
+          r="6.4"
+          stroke="var(--iris)"
+          strokeWidth="3.2"
+          strokeLinecap="round"
+          strokeDasharray="26 15"
+          transform="rotate(55 15 15)"
+        />
+      </svg>
+    );
+  }
 
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" className={className} aria-hidden="true">

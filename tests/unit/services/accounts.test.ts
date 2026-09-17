@@ -9,6 +9,7 @@ const { prismaMock } = vi.hoisted(() => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    reimbursementLink: { count: vi.fn() },
   },
 }));
 
@@ -16,10 +17,12 @@ vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
 const { createAccount, deleteAccount, listAccounts, updateAccount } =
   await import('@/lib/services/accounts');
-const { ServiceValidationError } = await import('@/lib/services/common');
+const { ReimbursementConflictError, ServiceValidationError } =
+  await import('@/lib/services/common');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.reimbursementLink.count.mockResolvedValue(0);
 });
 
 describe('listAccounts', () => {
@@ -35,6 +38,7 @@ describe('listAccounts', () => {
           { amount: 50, type: 'INCOME' },
           { amount: 20, type: 'EXPENSE' },
         ],
+        importBatches: [],
       },
     ]);
 
@@ -48,6 +52,8 @@ describe('listAccounts', () => {
         startingBalance: 100,
         createdAt: '2026-01-01T00:00:00.000Z',
         balance: '130.00',
+        transactionCount: 2,
+        lastImportAt: null,
       },
     ]);
   });
@@ -62,6 +68,7 @@ describe('createAccount', () => {
       startingBalance: 0,
       createdAt: new Date('2026-01-01'),
       transactions: [],
+      importBatches: [],
     });
 
     const result = await createAccount('user-1', {
@@ -88,6 +95,40 @@ describe('updateAccount / deleteAccount', () => {
   });
 });
 
+describe('deleteAccount reimbursement guard', () => {
+  it('blocks deleting an account whose transactions have an active reimbursement link', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({
+      id: 'acc-1',
+      transactions: [{ id: 'tx-1' }, { id: 'tx-2' }],
+    });
+    prismaMock.reimbursementLink.count.mockResolvedValue(1);
+
+    await expect(deleteAccount('user-1', 'acc-1')).rejects.toThrow(ReimbursementConflictError);
+    expect(prismaMock.account.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes normally when none of its transactions have an active link', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({
+      id: 'acc-1',
+      transactions: [{ id: 'tx-1' }],
+    });
+    prismaMock.reimbursementLink.count.mockResolvedValue(0);
+
+    await deleteAccount('user-1', 'acc-1');
+
+    expect(prismaMock.account.delete).toHaveBeenCalledWith({ where: { id: 'acc-1' } });
+  });
+
+  it('deletes normally when the account has no transactions at all', async () => {
+    prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1', transactions: [] });
+
+    await deleteAccount('user-1', 'acc-1');
+
+    expect(prismaMock.reimbursementLink.count).not.toHaveBeenCalled();
+    expect(prismaMock.account.delete).toHaveBeenCalledWith({ where: { id: 'acc-1' } });
+  });
+});
+
 describe('updateAccount statementDay', () => {
   it('rejects statementDay when the resulting type is not CREDIT_CARD', async () => {
     prismaMock.account.findFirst.mockResolvedValue({ id: 'acc-1', type: 'SAVINGS' });
@@ -108,6 +149,7 @@ describe('updateAccount statementDay', () => {
       statementDay: null,
       createdAt: new Date('2026-01-01'),
       transactions: [],
+      importBatches: [],
     });
 
     await updateAccount('user-1', 'acc-1', { type: 'CASH' });
@@ -127,6 +169,7 @@ describe('updateAccount statementDay', () => {
       statementDay: 20,
       createdAt: new Date('2026-01-01'),
       transactions: [],
+      importBatches: [],
     });
 
     const result = await updateAccount('user-1', 'acc-1', { statementDay: 20 });

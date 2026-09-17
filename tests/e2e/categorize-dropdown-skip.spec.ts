@@ -39,6 +39,9 @@ test('skipping a transaction persists — it does not reappear after reload', as
   await addUncategorizedTransaction(page, payee);
 
   await page.goto('/categorize');
+  // "By payee" is now the default tab; these row-level dropdown/Skip
+  // interactions live in the "One by one" tab.
+  await page.getByRole('button', { name: 'One by one' }).click();
   const row = page.locator('.ledger-row').filter({ hasText: payee });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: 'Skip' }).click();
@@ -56,6 +59,7 @@ test('picking a category from the dropdown categorizes immediately, no separate 
   await addUncategorizedTransaction(page, payee);
 
   await page.goto('/categorize');
+  await page.getByRole('button', { name: 'One by one' }).click();
   const row = page.locator('.ledger-row').filter({ hasText: payee });
   await expect(row).toBeVisible();
 
@@ -81,6 +85,7 @@ test.describe('mobile width', () => {
     await addUncategorizedTransaction(page, payee);
 
     await page.goto('/categorize');
+    await page.getByRole('button', { name: 'One by one' }).click();
     const card = page.getByTestId('categorize-card-mobile').filter({ hasText: payee });
     await expect(card).toBeVisible();
 

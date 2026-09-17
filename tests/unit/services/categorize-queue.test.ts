@@ -9,7 +9,7 @@ const { prismaMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
-const { getCategorizeQueue } = await import('@/lib/services/categorize');
+const { getCategorizeQueue, getCategorizeQueueStats } = await import('@/lib/services/categorize');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -68,7 +68,13 @@ describe('getCategorizeQueue', () => {
     ]);
     expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 'user-1', categoryId: null, skippedAt: null },
+        where: {
+          userId: 'user-1',
+          categoryId: null,
+          skippedAt: null,
+          isTransfer: false,
+          isPayment: false,
+        },
       }),
     );
   });
@@ -82,6 +88,105 @@ describe('getCategorizeQueue', () => {
     expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ skippedAt: null }),
+      }),
+    );
+  });
+
+  it('scopes the queue query to the requesting user', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await getCategorizeQueue('user-2');
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'user-2' }),
+      }),
+    );
+    expect(prismaMock.categoryRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'user-2' }),
+      }),
+    );
+  });
+});
+
+describe('getCategorizeQueueStats', () => {
+  it('excludes transfers and card payments from the counted population', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await getCategorizeQueueStats('user-1');
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: 'user-1',
+          categoryId: null,
+          skippedAt: null,
+          isTransfer: false,
+          isPayment: false,
+        },
+      }),
+    );
+  });
+
+  it('returns zeroed counts when nothing is waiting in the queue', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await expect(getCategorizeQueueStats('user-1')).resolves.toEqual({ total: 0, matched: 0 });
+  });
+
+  it('counts every queued row in total and only rule-matched rows in matched', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { categoryId: 'cat-1', matchText: 'whole foods', priority: 0 },
+    ]);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { payee: 'Whole Foods #12', note: null },
+      { payee: 'Mystery Charge', note: null },
+      { payee: 'Another Mystery', note: null },
+    ]);
+
+    await expect(getCategorizeQueueStats('user-1')).resolves.toEqual({ total: 3, matched: 1 });
+  });
+
+  it('counts a row once even when several rules match it', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { categoryId: 'cat-1', matchText: 'whole', priority: 0 },
+      { categoryId: 'cat-2', matchText: 'foods', priority: 1 },
+    ]);
+    prismaMock.transaction.findMany.mockResolvedValue([{ payee: 'Whole Foods #12', note: null }]);
+
+    await expect(getCategorizeQueueStats('user-1')).resolves.toEqual({ total: 1, matched: 1 });
+  });
+
+  it('matches against the note when the payee is null', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([
+      { categoryId: 'cat-1', matchText: 'landlord llc', priority: 0 },
+    ]);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { payee: null, note: 'LANDLORD LLC rent' },
+      { payee: null, note: null },
+    ]);
+
+    await expect(getCategorizeQueueStats('user-1')).resolves.toEqual({ total: 2, matched: 1 });
+  });
+
+  it('scopes both queries to the requesting user', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await getCategorizeQueueStats('user-2');
+
+    expect(prismaMock.categoryRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'user-2' }),
+      }),
+    );
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'user-2' }),
       }),
     );
   });

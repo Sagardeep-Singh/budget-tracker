@@ -13,6 +13,9 @@ const { prismaMock } = vi.hoisted(() => ({
     category: {
       findFirst: vi.fn(),
     },
+    reimbursementLink: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -23,6 +26,7 @@ const { ServiceValidationError } = await import('@/lib/services/common');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.reimbursementLink.findMany.mockResolvedValue([]);
 });
 
 describe('listBudgets', () => {
@@ -91,6 +95,108 @@ describe('listBudgets', () => {
         spent: '0.00',
       },
     ]);
+  });
+});
+
+describe('listBudgets reimbursement net-out', () => {
+  it('subtracts the reimbursed amount from spend for that category', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        categoryId: 'cat-1',
+        month: 202603,
+        limitAmount: 200,
+        category: { name: 'Groceries' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([
+      { categoryId: 'cat-1', _sum: { amount: 100 } },
+    ]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 40,
+        expenseTransactionId: 'tx-1',
+        expense: { categoryId: 'cat-1', date: new Date('2026-03-05') },
+      },
+    ]);
+
+    const result = await listBudgets('user-1', 202603);
+
+    expect(result[0].spent).toBe('60.00');
+  });
+
+  it('clamps spend at 0 when reimbursements exceed the gross spend', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        categoryId: 'cat-1',
+        month: 202603,
+        limitAmount: 200,
+        category: { name: 'Groceries' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([
+      { categoryId: 'cat-1', _sum: { amount: 30 } },
+    ]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 50,
+        expenseTransactionId: 'tx-1',
+        expense: { categoryId: 'cat-1', date: new Date('2026-03-05') },
+      },
+    ]);
+
+    const result = await listBudgets('user-1', 202603);
+
+    expect(result[0].spent).toBe('0.00');
+  });
+
+  it('nets out by the expense date, independent of when the reimbursement was recorded', async () => {
+    // listReimbursedAmountsByExpenseDate is itself scoped by [start, end) on the expense's
+    // date — this mock only proves listBudgets applies whatever it returns, keyed by
+    // categoryId, without re-deriving month scoping of its own.
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        categoryId: 'cat-1',
+        month: 202601,
+        limitAmount: 200,
+        category: { name: 'Groceries' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([
+      { categoryId: 'cat-1', _sum: { amount: 100 } },
+    ]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 20,
+        expenseTransactionId: 'tx-1',
+        expense: { categoryId: 'cat-1', date: new Date('2026-01-10') },
+      },
+    ]);
+
+    const result = await listBudgets('user-1', 202601);
+
+    expect(result[0].spent).toBe('80.00');
+  });
+
+  it('leaves spend unchanged for a category with no reimbursed amount', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        categoryId: 'cat-1',
+        month: 202603,
+        limitAmount: 200,
+        category: { name: 'Groceries' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([
+      { categoryId: 'cat-1', _sum: { amount: 75.5 } },
+    ]);
+
+    const result = await listBudgets('user-1', 202603);
+
+    expect(result[0].spent).toBe('75.50');
   });
 });
 

@@ -46,16 +46,57 @@ describe('listCategoryRules', () => {
 
     const result = await listCategoryRules('user-1');
 
-    expect(result).toEqual([
+    expect(result).toEqual({
+      rules: [
+        {
+          id: 'r1',
+          categoryId: 'cat-1',
+          categoryName: 'Groceries',
+          matchText: 'whole foods',
+          priority: 0,
+          appliedCount: 2,
+          overlapCount: 0,
+          overlap: null,
+        },
+      ],
+      appliedToTransactionCount: 3,
+    });
+  });
+
+  it('flags rules whose match text collides on a real transaction, and picks the priority rival', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([
       {
         id: 'r1',
         categoryId: 'cat-1',
-        categoryName: 'Groceries',
-        matchText: 'whole foods',
+        matchText: 'food',
+        priority: 5,
+        category: { name: 'Dine Out' },
+      },
+      {
+        id: 'r2',
+        categoryId: 'cat-2',
+        matchText: 'superstore',
         priority: 0,
-        appliedCount: 2,
+        category: { name: 'Groceries' },
       },
     ]);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      // matches both rules' text — the actual collision the counts are built from
+      { categoryId: 'cat-2', payee: 'Real Foodstore Superstore', note: null },
+    ]);
+
+    const result = await listCategoryRules('user-1');
+
+    expect(result.rules[0]).toMatchObject({
+      id: 'r1',
+      overlapCount: 1,
+      overlap: { matchText: 'superstore', priority: 0, wins: false },
+    });
+    expect(result.rules[1]).toMatchObject({
+      id: 'r2',
+      overlapCount: 1,
+      overlap: { matchText: 'food', priority: 5, wins: true },
+    });
   });
 });
 

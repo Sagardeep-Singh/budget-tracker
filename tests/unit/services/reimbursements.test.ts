@@ -1,0 +1,733 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { prismaMock } = vi.hoisted(() => ({
+  prismaMock: {
+    transaction: { findFirst: vi.fn(), findMany: vi.fn(), findFirstOrThrow: vi.fn() },
+    reimbursementLink: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      groupBy: vi.fn(),
+      count: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+
+const {
+  deriveReimbursementStatus,
+  toCents,
+  getExpenseReimbursement,
+  createReimbursementLink,
+  updateReimbursementLink,
+  deleteReimbursementLink,
+  listReimbursementCandidates,
+  getPendingReimbursementSummary,
+  assertNoActiveLinks,
+  listReimbursedAmountsByExpenseDate,
+} = await import('@/lib/services/reimbursements');
+const { ReimbursementConflictError, ServiceValidationError } =
+  await import('@/lib/services/common');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  prismaMock.$transaction.mockImplementation(
+    async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock),
+  );
+});
+
+describe('deriveReimbursementStatus', () => {
+  it('returns null when not reimbursable, regardless of other values', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: false,
+        expectedCents: 1000,
+        linkedCents: 1000,
+        completedAt: new Date(),
+      }),
+    ).toBeNull();
+  });
+
+  it('is COMPLETE when manually completed, even with nothing linked', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 0,
+        completedAt: new Date(),
+      }),
+    ).toBe('COMPLETE');
+  });
+
+  it('is COMPLETE when manually completed despite a shortfall', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 400,
+        completedAt: new Date(),
+      }),
+    ).toBe('COMPLETE');
+  });
+
+  it('is COMPLETE (derived) when linked equals expected', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 1000,
+        completedAt: null,
+      }),
+    ).toBe('COMPLETE');
+  });
+
+  it('is COMPLETE (derived) when linked exceeds expected (overshoot)', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 1500,
+        completedAt: null,
+      }),
+    ).toBe('COMPLETE');
+  });
+
+  it('is PARTIAL when 0 < linked < expected', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 400,
+        completedAt: null,
+      }),
+    ).toBe('PARTIAL');
+  });
+
+  it('is PENDING when nothing is linked', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 0,
+        completedAt: null,
+      }),
+    ).toBe('PENDING');
+  });
+
+  it('is PARTIAL, not COMPLETE, one cent below the expected amount', () => {
+    expect(
+      deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents: 1000,
+        linkedCents: 999,
+        completedAt: null,
+      }),
+    ).toBe('PARTIAL');
+  });
+
+  it('reverts a derived COMPLETE to PENDING when links shrink, but a manual COMPLETE stays', () => {
+    const derived = deriveReimbursementStatus({
+      isReimbursable: true,
+      expectedCents: 1000,
+      linkedCents: 1000,
+      completedAt: null,
+    });
+    expect(derived).toBe('COMPLETE');
+
+    const derivedAfterRemoval = deriveReimbursementStatus({
+      isReimbursable: true,
+      expectedCents: 1000,
+      linkedCents: 0,
+      completedAt: null,
+    });
+    expect(derivedAfterRemoval).toBe('PENDING');
+
+    const manualAfterRemoval = deriveReimbursementStatus({
+      isReimbursable: true,
+      expectedCents: 1000,
+      linkedCents: 0,
+      completedAt: new Date('2026-01-01'),
+    });
+    expect(manualAfterRemoval).toBe('COMPLETE');
+  });
+});
+
+describe('toCents', () => {
+  it('converts a plain number', () => {
+    expect(toCents(10)).toBe(1000);
+  });
+
+  it('converts a numeric string, matching how Decimal serializes', () => {
+    expect(toCents('12.34')).toBe(1234);
+  });
+
+  it('rounds away floating point error instead of truncating', () => {
+    expect(toCents(19.99)).toBe(1999);
+  });
+
+  it('handles zero', () => {
+    expect(toCents(0)).toBe(0);
+  });
+});
+
+const expenseRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'exp-1',
+  type: 'EXPENSE',
+  amount: 100,
+  isReimbursable: true,
+  isTransfer: false,
+  isPayment: false,
+  ...overrides,
+});
+
+const incomeRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'inc-1',
+  type: 'INCOME',
+  amount: 100,
+  isTransfer: false,
+  isPayment: false,
+  ...overrides,
+});
+
+describe('createReimbursementLink', () => {
+  const detailInclude = () => ({
+    id: 'exp-1',
+    amount: 100,
+    isReimbursable: true,
+    reimbursementExpectedAmount: 100,
+    reimbursementCompletedAt: null,
+    reimbursementExpenseLinks: [],
+  });
+
+  it('creates a link on the happy path and returns the recomputed summary', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([expenseRow(), incomeRow()]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findFirstOrThrow.mockResolvedValue({ amount: 100 });
+    prismaMock.transaction.findFirst.mockResolvedValue(detailInclude());
+
+    const result = await createReimbursementLink('user-1', {
+      expenseTransactionId: 'exp-1',
+      incomeTransactionId: 'inc-1',
+      amount: 40,
+    });
+
+    expect(prismaMock.reimbursementLink.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          expenseTransactionId_incomeTransactionId: {
+            expenseTransactionId: 'exp-1',
+            incomeTransactionId: 'inc-1',
+          },
+        },
+        create: expect.objectContaining({ userId: 'user-1', amount: 40 }),
+        update: { amount: 40 },
+      }),
+    );
+    expect(result.expenseTransactionId).toBe('exp-1');
+  });
+
+  it('rejects a transaction linking to itself', async () => {
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'tx-1',
+        incomeTransactionId: 'tx-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+    expect(prismaMock.reimbursementLink.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects when either transaction is missing or not owned by the user', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([expenseRow()]);
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+  });
+
+  it('rejects when the expense is not flagged reimbursable', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      expenseRow({ isReimbursable: false }),
+      incomeRow(),
+    ]);
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+  });
+
+  it('rejects when the "expense" side is actually an INCOME row', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      expenseRow({ type: 'INCOME' }),
+      incomeRow(),
+    ]);
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+  });
+
+  it('rejects when the "income" side is actually an EXPENSE row', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      expenseRow(),
+      incomeRow({ type: 'EXPENSE' }),
+    ]);
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+  });
+
+  it('rejects an income that is a transfer', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      expenseRow(),
+      incomeRow({ isTransfer: true }),
+    ]);
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+  });
+
+  it('rejects an income that is a card payment', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      expenseRow(),
+      incomeRow({ isPayment: true }),
+    ]);
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 10,
+      }),
+    ).rejects.toThrow(ServiceValidationError);
+  });
+
+  it('rejects an amount exceeding the income remaining capacity', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([expenseRow(), incomeRow({ amount: 50 })]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([{ amount: 30 }]);
+    prismaMock.transaction.findFirstOrThrow.mockResolvedValue({ amount: 50 });
+
+    await expect(
+      createReimbursementLink('user-1', {
+        expenseTransactionId: 'exp-1',
+        incomeTransactionId: 'inc-1',
+        amount: 30,
+      }),
+    ).rejects.toThrow(ReimbursementConflictError);
+    expect(prismaMock.reimbursementLink.upsert).not.toHaveBeenCalled();
+  });
+
+  it('allows an amount exactly at the remaining capacity', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([expenseRow(), incomeRow({ amount: 50 })]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([{ amount: 30 }]);
+    prismaMock.transaction.findFirstOrThrow.mockResolvedValue({ amount: 50 });
+    prismaMock.transaction.findFirst.mockResolvedValue(detailInclude());
+
+    await createReimbursementLink('user-1', {
+      expenseTransactionId: 'exp-1',
+      incomeTransactionId: 'inc-1',
+      amount: 20,
+    });
+
+    expect(prismaMock.reimbursementLink.upsert).toHaveBeenCalled();
+  });
+
+  it('recomputes capacity for a repeat link on the same pair, excluding that pair itself', async () => {
+    // income fully allocated (50/50) entirely by its link to this same expense;
+    // re-submitting the same amount for the same pair must not double-count it
+    prismaMock.transaction.findMany.mockResolvedValue([expenseRow(), incomeRow({ amount: 50 })]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([]); // "other" links excludes this pair
+    prismaMock.transaction.findFirstOrThrow.mockResolvedValue({ amount: 50 });
+    prismaMock.transaction.findFirst.mockResolvedValue(detailInclude());
+
+    await createReimbursementLink('user-1', {
+      expenseTransactionId: 'exp-1',
+      incomeTransactionId: 'inc-1',
+      amount: 50,
+    });
+
+    expect(prismaMock.reimbursementLink.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { incomeTransactionId: 'inc-1', NOT: { expenseTransactionId: 'exp-1' } },
+      }),
+    );
+    expect(prismaMock.reimbursementLink.upsert).toHaveBeenCalled();
+  });
+});
+
+describe('updateReimbursementLink', () => {
+  it('updates the amount within capacity and returns the recomputed summary', async () => {
+    prismaMock.reimbursementLink.findFirst.mockResolvedValue({
+      expenseTransactionId: 'exp-1',
+      incomeTransactionId: 'inc-1',
+    });
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findFirstOrThrow.mockResolvedValue({ amount: 100 });
+    prismaMock.transaction.findFirst.mockResolvedValue({
+      id: 'exp-1',
+      amount: 100,
+      isReimbursable: true,
+      reimbursementExpectedAmount: 100,
+      reimbursementCompletedAt: null,
+      reimbursementExpenseLinks: [],
+    });
+
+    await updateReimbursementLink('user-1', 'link-1', { amount: 60 });
+
+    expect(prismaMock.reimbursementLink.update).toHaveBeenCalledWith({
+      where: { id: 'link-1' },
+      data: { amount: 60 },
+    });
+  });
+
+  it('throws when the link does not belong to the user', async () => {
+    prismaMock.reimbursementLink.findFirst.mockResolvedValue(null);
+
+    await expect(updateReimbursementLink('user-1', 'link-x', { amount: 10 })).rejects.toThrow(
+      ServiceValidationError,
+    );
+    expect(prismaMock.reimbursementLink.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects raising the amount past the income remaining capacity, excluding this link', async () => {
+    prismaMock.reimbursementLink.findFirst.mockResolvedValue({
+      expenseTransactionId: 'exp-1',
+      incomeTransactionId: 'inc-1',
+    });
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([{ amount: 60 }]);
+    prismaMock.transaction.findFirstOrThrow.mockResolvedValue({ amount: 100 });
+
+    await expect(updateReimbursementLink('user-1', 'link-1', { amount: 50 })).rejects.toThrow(
+      ReimbursementConflictError,
+    );
+    expect(prismaMock.reimbursementLink.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteReimbursementLink', () => {
+  it('deletes the link and returns the recomputed summary', async () => {
+    prismaMock.reimbursementLink.findFirst.mockResolvedValue({ expenseTransactionId: 'exp-1' });
+    prismaMock.transaction.findFirst.mockResolvedValue({
+      id: 'exp-1',
+      amount: 100,
+      isReimbursable: true,
+      reimbursementExpectedAmount: 100,
+      reimbursementCompletedAt: null,
+      reimbursementExpenseLinks: [],
+    });
+
+    const result = await deleteReimbursementLink('user-1', 'link-1');
+
+    expect(prismaMock.reimbursementLink.delete).toHaveBeenCalledWith({ where: { id: 'link-1' } });
+    expect(result.status).toBe('PENDING');
+  });
+
+  it('throws when the link does not belong to the user', async () => {
+    prismaMock.reimbursementLink.findFirst.mockResolvedValue(null);
+
+    await expect(deleteReimbursementLink('user-1', 'link-x')).rejects.toThrow(
+      ServiceValidationError,
+    );
+    expect(prismaMock.reimbursementLink.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('getExpenseReimbursement', () => {
+  it('throws for a missing or unowned expense', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(null);
+
+    await expect(getExpenseReimbursement('user-1', 'exp-x')).rejects.toThrow(
+      ServiceValidationError,
+    );
+  });
+
+  it('sorts links by income date, then createdAt', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue({
+      id: 'exp-1',
+      amount: 100,
+      isReimbursable: true,
+      reimbursementExpectedAmount: 100,
+      reimbursementCompletedAt: null,
+      reimbursementExpenseLinks: [
+        {
+          id: 'link-b',
+          incomeTransactionId: 'inc-b',
+          amount: 20,
+          createdAt: new Date('2026-01-02'),
+          income: {
+            id: 'inc-b',
+            date: new Date('2026-01-01'),
+            amount: 20,
+            payee: 'B',
+            accountId: 'acc-1',
+            account: { name: 'Checking' },
+          },
+        },
+        {
+          id: 'link-a',
+          incomeTransactionId: 'inc-a',
+          amount: 20,
+          createdAt: new Date('2026-01-01'),
+          income: {
+            id: 'inc-a',
+            date: new Date('2025-12-31'),
+            amount: 20,
+            payee: 'A',
+            accountId: 'acc-1',
+            account: { name: 'Checking' },
+          },
+        },
+      ],
+    });
+
+    const result = await getExpenseReimbursement('user-1', 'exp-1');
+
+    expect(result.links.map((l) => l.id)).toEqual(['link-a', 'link-b']);
+  });
+});
+
+describe('listReimbursementCandidates', () => {
+  const expenseDetail = (overrides: Record<string, unknown> = {}) => ({
+    id: 'exp-1',
+    date: new Date('2026-03-01'),
+    payee: 'Office supplies',
+    note: null,
+    amount: 100,
+    isReimbursable: true,
+    reimbursementExpectedAmount: 100,
+    reimbursementCompletedAt: null,
+    reimbursementExpenseLinks: [],
+    ...overrides,
+  });
+
+  it('throws for a missing or unowned expense', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(null);
+
+    await expect(listReimbursementCandidates('user-1', 'exp-x')).rejects.toThrow(
+      ServiceValidationError,
+    );
+  });
+
+  it('excludes a fully-allocated income and ranks an exact match highest', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'inc-far',
+        date: new Date('2026-04-15'),
+        amount: 100,
+        payee: 'Refund',
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        reimbursementIncomeLinks: [],
+      },
+      {
+        id: 'inc-full',
+        date: new Date('2026-03-02'),
+        amount: 100,
+        payee: 'Fully allocated',
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        reimbursementIncomeLinks: [{ amount: 100 }],
+      },
+      {
+        id: 'inc-exact',
+        date: new Date('2026-03-02'),
+        amount: 100,
+        payee: 'Reimbursement',
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        reimbursementIncomeLinks: [],
+      },
+    ]);
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(result.map((c) => c.transactionId)).not.toContain('inc-full');
+    expect(result[0].transactionId).toBe('inc-exact');
+    expect(result[0].suggestedAmount).toBe('100.00');
+  });
+
+  it('only counts an income once it has been reduced by its OTHER links', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'inc-1',
+        date: new Date('2026-03-02'),
+        amount: 100,
+        payee: 'Partially allocated',
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        reimbursementIncomeLinks: [{ amount: 60 }],
+      },
+    ]);
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(result[0].availableAmount).toBe('40.00');
+  });
+
+  it('respects a limit option', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue(
+      Array.from({ length: 5 }, (_, i) => ({
+        id: `inc-${i}`,
+        date: new Date('2026-03-02'),
+        amount: 100,
+        payee: `Income ${i}`,
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        reimbursementIncomeLinks: [],
+      })),
+    );
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1', { limit: 2 });
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('constrains the default (no-search) pool to income dated on/after the expense', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ date: { gte: expenseDetail().date } }),
+      }),
+    );
+  });
+
+  it('drops the date constraint when a search term is supplied', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await listReimbursementCandidates('user-1', 'exp-1', { search: 'refund' });
+
+    const where = prismaMock.transaction.findMany.mock.calls[0][0].where;
+    expect(where.date).toBeUndefined();
+    expect(where.payee).toEqual({ contains: 'refund', mode: 'insensitive' });
+  });
+});
+
+describe('getPendingReimbursementSummary', () => {
+  it('returns a zero summary when nothing is reimbursable', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    const result = await getPendingReimbursementSummary('user-1');
+
+    expect(result).toEqual({ pendingTotal: '0.00', pendingCount: 0 });
+    expect(prismaMock.reimbursementLink.groupBy).not.toHaveBeenCalled();
+  });
+
+  it('sums outstanding amounts across multiple pending/partial expenses', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { id: 'exp-1', reimbursementExpectedAmount: 100 },
+      { id: 'exp-2', reimbursementExpectedAmount: 50 },
+    ]);
+    prismaMock.reimbursementLink.groupBy.mockResolvedValue([
+      { expenseTransactionId: 'exp-1', _sum: { amount: 40 } },
+      { expenseTransactionId: 'exp-2', _sum: { amount: 35 } },
+    ]);
+
+    const result = await getPendingReimbursementSummary('user-1');
+
+    expect(result).toEqual({ pendingTotal: '75.00', pendingCount: 2 });
+  });
+
+  it('excludes an expense whose outstanding amount has reached zero (overshoot)', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { id: 'exp-1', reimbursementExpectedAmount: 50 },
+    ]);
+    prismaMock.reimbursementLink.groupBy.mockResolvedValue([
+      { expenseTransactionId: 'exp-1', _sum: { amount: 80 } },
+    ]);
+
+    const result = await getPendingReimbursementSummary('user-1');
+
+    expect(result).toEqual({ pendingTotal: '0.00', pendingCount: 0 });
+  });
+});
+
+describe('assertNoActiveLinks', () => {
+  it('does nothing for an empty id list, without querying', async () => {
+    await assertNoActiveLinks('user-1', [], 'blocked');
+
+    expect(prismaMock.reimbursementLink.count).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when none of the ids have an active link', async () => {
+    prismaMock.reimbursementLink.count.mockResolvedValue(0);
+
+    await expect(assertNoActiveLinks('user-1', ['tx-1'], 'blocked')).resolves.toBeUndefined();
+  });
+
+  it('throws the given message when a transaction has a link as the expense side', async () => {
+    prismaMock.reimbursementLink.count.mockResolvedValue(1);
+
+    await expect(assertNoActiveLinks('user-1', ['tx-1'], 'blocked: expense')).rejects.toThrow(
+      'blocked: expense',
+    );
+  });
+
+  it('throws when a transaction has a link as the income side', async () => {
+    prismaMock.reimbursementLink.count.mockResolvedValue(1);
+
+    await expect(assertNoActiveLinks('user-1', ['tx-1'], 'blocked: income')).rejects.toThrow(
+      ReimbursementConflictError,
+    );
+  });
+});
+
+describe('listReimbursedAmountsByExpenseDate', () => {
+  it('maps each link to its expense date/category, independent of the link/income date', async () => {
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 25,
+        expenseTransactionId: 'exp-1',
+        expense: { categoryId: 'cat-1', date: new Date('2026-01-15') },
+      },
+    ]);
+
+    const result = await listReimbursedAmountsByExpenseDate(
+      'user-1',
+      new Date('2026-01-01'),
+      new Date('2026-02-01'),
+    );
+
+    expect(result).toEqual([
+      {
+        expenseTransactionId: 'exp-1',
+        categoryId: 'cat-1',
+        expenseDate: new Date('2026-01-15').toISOString(),
+        amount: '25.00',
+      },
+    ]);
+  });
+});

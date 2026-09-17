@@ -60,13 +60,13 @@ test.describe('mobile width', () => {
     await expect(page.locator('svg[width="132"]:not([role])')).toBeVisible();
   });
 
-  test('Overview shows the mobile category rings, not the desktop ones', async ({ page }) => {
+  test('Overview shows the mobile budget bars, not the desktop rings', async ({ page }) => {
     await login(page);
 
-    const mobileCategoryRings = page.locator('svg[width="66"]');
-    test.skip((await mobileCategoryRings.count()) === 0, 'no budgets seeded for this user');
-    await expect(page.locator('svg[width="88"]').first()).toBeHidden();
-    await expect(mobileCategoryRings.first()).toBeVisible();
+    const desktopCategoryRings = page.locator('svg[width="88"]');
+    test.skip((await desktopCategoryRings.count()) === 0, 'no budgets seeded for this user');
+    await expect(desktopCategoryRings.first()).toBeHidden();
+    await expect(page.getByRole('link', { name: 'See all' })).toBeVisible();
   });
 
   test('sidebar and bottom-nav Categorize badge state agree', async ({ page }) => {

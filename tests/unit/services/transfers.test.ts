@@ -50,7 +50,15 @@ describe('matchTransfers', () => {
 
     expect(result).toEqual({ matched: 1 });
     expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 'user-1', isTransfer: false } }),
+      expect.objectContaining({
+        where: {
+          userId: 'user-1',
+          isTransfer: false,
+          isReimbursable: false,
+          reimbursementExpenseLinks: { none: {} },
+          reimbursementIncomeLinks: { none: {} },
+        },
+      }),
     );
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(updatedIds()).toEqual(['exp-1', 'inc-1']);
@@ -130,7 +138,15 @@ describe('matchTransfers', () => {
 
     expect(await matchTransfers('user-1')).toEqual({ matched: 0 });
     expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 'user-1', isTransfer: false } }),
+      expect.objectContaining({
+        where: {
+          userId: 'user-1',
+          isTransfer: false,
+          isReimbursable: false,
+          reimbursementExpenseLinks: { none: {} },
+          reimbursementIncomeLinks: { none: {} },
+        },
+      }),
     );
   });
 
