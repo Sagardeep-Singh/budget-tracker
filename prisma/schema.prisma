@@ -24,6 +24,13 @@ enum ImportBatchStatus {
   UNDONE
 }
 
+enum ReminderCadence {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -39,6 +46,9 @@ model User {
   categoryRules      CategoryRule[]
   importBatches      ImportBatch[]
   reimbursementLinks ReimbursementLink[]
+
+  pushSubscriptions      PushSubscription[]
+  notificationPreference NotificationPreference?
 }
 
 model Account {
@@ -190,6 +200,56 @@ model Budget {
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([userId, categoryId, month])
+}
+
+/// per-user reminder settings. A row exists only once the user opts in from
+/// Settings — absence of a row means reminders are off, which is the default
+/// for every existing and new user, so no backfill migration is needed.
+model NotificationPreference {
+  id              String          @id @default(cuid())
+  userId          String          @unique
+  enabled         Boolean         @default(false)
+  cadence         ReminderCadence @default(DAILY)
+  /// UTC instant a reminder was last actually pushed; opens the window the
+  /// next tick's activity gate compares Transaction/ImportBatch activity
+  /// against, and enforces the cadence floor so a user isn't nagged twice
+  /// in one period
+  lastSentAt      DateTime?
+  /// UTC instant of the last daily tick that evaluated this row, sent or
+  /// not; bookkeeping only, makes a stalled cron visible without digging
+  /// through logs
+  lastEvaluatedAt DateTime?
+  createdAt       DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
+}
+
+/// one browser/device push registration. A user may hold several (phone,
+/// laptop, work browser) and every non-expired one receives each reminder.
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  /// push service endpoint URL; globally unique per browser registration,
+  /// so re-subscribing the same browser under a different account reassigns
+  /// the row instead of erroring
+  endpoint   String    @unique
+  /// client public key (p256dh) from the browser subscription, base64url
+  p256dh     String
+  /// client auth secret from the browser subscription, base64url
+  auth       String
+  /// user-agent at subscribe time, so Settings can label the device
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  /// set when the push service returned 404/410 for this endpoint; kept
+  /// rather than deleted so Settings can show the device as expired
+  disabledAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, disabledAt])
 }
 
 /// ordered keyword rule for auto-categorization: lower priority value wins

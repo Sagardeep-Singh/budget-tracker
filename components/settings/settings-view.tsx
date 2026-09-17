@@ -1,8 +1,11 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { cn } from '@/lib/cn';
 import { ChangePasswordForm } from '@/components/settings/change-password-form';
+import { RemindersSection } from '@/components/settings/reminders-section';
+import { pillGroup, pillOption } from '@/components/settings/pills';
+import type { FrontendReminderPreference } from '@/lib/services/reminders';
+import type { FrontendPushSubscription } from '@/lib/services/pushSubscriptions';
 import {
   APPEARANCES,
   PALETTES,
@@ -23,19 +26,18 @@ const APPEARANCE_LABELS: Record<Appearance, string> = {
   dark: 'Dark',
 };
 
-const pillGroup = 'flex flex-wrap justify-end gap-1.5';
-const pillOption = (active: boolean): string =>
-  cn(
-    'rounded-full border px-3.5 py-2 text-[13px] font-medium',
-    active ? 'bg-iris border-iris text-paper-raised' : 'border-line text-ink',
-  );
-
 export const SettingsView = ({
   email,
   hasPassword,
+  remindersAvailable,
+  reminderPreference,
+  pushDevices,
 }: {
   email: string;
   hasPassword: boolean;
+  remindersAvailable: boolean;
+  reminderPreference: FrontendReminderPreference;
+  pushDevices: FrontendPushSubscription[];
 }): React.ReactElement => {
   const palette = useSyncExternalStore(
     subscribeToPreferences,
@@ -104,6 +106,12 @@ export const SettingsView = ({
           </div>
         </div>
       </div>
+
+      <RemindersSection
+        available={remindersAvailable}
+        preference={reminderPreference}
+        devices={pushDevices}
+      />
 
       <div className="border-line bg-paper-raised rounded-2xl border p-5">
         <h2 className="font-display text-[15px] font-semibold">Change password</h2>
