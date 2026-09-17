@@ -136,6 +136,58 @@ mean a deleted user's other devices keep working for up to a minute, which
 contradicts the atomic hard-delete guarantee that is the point of the feature. One
 indexed primary-key lookup per `auth()` call is the accepted cost.
 
+### 7. A Google-only account needs its own live re-authentication factor for deletion — type-to-confirm alone is not enough
+
+Gap in the original spec, closed here: decision 5's step 3 treated `passwordHash ===
+null` (Google-only) as "skip; type-to-confirm is the sole factor." That is not an
+authentication factor at all — the confirm-email input's own label reads `Type
+{email} to confirm` (§ UI spec below), so the value being "verified" is printed right
+next to the field. For a credentials user, `currentPassword` is live proof they still
+hold the secret, independent of the browser session being authenticated. A Google-only
+user has no equivalent: anyone at an unlocked, already-signed-in browser tab can delete
+the account with zero secret knowledge. This is asymmetric in a way that matters most
+precisely for the most destructive action in the app.
+
+**Fix: reuse the identity provider as the second factor.** Google-only deletion
+requires a **fresh, interactive Google OAuth round-trip** completed immediately before
+the delete request — the same shape of guarantee `currentPassword` gives credentials
+users ("prove it again, right now"), just via the provider that already vouches for
+this account instead of a password that was never set.
+
+**Mechanism:**
+
+- `signIn('google', { redirectTo: '/settings' }, { prompt: 'login' })` — the third
+  argument is NextAuth v5's `authorizationParams` (`node_modules/next-auth/index.d.ts`
+  confirms `signIn` accepts `authorizationParams?: string[][] | Record<string, string>
+| string | URLSearchParams` as a third positional argument). `prompt: 'login'` forces
+  Google to re-show its authentication screen even when Google's own IdP session
+  cookie is still active — `select_account` alone would not do this, since it only
+  offers an account picker and can silently reuse an existing Google session with no
+  credential re-entry. `prompt: 'login'` is the minimum that makes this a real "prove
+  you still control this account" step rather than a no-op redirect.
+- The existing `jwt` callback in `lib/auth/config.ts` already branches on
+  `account?.provider === 'google'` on every completed Google sign-in (verified: this
+  runs regardless of whether the user already existed, since `account` is populated by
+  NextAuth whenever an OAuth handshake just completed — not only on first-ever
+  sign-in). Add one line there: `token.reauthenticatedAt = Date.now()` inside that
+  branch. No new callback, no new branch condition — just one extra assignment on a
+  code path that already runs on every Google sign-in, including this re-auth one.
+- Expose it to the server: add `session.user.reauthenticatedAt = (token.reauthenticatedAt as number | undefined) ?? null`
+  in the `session` callback.
+- **The window is 5 minutes**, matching the general "prove it again, recently"
+  convention (e.g. GitHub's sudo-mode-style re-auth windows) and long enough to cover
+  the OAuth redirect round-trip plus the user reading the confirm copy and typing their
+  email, without staying valid long enough to become a standing bypass.
+- **The server, never the client, is the authority on freshness.** The DELETE route
+  reads `session.user.reauthenticatedAt` from the request's own session — not from
+  anything the client POSTs — and re-checks the 5-minute window at request time. A
+  client-supplied "I reauthenticated" flag would be trivially spoofable; deriving it
+  from the signed JWT is not.
+- Scope note: `reauthenticatedAt` is a narrow claim read by exactly one check (account
+  deletion for a passwordless user). It is not a general "sudo mode" — no other route
+  reads it in this pass, and extending it to gate other destructive actions later is a
+  separate, explicitly-scoped task.
+
 ---
 
 ## Export / import envelope
@@ -147,9 +199,9 @@ That round-trip is a stated acceptance criterion.
 ### Envelope
 
 | field           | type                | notes                                                                                                  |
-| --------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| --------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
 | `formatVersion` | number, literal `1` | version gate; import rejects anything else with "This file was made by a different version of Ledger." |
-| `exportedAt`    | ISO-8601 UTC string | metadata only, ignored on import                                                                      |
+| `exportedAt`    | ISO-8601 UTC string | metadata only, ignored on import                                                                       |
 | `user.email`    | string              | read-only metadata, ignored on import                                                                  |
 | `user.name`     | string or null      | read-only metadata, ignored on import                                                                  |
 | `data`          | object              | the 7 model arrays below                                                                               |
@@ -242,32 +294,33 @@ history and the correct behavior.
 
 ### New
 
-| Path                                          | Purpose                                                                                                                                                                                                  |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/validators/user-data.ts`                 | `userDataFileSchema` (envelope + 7 model arrays + cross-reference/uniqueness/invariant refinements), `MAX_IMPORT_BYTES`, `MAX_IMPORT_RECORDS`, `USER_DATA_FORMAT_VERSION`, exported `UserDataFile` type. |
-| `lib/validators/account-deletion.ts`          | `deleteAccountSchema`: `confirmEmail` (required, non-empty) + `currentPassword` (optional string).                                                                                                       |
-| `lib/services/userData.ts`                    | `exportUserData`, `importUserData`, and the shared internal `wipeUserData(tx, userId)` helper used by both import and deletion.                                                                          |
-| `lib/services/accountDeletion.ts`             | `deleteUserAccount` — re-auth checks then ordered deletes + `user.delete`.                                                                                                                               |
-| `app/api/settings/export/route.ts`            | `GET`, returns the file as an attachment.                                                                                                                                                                |
-| `app/api/settings/import/route.ts`            | `POST`, byte cap → parse → validate → import.                                                                                                                                                            |
-| `app/api/settings/account/route.ts`           | `DELETE`, re-auth → delete.                                                                                                                                                                              |
-| `components/settings/export-data-card.tsx`    | Client card: description + download button. **Fetch + blob download** (not a plain `<a href>`), with loading/error/success states — see "UI component spec" § 1 below; that section is the authority on the exact mechanism, not this row. |
-| `components/settings/import-data-card.tsx`    | Client card: file picker, client-side size precheck, destructive confirm via the existing `components/ui/confirm-dialog.tsx`, upload, error/success banner. See "UI component spec" § 2.                 |
+| Path                                          | Purpose                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/validators/user-data.ts`                 | `userDataFileSchema` (envelope + 7 model arrays + cross-reference/uniqueness/invariant refinements), `MAX_IMPORT_BYTES`, `MAX_IMPORT_RECORDS`, `USER_DATA_FORMAT_VERSION`, exported `UserDataFile` type.                                                                                  |
+| `lib/validators/account-deletion.ts`          | `deleteAccountSchema`: `confirmEmail` (required, non-empty) + `currentPassword` (optional string).                                                                                                                                                                                        |
+| `lib/services/userData.ts`                    | `exportUserData`, `importUserData`, and the shared internal `wipeUserData(tx, userId)` helper used by both import and deletion.                                                                                                                                                           |
+| `lib/services/accountDeletion.ts`             | `deleteUserAccount` — re-auth checks then ordered deletes + `user.delete`.                                                                                                                                                                                                                |
+| `app/api/settings/export/route.ts`            | `GET`, returns the file as an attachment.                                                                                                                                                                                                                                                 |
+| `app/api/settings/import/route.ts`            | `POST`, byte cap → parse → validate → import.                                                                                                                                                                                                                                             |
+| `app/api/settings/account/route.ts`           | `DELETE`, re-auth → delete.                                                                                                                                                                                                                                                               |
+| `components/settings/export-data-card.tsx`    | Client card: description + download button. **Fetch + blob download** (not a plain `<a href>`), with loading/error/success states — see "UI component spec" § 1 below; that section is the authority on the exact mechanism, not this row.                                                |
+| `components/settings/import-data-card.tsx`    | Client card: file picker, client-side size precheck, destructive confirm via the existing `components/ui/confirm-dialog.tsx`, upload, error/success banner. See "UI component spec" § 2.                                                                                                  |
 | `components/settings/delete-account-card.tsx` | Client card: type-to-confirm email field, password field when `hasPassword`, destructive confirm, then calls the **`signOutAfterAccountDeletion()` server action** (not client-side `next-auth/react` `signOut()`) on success — see "UI component spec" § 3, which is the authority here. |
-| `tests/unit/services/userData.test.ts`        | Export shape, round-trip, remap correctness (incl. transfer pairs), wipe ordering.                                                                                                                       |
-| `tests/unit/services/accountDeletion.test.ts` | Re-auth failures, ordered delete, atomicity.                                                                                                                                                             |
-| `tests/unit/validators/user-data.test.ts`     | Envelope/version, every invariant, every uniqueness rule, caps.                                                                                                                                          |
-| `tests/e2e/settings-data-management.spec.ts`  | Export download, import happy path + rejection, delete-account flow + post-delete 401/redirect.                                                                                                          |
+| `tests/unit/services/userData.test.ts`        | Export shape, round-trip, remap correctness (incl. transfer pairs), wipe ordering.                                                                                                                                                                                                        |
+| `tests/unit/services/accountDeletion.test.ts` | Re-auth failures, ordered delete, atomicity.                                                                                                                                                                                                                                              |
+| `tests/unit/validators/user-data.test.ts`     | Envelope/version, every invariant, every uniqueness rule, caps.                                                                                                                                                                                                                           |
+| `tests/e2e/settings-data-management.spec.ts`  | Export download, import happy path + rejection, delete-account flow + post-delete 401/redirect.                                                                                                                                                                                           |
 
 ### Modified
 
-| Path                                    | Change                                                                                                                                               |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/auth/config.ts`                    | `jwt` callback: after the `if (user)` block, when `token.userId` is set, verify the user still exists; return `null` if not (decision 6).            |
-| `lib/auth/actions.ts`                   | Add `signOutAfterAccountDeletion` server action (`'use server'`), mirroring `signOutAfterPasswordChange`: `await signOut({ redirectTo: '/login?accountDeleted=1' })`. Used by `delete-account-card.tsx` after a 200 from `DELETE /api/settings/account`. |
-| `components/settings/settings-view.tsx` | Render the three new cards. The deletion card needs the `hasPassword` and `email` props the view already receives; pass them through.               |
-| `app/(protected)/settings/page.tsx`     | No logic change expected — it already supplies `email` and `hasPassword`, which is exactly what the new cards need. Touch only if a prop is missing. |
-| `lib/services/common.ts`                | Only if a distinct error class is wanted; default is to reuse `ServiceValidationError` (see below).                                                  |
+| Path                                        | Change                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/auth/config.ts`                        | `jwt` callback: after the `if (user)` block, when `token.userId` is set, verify the user still exists; return `null` if not (decision 6). Also, inside the existing `account?.provider === 'google'` branch, set `token.reauthenticatedAt = Date.now()` (decision 7). `session` callback: expose it as `session.user.reauthenticatedAt`.    |
+| `lib/auth/actions.ts`                       | Add `signOutAfterAccountDeletion` (mirrors `signOutAfterPasswordChange`: `await signOut({ redirectTo: '/login?accountDeleted=1' })`, used after a 200 from `DELETE /api/settings/account`) and `reauthenticateWithGoogleAction` (`await signIn('google', { redirectTo: '/settings' }, { prompt: 'login' })`, decision 7's re-auth trigger). |
+| `components/settings/settings-view.tsx`     | Render the three new cards. The deletion card needs `hasPassword`, `email`, and `googleReauthenticatedAt`; pass them through.                                                                                                                                                                                                               |
+| `app/(protected)/settings/page.tsx`         | Also read `session.user.reauthenticatedAt` and pass it to `SettingsView`/`delete-account-card.tsx` as `googleReauthenticatedAt: number \| null`, alongside the existing `email`/`hasPassword` props (decision 7).                                                                                                                           |
+| `lib/services/common.ts`                    | Add `GoogleReauthRequiredError extends Error` (decision 7) — distinct from `ServiceValidationError` so the route maps it to its own status/body and the client can render "Confirm with Google" instead of a generic field error.                                                                                                           |
+| `components/auth/google-sign-in-button.tsx` | Accept an optional `action` prop (defaulting to `signInWithGoogleAction`) so `delete-account-card.tsx` can reuse the existing button/glyph markup with `reauthenticateWithGoogleAction` instead of duplicating it. Label stays a prop, unchanged for existing call sites.                                                                   |
 
 **`prisma/schema.prisma`: unchanged. No migration.** Decision 5 exists specifically to
 avoid one. If a future reviewer prefers the `Cascade` route, that is a separate,
@@ -292,17 +345,18 @@ message rendered verbatim, exactly as `app/api/settings/password/route.ts` alrea
 
 **`lib/services/accountDeletion.ts`**
 
-- `deleteUserAccount(userId: string, input: DeleteAccountInput): Promise<{ ok: true }>`:
+- `deleteUserAccount(userId: string, input: DeleteAccountInput, googleReauthenticatedAt: number | null): Promise<{ ok: true }>` — the third parameter is read by the route from `session.user.reauthenticatedAt` (decision 7), never from the request body.
   1. Load `{ email, passwordHash }` for `userId`; missing user → `ServiceValidationError('Your session is no longer valid. Sign in again.')` (matches `changePassword`'s wording).
   2. `input.confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()` → `ServiceValidationError('The email you typed does not match your account email.')`. Universal, both auth types.
-  3. When `passwordHash !== null`: require `input.currentPassword` and `bcrypt.compare` it → `ServiceValidationError('Password is incorrect.')` on mismatch. When `passwordHash === null` (Google-only), skip; type-to-confirm is the sole factor. Reuse the `changePassword` bcrypt-verify shape.
+  3. When `passwordHash !== null`: require `input.currentPassword` and `bcrypt.compare` it → `ServiceValidationError('Password is incorrect.')` on mismatch. Reuse the `changePassword` bcrypt-verify shape.
+     When `passwordHash === null` (Google-only): require `googleReauthenticatedAt !== null && Date.now() - googleReauthenticatedAt <= GOOGLE_REAUTH_WINDOW_MS` (5 minutes) → `GoogleReauthRequiredError('Confirm your identity with Google again, then retry.')` when stale or missing. A distinct error type (not `ServiceValidationError`) so the route/UI can tell "type the email again" apart from "click the Google button again" — see route contract.
   4. One `prisma.$transaction(async (tx) => { await wipeUserData(tx, userId); await tx.user.delete({ where: { id: userId } }); }, { timeout: 30_000, maxWait: 10_000 })`.
 
 ## Route contracts
 
 - **`GET /api/settings/export`** — 401 when unauthenticated. 200 with `Content-Type: application/json`, `Content-Disposition: attachment; filename="ledger-data-<YYYY-MM-DD>.json"`, body `JSON.stringify(file, null, 2)`. Modeled on the existing `app/api/rules/export/route.ts`. `export const maxDuration = 60`.
 - **`POST /api/settings/import`** — 401 when unauthenticated. Read `Content-Length`; if present and > `MAX_IMPORT_BYTES` → 413. `const text = await request.text()`; re-check byte length → 413. `JSON.parse` in a try/catch → 400 "That file isn't valid JSON." `userDataFileSchema.safeParse` → 400 with `parsed.error.issues[0].message` (single string, matching the password route's comment and the client's verbatim rendering). Then `importUserData`; `ServiceValidationError` → 400, otherwise rethrow. 200 `{ ok: true, counts }`. `export const maxDuration = 60`.
-- **`DELETE /api/settings/account`** — 401 when unauthenticated. `deleteAccountSchema.safeParse(await request.json())` → 400. `deleteUserAccount` → 200 `{ ok: true }`; `ServiceValidationError` → 400. No business logic in the handler.
+- **`DELETE /api/settings/account`** — 401 when unauthenticated. `deleteAccountSchema.safeParse(await request.json())` → 400. Read `session.user.reauthenticatedAt` from the session (never from the request body — decision 7) and pass it as `deleteUserAccount`'s third argument. `deleteUserAccount` → 200 `{ ok: true }`; `ServiceValidationError` → 400; `GoogleReauthRequiredError` → 428 (Precondition Required — the closest standard status for "prove your identity again before I'll process this") with `{ error: string, requiresGoogleReauth: true }` so the client branches on `requiresGoogleReauth` rather than string-matching the message. No business logic in the handler.
 
 ---
 
@@ -401,7 +455,7 @@ icon `Upload`) → `ConfirmDialog` → an always-mounted `role="status"` region 
 
 ```ts
 type ImportStatus = 'idle' | 'uploading' | 'success' | 'error';
-const [file, setFile] = useState<File | null>(null);       // null = "empty" state
+const [file, setFile] = useState<File | null>(null); // null = "empty" state
 const [confirmOpen, setConfirmOpen] = useState(false);
 const [status, setStatus] = useState<ImportStatus>('idle');
 const [message, setMessage] = useState<string | null>(null); // error or success copy
@@ -423,7 +477,7 @@ const [message, setMessage] = useState<string | null>(null); // error or success
    - `413` → `` `That file is larger than the ${MAX_IMPORT_BYTES / (1024 * 1024)} MB import limit.` `` (derived from the constant, not a hardcoded "10").
    - `400` → parse body, `typeof body?.error === 'string' ? body.error : "That file couldn't be imported. Check that it's an unedited Ledger export and try again."` (the `body.error` string is service/validator-owned — e.g. `"This file was made by a different version of Ledger."` or a Zod issue message — render it verbatim, do not restate or rephrase it client-side).
    - anything else (`500`) → `'Something went wrong on our end. Try again.'`
-   `setStatus('error')`, keep `file` selected (so the user doesn't have to re-pick to retry the same file after fixing something server-side, though in practice a rejected file usually needs editing outside the app).
+     `setStatus('error')`, keep `file` selected (so the user doesn't have to re-pick to retry the same file after fixing something server-side, though in practice a rejected file usually needs editing outside the app).
 9. `200 { ok: true, counts }` → `setConfirmOpen(false); setStatus('success')`, build the message from `counts`, e.g. `"Import complete — replaced your data with 12 accounts, 340 transactions, 8 categories, 5 budgets, 3 rules, 2 import batches, 1 reimbursement link."` Reset the file input (`inputRef.current.value = ''`, `setFile(null)`) so a stale selection can't be re-submitted. **Call `router.refresh()`** (from `next/navigation`, already the codebase's post-mutation pattern — see `docs/feature-plans/confirm-dialogs.md`'s call-site description) so every other server-rendered surface (dashboard, accounts, transactions, budgets — all now showing deleted-then-replaced data) picks up the new state on next navigation. This is not optional: full-replace invalidates the whole app's server-rendered data, not just this card.
 
 **Interaction states:**
@@ -453,23 +507,31 @@ const [message, setMessage] = useState<string | null>(null); // error or success
 **Component tree:** card div, `border-rose/40` instead of `border-line` and an
 `<h2>` in `text-rose` (reusing `Button`'s own danger-variant tokens — `border-rose/40
 text-rose` — rather than inventing a new destructive-card token) → description `<p>`
-naming what gets deleted → `Label`+`Input` "Type `{email}` to confirm" → conditionally
-(`hasPassword`) `Label`+`Input type="password"` "Password" → `Button` "Delete account"
-(`variant="danger"`, icon `Trash2`) → `ConfirmDialog` → `role="alert"` error region.
+naming what gets deleted → `Label`+`Input` "Type `{email}` to confirm" → **either**
+(`hasPassword`) `Label`+`Input type="password"` "Password" **or** (`!hasPassword`, decision 7) a `GoogleSignInButton`-derived "Confirm identity with Google" button plus a
+freshness line → `Button` "Delete account" (`variant="danger"`, icon `Trash2`) →
+`ConfirmDialog` → `role="alert"` error region.
 
 **Props:**
 
 ```ts
-{ email: string; hasPassword: boolean }
+{
+  email: string;
+  hasPassword: boolean;
+  googleReauthenticatedAt: number | null;
+}
 ```
 
-Both already flow from `app/(protected)/settings/page.tsx` → `SettingsView` → this
-card; no new data fetch.
+All three already flow from `app/(protected)/settings/page.tsx` → `SettingsView` →
+this card; no new data fetch. `googleReauthenticatedAt` is only meaningful when
+`!hasPassword` — ignored otherwise.
 
 **State:**
 
 ```ts
 type DeleteStatus = 'idle' | 'submitting' | 'error';
+const GOOGLE_REAUTH_WINDOW_MS = 5 * 60 * 1000; // mirrors the server's window (decision 7)
+
 const [confirmEmailInput, setConfirmEmailInput] = useState('');
 const [password, setPassword] = useState('');
 const [confirmOpen, setConfirmOpen] = useState(false);
@@ -477,37 +539,98 @@ const [status, setStatus] = useState<DeleteStatus>('idle');
 const [error, setError] = useState<string | null>(null);
 
 const emailMatches = confirmEmailInput.trim().toLowerCase() === email.toLowerCase();
-const canSubmit = emailMatches && (!hasPassword || password.length > 0);
+const googleReauthFresh =
+  !hasPassword &&
+  googleReauthenticatedAt !== null &&
+  Date.now() - googleReauthenticatedAt < GOOGLE_REAUTH_WINDOW_MS;
+const canSubmit = emailMatches && (hasPassword ? password.length > 0 : googleReauthFresh);
 ```
 
 The `.trim().toLowerCase()` compare mirrors the server-side check in
 `deleteUserAccount` exactly (same normalization on both sides) — the client gate is a
-UX convenience, the server is the actual authority.
+UX convenience, the server is the actual authority. Likewise `googleReauthFresh` is a
+UX convenience only: the server independently re-derives and re-checks freshness from
+the session at request time (decision 7), so a stale client-side clock can only ever
+make the button _too_ conservative, never too permissive.
 
 **Flow:**
 
-1. **Empty/idle:** both fields empty, "Delete account" disabled (`disabled={!canSubmit}`).
-2. Typing in either field updates `canSubmit` live; no submit is possible until it's `true`. Wrap the fields in a `<form onSubmit>` that calls `event.preventDefault()` and re-checks `canSubmit` before opening the dialog — a defense-in-depth against a browser's implicit-submit-on-Enter path, on top of the disabled button.
-3. Click "Delete account" (enabled) → `setConfirmOpen(true)`. This is the **second** gate, on top of type-to-confirm — matches the plan's "Destructive confirm, then..." sequencing; do not skip straight to the request.
-4. `ConfirmDialog`: `title="Delete your account?"`, `description="This permanently deletes your account, accounts, transactions, budgets, categories, rules, and reimbursement history. This cannot be undone."`, `confirmLabel="Delete account"`, `danger`, `pending={status === 'submitting'}`, `onCancel={() => setConfirmOpen(false)}`.
-5. `onConfirm`: `setStatus('submitting')`. `fetch('/api/settings/account', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ confirmEmail: confirmEmailInput, currentPassword: hasPassword ? password : undefined }) })`.
-6. Network throw → `setConfirmOpen(false); setStatus('error'); setError('Could not reach the server. Check your connection and try again.')`.
-7. Non-200 → `setConfirmOpen(false)`, parse body, render `body.error` **verbatim** (these are the exact, final strings from `deleteUserAccount` — do not paraphrase client-side):
-   - `"The email you typed does not match your account email."` — user-actionable: re-type the email exactly.
-   - `"Password is incorrect."` — user-actionable: clear the password field (`setPassword('')`) so they retype rather than resubmit a wrong value; keep `confirmEmailInput` as-is.
-   - `"Your session is no longer valid. Sign in again."` — not actionable in-place; this means the session/user record is already gone. Show it in the same banner; the next navigation will hit the `jwt`-callback guard and redirect to `/login` on its own, no extra client redirect logic needed.
-   `setStatus('error')`.
-8. `200 { ok: true }` → do **not** touch local state further (the page is about to navigate away). Call the new server action **`signOutAfterAccountDeletion()`** (added to `lib/auth/actions.ts`, mirroring `signOutAfterPasswordChange`: `await signOut({ redirectTo: '/login?accountDeleted=1' })`). Await it **outside any try/catch** — same reason as `change-password-form.tsx`'s existing comment: it's a redirect-throwing server action, and catching it would swallow the redirect and strand the user on a page whose account no longer exists. This reuses the real established pattern in this codebase; it deliberately does **not** use `next-auth/react`'s client-side `signOut()`, which has zero precedent anywhere in this repo — the server action already satisfies the underlying reason ("drop the cookie without waiting on the `jwt`-callback check") because server actions, unlike Server Components, can mutate cookies directly.
+1. **Empty/idle:** confirm-email field empty; for `hasPassword` the password field is
+   also empty; for `!hasPassword` the Google button is shown, unclicked or its last
+   click has aged out. "Delete account" disabled (`disabled={!canSubmit}`).
+2. Typing in the confirm-email (and, when present, password) field updates `canSubmit`
+   live; no submit is possible until it's `true`. Wrap the fields in a `<form
+onSubmit>` that calls `event.preventDefault()` and re-checks `canSubmit` before
+   opening the dialog — defense-in-depth against a browser's implicit-submit-on-Enter
+   path, on top of the disabled button.
+   2a. **`!hasPassword` only — the Google re-auth sub-step:** render the "Confirm identity
+   with Google" button (a `<form action={reauthenticateWithGoogleAction}>` wrapping the
+   shared glyph/button, matching `GoogleSignInButton`'s existing markup) whenever
+   `!googleReauthFresh`. Clicking it navigates away to Google and back — this is a full
+   page round-trip via the server action, not a fetch, so there is no local pending
+   state to manage here; the component simply re-renders with a fresh
+   `googleReauthenticatedAt` prop after the server redirects back to `/settings`. Once
+   `googleReauthFresh` is true, replace the button with a short confirmation line
+   ("Confirmed with Google — you have 5 minutes to finish deleting your account.") and
+   keep it available to re-trigger (still rendered, not hidden) in case the window
+   lapses before the user finishes the rest of the form.
+3. Click "Delete account" (enabled) → `setConfirmOpen(true)`. This is the **second**
+   gate, on top of type-to-confirm/Google-confirm — matches the plan's "Destructive
+   confirm, then..." sequencing; do not skip straight to the request.
+4. `ConfirmDialog`: `title="Delete your account?"`, `description="This permanently
+deletes your account, accounts, transactions, budgets, categories, rules, and
+reimbursement history. This cannot be undone."`, `confirmLabel="Delete account"`,
+   `danger`, `pending={status === 'submitting'}`, `onCancel={() =>
+setConfirmOpen(false)}`.
+5. `onConfirm`: `setStatus('submitting')`. `fetch('/api/settings/account', { method:
+'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+confirmEmail: confirmEmailInput, currentPassword: hasPassword ? password :
+undefined }) })`. No Google-reauth field is sent — the server reads
+   `session.user.reauthenticatedAt` itself (decision 7); the request body only ever
+   carries what the _user_ typed.
+6. Network throw → `setConfirmOpen(false); setStatus('error'); setError('Could not
+reach the server. Check your connection and try again.')`.
+7. Non-200 → `setConfirmOpen(false)`, parse body:
+   - **`428` with `{ error, requiresGoogleReauth: true }`** (the Google-reauth window
+     lapsed between page load and submit — the one failure mode unique to the
+     passwordless path): render `body.error` and, since the button already re-renders
+     on `googleReauthFresh` alone, no separate handling is needed beyond showing the
+     message — the "Confirm identity with Google" button is already back in view
+     because `googleReauthFresh` is now false.
+   - Otherwise render `body.error` **verbatim** (these are the exact, final strings from
+     `deleteUserAccount` — do not paraphrase client-side):
+     - `"The email you typed does not match your account email."` — user-actionable: re-type the email exactly.
+     - `"Password is incorrect."` — user-actionable: clear the password field (`setPassword('')`) so they retype rather than resubmit a wrong value; keep `confirmEmailInput` as-is.
+     - `"Your session is no longer valid. Sign in again."` — not actionable in-place; this means the session/user record is already gone. Show it in the same banner; the next navigation will hit the `jwt`-callback guard and redirect to `/login` on its own, no extra client redirect logic needed.
+       `setStatus('error')`.
+8. `200 { ok: true }` → do **not** touch local state further (the page is about to
+   navigate away). Call the server action **`signOutAfterAccountDeletion()`** (added to
+   `lib/auth/actions.ts`, mirroring `signOutAfterPasswordChange`: `await signOut({
+redirectTo: '/login?accountDeleted=1' })`). Await it **outside any try/catch** — same
+   reason as `change-password-form.tsx`'s existing comment: it's a redirect-throwing
+   server action, and catching it would swallow the redirect and strand the user on a
+   page whose account no longer exists. This reuses the real established pattern in
+   this codebase; it deliberately does **not** use `next-auth/react`'s client-side
+   `signOut()`, which has zero precedent anywhere in this repo — the server action
+   already satisfies the underlying reason ("drop the cookie without waiting on the
+   `jwt`-callback check") because server actions, unlike Server Components, can mutate
+   cookies directly.
 
 **Interaction states:**
 
-- Idle/empty: neither field filled, submit disabled.
+- Idle/empty: confirm-email (and, for `hasPassword`, password) unfilled; for
+  `!hasPassword`, Google not yet confirmed or confirmation aged out. Submit disabled.
+- Google-confirming (`!hasPassword` only): user is off on the Google redirect —
+  no in-card pending UI, since it's a full navigation, not a fetch.
 - Partially filled: `canSubmit` false until both conditions hold; no banner.
 - Ready: `canSubmit` true, "Delete account" enabled.
 - Confirming: `ConfirmDialog` open.
 - Submitting: dialog `pending`.
-- Error: `role="alert"` banner with the exact server message; fields retained per point 7 above (password cleared only on a wrong-password error).
-- Success: no local success state rendered — the redirect (via the server action) fires before any success banner would be seen.
+- Error: `role="alert"` banner with the exact server message; fields retained per point
+  7 above (password cleared only on a wrong-password error; for `!hasPassword`, a `428`
+  simply leaves the now-unfresh Google button visible again).
+- Success: no local success state rendered — the redirect (via the server action) fires
+  before any success banner would be seen.
 
 **Accessibility:**
 
@@ -519,8 +642,11 @@ UX convenience, the server is the actual authority.
   </p>
   ```
 - The password field (when rendered) uses `autoComplete="current-password"`, matching `change-password-form.tsx`'s existing convention.
+- The `!hasPassword` Google-confirmation line uses the same `aria-live="polite"`,
+  always-mounted idiom as the confirm-email hint above, so its text change (button →
+  "Confirmed with Google…") is announced without needing the element to freshly mount.
 - `ConfirmDialog`/`Modal` focus trap, Escape-to-cancel, and focus-return-to-invoker behavior apply here exactly as described in the import card's section above, including the same two flagged, unfixed `Modal` gaps (missing `aria-labelledby`, transparent backdrop) — not re-litigated per-component, they're a property of the shared primitive.
-- Keyboard: both `Input`s and the `Button` are natively tab-reachable and operable; the `<form onSubmit>` guard (point 2 above) means Enter in either field cannot fire a request before `canSubmit` is true, closing the one implicit-submission gap native HTML forms have around disabled buttons.
+- Keyboard: `Input`s, the Google button, and the "Delete account" `Button` are all natively tab-reachable and operable; the `<form onSubmit>` guard (point 2 above) means Enter in either field cannot fire a request before `canSubmit` is true, closing the one implicit-submission gap native HTML forms have around disabled buttons.
 
 ---
 
@@ -532,19 +658,23 @@ UX convenience, the server is the actual authority.
 - [ ] Add `lib/services/userData.ts` with `exportUserData` (deterministic ordering, explicit `select`, no `passwordHash`, no `userId` in output).
 - [ ] Add the internal `wipeUserData(tx, userId)` ordered-delete helper in `lib/services/userData.ts` (links → budgets/rules → transactions → importBatches → categories → accounts).
 - [ ] Add `importUserData` with the five-map remap (incl. the separate `transferMatchId` map) and dependency-ordered chunked `createMany` inside one `$transaction({ timeout: 60_000, maxWait: 10_000 })`.
-- [ ] Add `lib/services/accountDeletion.ts` with `deleteUserAccount` (email type-to-confirm always, bcrypt verify when `hasPassword`, then `wipeUserData` + `user.delete` in one `$transaction({ timeout: 30_000, maxWait: 10_000 })`).
+- [ ] Add `lib/services/accountDeletion.ts` with `deleteUserAccount(userId, input, googleReauthenticatedAt)` (email type-to-confirm always; bcrypt verify when `hasPassword`; when `!hasPassword`, check `googleReauthenticatedAt` against a 5-minute window and throw `GoogleReauthRequiredError` if stale/missing; then `wipeUserData` + `user.delete` in one `$transaction({ timeout: 30_000, maxWait: 10_000 })`).
 - [ ] Add `app/api/settings/export/route.ts` (GET, attachment headers, `maxDuration = 60`).
 - [ ] Add `app/api/settings/import/route.ts` (POST, `Content-Length` + `text()` byte cap → 413, JSON parse guard, Zod, service, `maxDuration = 60`).
-- [ ] Add `app/api/settings/account/route.ts` (DELETE, Zod, service).
-- [ ] Update `lib/auth/config.ts`: in the `jwt` callback, after the `if (user)` block and guarded on `token.userId`, look up the user and `return null` when missing.
-- [ ] Add `signOutAfterAccountDeletion` to `lib/auth/actions.ts` (mirrors `signOutAfterPasswordChange`, `redirectTo: '/login?accountDeleted=1'`).
+- [ ] Add `app/api/settings/account/route.ts` (DELETE, Zod, read `session.user.reauthenticatedAt` and pass it to the service, map `GoogleReauthRequiredError` → 428 `{ error, requiresGoogleReauth: true }`).
+- [ ] Update `lib/auth/config.ts`: `jwt` callback — after the `if (user)` block and guarded on `token.userId`, look up the user and `return null` when missing (decision 6); inside the existing `account?.provider === 'google'` branch, set `token.reauthenticatedAt = Date.now()` (decision 7). `session` callback — expose `session.user.reauthenticatedAt`.
+- [ ] Add `GoogleReauthRequiredError` to `lib/services/common.ts` (decision 7).
+- [ ] Add `signOutAfterAccountDeletion` and `reauthenticateWithGoogleAction` to `lib/auth/actions.ts` (mirrors `signOutAfterPasswordChange`, `redirectTo: '/login?accountDeleted=1'`; and `signIn('google', { redirectTo: '/settings' }, { prompt: 'login' })` respectively).
+- [ ] Add an optional `action` prop to `components/auth/google-sign-in-button.tsx` (defaults to `signInWithGoogleAction`) so the delete-account card can reuse it with `reauthenticateWithGoogleAction`.
 - [ ] Add `components/settings/export-data-card.tsx` (fetch+blob download, loading/error states plus an sr-only "Export downloaded." success announcement, per the UI spec).
 - [ ] Add `components/settings/import-data-card.tsx` (file picker, size precheck derived from `MAX_IMPORT_BYTES`, `ConfirmDialog`, status-keyed error mapping, always-mounted success/error live regions, `router.refresh()` on success).
-- [ ] Add `components/settings/delete-account-card.tsx` (email type-to-confirm with `aria-describedby` live hint, conditional password field, `ConfirmDialog`, `signOutAfterAccountDeletion()` on success).
-- [ ] Wire the three cards into `components/settings/settings-view.tsx`, passing `email` and `hasPassword` through.
+- [ ] Add `components/settings/delete-account-card.tsx` (email type-to-confirm with `aria-describedby` live hint; conditional password field **or** Google re-auth button + freshness line per `hasPassword`; `428`/`requiresGoogleReauth` handling; `ConfirmDialog`; `signOutAfterAccountDeletion()` on success).
+- [ ] Update `app/(protected)/settings/page.tsx` to also read and pass `session.user.reauthenticatedAt` as `googleReauthenticatedAt`.
+- [ ] Wire the three cards into `components/settings/settings-view.tsx`, passing `email`, `hasPassword`, and `googleReauthenticatedAt` through.
 - [ ] Add `tests/unit/validators/user-data.test.ts` — version mismatch, each domain invariant, each uniqueness rule, dangling FKs, record cap, negative amounts, unknown keys.
 - [ ] Add `tests/unit/services/userData.test.ts` — export omits `passwordHash`/`userId`; export→import round-trip equivalence; remap keeps transfer pairs sharing one new `transferMatchId`; reimbursement links land on the remapped transactions; wipe order; failure writes nothing. **Round-trip comparison must not be positional**: ids are regenerated, and `Budget`/`CategoryRule` have no `createdAt` to sort by, so export→import→export reorders those arrays by new UUID. Compare as multisets, or sort by natural key first — `Budget` by `(resolved category name, month)`, `CategoryRule` by `(priority, matchText)`, `Transaction` by `(date, amount, payee)`.
-- [ ] Add `tests/unit/services/accountDeletion.test.ts` — wrong email, wrong password, Google-only path (no password required), reimbursement-link `Restrict` does not block, all 7 tables empty after, user row gone.
-- [ ] Add `tests/e2e/settings-data-management.spec.ts` — export download, import confirm + success, import rejection on a bad file, delete flow, and a protected route returning 401/redirect for a since-deleted user's still-valid cookie.
+- [ ] Add `tests/unit/services/accountDeletion.test.ts` — wrong email, wrong password, Google-only path with a fresh `googleReauthenticatedAt` (succeeds, no password required), Google-only path with a stale/`null` `googleReauthenticatedAt` (throws `GoogleReauthRequiredError`, nothing written), reimbursement-link `Restrict` does not block, all 7 tables empty after a successful delete, user row gone.
+- [ ] Add a `jwt`/`session` callback unit or integration check that `reauthenticatedAt` is set only inside the `account?.provider === 'google'` branch (not on every token refresh) and correctly exposed on `session.user`.
+- [ ] Add `tests/e2e/settings-data-management.spec.ts` — export download, import confirm + success, import rejection on a bad file, delete flow for a credentials user, and a protected route returning 401/redirect for a since-deleted user's still-valid cookie. **Google-only deletion is not e2e-testable here**: there is no real Google IdP in CI (the existing `signup.spec.ts` precedent only asserts the Google button is _hidden_ when `AUTH_GOOGLE_ID` is unset — no test drives a real Google OAuth round-trip anywhere in this repo). The `googleReauthenticatedAt` window logic is covered at the unit level above instead; note this gap explicitly rather than attempting to fake it end-to-end.
 - [ ] Run `npm run format:fix && npm run lint`, `npm run test`, `npm run test:e2e`.
 </content>
