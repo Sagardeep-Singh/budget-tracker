@@ -49,9 +49,33 @@ const duplicateKey = (row: {
   return `${row.accountId}|${isoDate.slice(0, 10)}|${row.amount.toFixed(2)}|${row.payee ?? ''}`;
 };
 
-const loadExistingKeys = async (userId: string): Promise<Set<string>> => {
+/** min/max transaction date across a set of rows, used for the batch's date range */
+const dateRange = (dates: Date[]): { dateFrom: Date; dateTo: Date } => {
+  const times = dates.map((d) => d.getTime());
+  return { dateFrom: new Date(Math.min(...times)), dateTo: new Date(Math.max(...times)) };
+};
+
+const DAY_MS = 86_400_000;
+
+/**
+ * A duplicate can only exist on a date present in the submitted rows
+ * (`duplicateKey` includes the day), so the existing-rows scan is bound to
+ * that range instead of the user's entire history. Padded a day each side
+ * for timezone safety around the range's own boundary dates.
+ */
+const loadExistingKeys = async (
+  userId: string,
+  dateFrom: Date,
+  dateTo: Date,
+): Promise<Set<string>> => {
   const existing = await prisma.transaction.findMany({
-    where: { userId },
+    where: {
+      userId,
+      date: {
+        gte: new Date(dateFrom.getTime() - DAY_MS),
+        lte: new Date(dateTo.getTime() + DAY_MS),
+      },
+    },
     select: { accountId: true, date: true, amount: true, payee: true },
   });
   return new Set(
@@ -59,23 +83,20 @@ const loadExistingKeys = async (userId: string): Promise<Set<string>> => {
   );
 };
 
-/** min/max transaction date across a set of rows, used for the batch's date range */
-const dateRange = (dates: Date[]): { dateFrom: Date; dateTo: Date } => {
-  const times = dates.map((d) => d.getTime());
-  return { dateFrom: new Date(Math.min(...times)), dateTo: new Date(Math.max(...times)) };
-};
-
 export const previewImport = async (
   userId: string,
   input: PreviewImportInput,
 ): Promise<PreviewResult> => {
+  const { dateFrom: rowsDateFrom, dateTo: rowsDateTo } = dateRange(
+    input.rows.map((r) => new Date(r.date)),
+  );
   const [rules, categories, existingKeys, conflict] = await Promise.all([
     prisma.categoryRule.findMany({
       where: { userId },
       select: { categoryId: true, matchText: true, priority: true },
     }),
     prisma.category.findMany({ where: { userId }, select: { id: true, name: true } }),
-    loadExistingKeys(userId),
+    loadExistingKeys(userId, rowsDateFrom, rowsDateTo),
     findActiveBatchByFilename(userId, input.accountId, input.filename),
   ]);
 
@@ -151,12 +172,16 @@ export const commitImport = async (
     );
   }
 
+  // metrics span every *submitted* row, including excluded ones, so the preview
+  // comparison against a prior batch is like-for-like (decision 5)
+  const { dateFrom, dateTo } = dateRange(input.rows.map((r) => r.date));
+
   // Re-check against the database at commit time, not just whatever the
   // client's preview said: the preview snapshot goes stale the moment a
   // commit happens (e.g. a resubmitted/duplicated request), so trusting the
   // client-supplied `include` flag alone would let already-imported rows
   // back in.
-  const existingKeys = await loadExistingKeys(userId);
+  const existingKeys = await loadExistingKeys(userId, dateFrom, dateTo);
   const requested = input.rows.filter((r) => r.include);
   const seenInBatch = new Set<string>();
   const rowsToImport = requested.filter((row) => {
@@ -180,10 +205,6 @@ export const commitImport = async (
     // no batch created, so no filename is reserved (story 1)
     return { batchId: null, imported: 0, skippedDuplicates };
   }
-
-  // metrics span every *submitted* row, including excluded ones, so the preview
-  // comparison against a prior batch is like-for-like (decision 5)
-  const { dateFrom, dateTo } = dateRange(input.rows.map((r) => r.date));
 
   const { batchId, imported } = await prisma.$transaction(async (tx) => {
     // batch first: the transactions' foreign key requires it to exist
@@ -221,7 +242,7 @@ export const commitImport = async (
   // Best-effort: the rows are already committed, and matching can be re-run
   // from the transactions screen, so a failure here must not fail the import.
   try {
-    await matchTransfers(userId);
+    await matchTransfers(userId, { from: dateFrom, to: dateTo });
   } catch {
     // swallowed deliberately — see above
   }
