@@ -1,5 +1,9 @@
 import { prisma } from '@/lib/db/prisma';
-import { BatchAlreadyUndoneError, ServiceValidationError } from '@/lib/services/common';
+import {
+  BatchAlreadyUndoneError,
+  ReimbursementConflictError,
+  ServiceValidationError,
+} from '@/lib/services/common';
 import type { ListImportBatchesQuery } from '@/lib/validators/import-batches';
 
 export type FrontendImportBatch = {
@@ -136,6 +140,18 @@ export const undoImportBatch = async (
   }
 
   const { batch, count } = await prisma.$transaction(async (tx) => {
+    const linked = await tx.reimbursementLink.count({
+      where: {
+        userId,
+        OR: [{ expense: { importBatchId: batchId } }, { income: { importBatchId: batchId } }],
+      },
+    });
+    if (linked > 0) {
+      throw new ReimbursementConflictError(
+        'Some transactions in this import are linked to reimbursements. Remove those links before undoing it.',
+      );
+    }
+
     const deleted = await tx.transaction.deleteMany({
       where: { userId, importBatchId: batchId },
     });

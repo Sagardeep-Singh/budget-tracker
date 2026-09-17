@@ -29,3 +29,17 @@ export class BatchAlreadyUndoneError extends Error {
     this.name = 'BatchAlreadyUndoneError';
   }
 }
+
+/**
+ * A write was refused because it would violate reimbursement-link invariants
+ * (e.g. deleting a linked transaction, reducing an amount below what's linked) —
+ * a 409, not a 404. Subclasses ServiceValidationError so every existing
+ * `instanceof ServiceValidationError` check still fires; routes that need the
+ * distinct 409 status must check this subclass first.
+ */
+export class ReimbursementConflictError extends ServiceValidationError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReimbursementConflictError';
+  }
+}

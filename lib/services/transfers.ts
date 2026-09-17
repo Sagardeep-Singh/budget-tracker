@@ -35,7 +35,19 @@ const amountKey = (amount: unknown): string => Number(amount).toFixed(2);
  */
 export const matchTransfers = async (userId: string): Promise<{ matched: number }> => {
   const rows = await prisma.transaction.findMany({
-    where: { userId, isTransfer: false },
+    // A reimbursable expense or a transaction with an active reimbursement
+    // link (either side) is excluded: matchTransfers runs automatically after
+    // every CSV import, and without this guard it could silently flag a
+    // reimbursement-linked row as a transfer, violating the mutual-exclusion
+    // invariant with no user action and no error (the caller swallows
+    // failures from this function).
+    where: {
+      userId,
+      isTransfer: false,
+      isReimbursable: false,
+      reimbursementExpenseLinks: { none: {} },
+      reimbursementIncomeLinks: { none: {} },
+    },
     select: { id: true, accountId: true, amount: true, type: true, date: true },
     orderBy: { date: 'asc' },
   });

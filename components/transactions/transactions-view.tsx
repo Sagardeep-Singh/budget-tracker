@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftRight, Plus, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowLeftRight, HandCoins, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -164,6 +164,8 @@ export const TransactionsView = ({
         acc.payments += amount;
       } else if (t.isTransfer) {
         acc.transfers += amount;
+      } else if (t.isReimbursementIncome) {
+        acc.reimbursementIncome += amount;
       } else if (t.type === 'INCOME') {
         acc.credit += amount;
       } else {
@@ -171,7 +173,7 @@ export const TransactionsView = ({
       }
       return acc;
     },
-    { credit: 0, debit: 0, payments: 0, transfers: 0 },
+    { credit: 0, debit: 0, payments: 0, transfers: 0, reimbursementIncome: 0 },
   );
   const net = summary.credit - summary.debit;
 
@@ -333,6 +335,12 @@ export const TransactionsView = ({
               <Money value={summary.transfers} tone="neutral" />
             </span>
           )}
+          {summary.reimbursementIncome > 0 && (
+            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
+              <span className="text-ink-muted text-xs">Reimbursement income (excluded)</span>
+              <Money value={summary.reimbursementIncome} tone="neutral" />
+            </span>
+          )}
         </div>
       </div>
 
@@ -380,6 +388,24 @@ export const TransactionsView = ({
                           <div className="text-ink-muted mt-0.5 flex items-center gap-1 text-[11px]">
                             <Upload size={11} />
                             <span className="truncate">{t.importBatchFilename}</span>
+                          </div>
+                        )}
+                        {t.isReimbursable && (
+                          <div className="text-ink-muted mt-0.5 flex items-center gap-1 text-[11px]">
+                            <HandCoins size={11} />
+                            {t.reimbursementStatus === 'COMPLETE' ? (
+                              <span>Reimbursable · reimbursed</span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                Reimbursable ·{' '}
+                                <Money
+                                  value={t.reimbursementOutstanding}
+                                  tone="neutral"
+                                  className="text-[11px]"
+                                />{' '}
+                                pending
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

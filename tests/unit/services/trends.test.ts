@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     transaction: { findMany: vi.fn() },
+    reimbursementLink: { findMany: vi.fn() },
   },
 }));
 
@@ -12,6 +13,7 @@ const { getSpendingTrends } = await import('@/lib/services/trends');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.reimbursementLink.findMany.mockResolvedValue([]);
 });
 
 describe('getSpendingTrends', () => {
@@ -23,6 +25,7 @@ describe('getSpendingTrends', () => {
         amount: 100,
         date: new Date(Date.UTC(2026, 0, 10)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: { id: 'cat-1', name: 'Groceries' },
       },
@@ -32,6 +35,7 @@ describe('getSpendingTrends', () => {
         amount: 150,
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: { id: 'cat-1', name: 'Groceries' },
       },
@@ -40,6 +44,7 @@ describe('getSpendingTrends', () => {
         amount: 500,
         date: new Date(Date.UTC(2026, 1, 12)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: null,
       },
@@ -64,6 +69,7 @@ describe('getSpendingTrends', () => {
         amount: 60,
         date: new Date(Date.UTC(2026, 1, 5)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: { id: 'cat-1', name: 'Dining' },
       },
@@ -72,6 +78,7 @@ describe('getSpendingTrends', () => {
         amount: 400,
         date: new Date(Date.UTC(2026, 1, 5)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: true,
         category: null,
       },
@@ -80,6 +87,7 @@ describe('getSpendingTrends', () => {
         amount: 400,
         date: new Date(Date.UTC(2026, 1, 6)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: true,
         category: null,
       },
@@ -102,6 +110,7 @@ describe('getSpendingTrends', () => {
         amount: 100 - i,
         date: feb(1),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category,
       })),
@@ -134,6 +143,7 @@ describe('getSpendingTrends', () => {
         amount: 50,
         date: new Date(Date.UTC(2025, 8, 10)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: { id: 'cat-dining', name: 'Dining' },
       },
@@ -143,6 +153,7 @@ describe('getSpendingTrends', () => {
         amount: 170,
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: { id: 'cat-dining', name: 'Dining' },
       },
@@ -151,6 +162,7 @@ describe('getSpendingTrends', () => {
         amount: 40,
         date: new Date(Date.UTC(2025, 8, 15)),
         isPayment: false,
+        _count: { reimbursementIncomeLinks: 0 },
         isTransfer: false,
         category: { id: 'cat-groceries', name: 'Groceries' },
       },
@@ -164,5 +176,93 @@ describe('getSpendingTrends', () => {
       amount: -40,
       tone: 'sky',
     });
+  });
+
+  it('excludes an income transaction with an active reimbursement link from income totals', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'inc-1',
+        type: 'INCOME',
+        amount: 500,
+        date: new Date(Date.UTC(2026, 1, 10)),
+        isPayment: false,
+        isTransfer: false,
+        _count: { reimbursementIncomeLinks: 1 },
+        category: null,
+      },
+    ]);
+
+    const result = await getSpendingTrends('user-1', { month: 202602, range: 3 });
+
+    const feb = result.months.find((m) => m.month === 202602)!;
+    expect(feb.income).toBe(0);
+  });
+
+  it('nets a reimbursed expense out of the month total and category breakdown', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'exp-1',
+        type: 'EXPENSE',
+        amount: 100,
+        date: new Date(Date.UTC(2026, 1, 10)),
+        isPayment: false,
+        isTransfer: false,
+        _count: { reimbursementIncomeLinks: 0 },
+        category: { id: 'cat-1', name: 'Work' },
+      },
+    ]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 30,
+        expenseTransactionId: 'exp-1',
+        expense: { categoryId: 'cat-1', date: new Date(Date.UTC(2026, 1, 10)) },
+      },
+    ]);
+
+    const result = await getSpendingTrends('user-1', { month: 202602, range: 3 });
+
+    const feb = result.months.find((m) => m.month === 202602)!;
+    expect(feb.expense).toBe(70);
+    expect(result.headline.currentTotal).toBe('70.00');
+  });
+
+  it('ranks movers using net (post-reimbursement) amounts, not gross', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      // prior: Dining 50, no reimbursement
+      {
+        id: 'exp-prior',
+        type: 'EXPENSE',
+        amount: 50,
+        date: new Date(Date.UTC(2025, 8, 10)),
+        isPayment: false,
+        isTransfer: false,
+        _count: { reimbursementIncomeLinks: 0 },
+        category: { id: 'cat-dining', name: 'Dining' },
+      },
+      // current (Feb): Dining 170 gross, 130 reimbursed -> net 40. Gross vs.
+      // prior (50) would read as a +120 rose (spending up) mover; net vs.
+      // prior reads as -10, a sky (spending down) mover — the opposite sign.
+      {
+        id: 'exp-current',
+        type: 'EXPENSE',
+        amount: 170,
+        date: new Date(Date.UTC(2026, 1, 10)),
+        isPayment: false,
+        isTransfer: false,
+        _count: { reimbursementIncomeLinks: 0 },
+        category: { id: 'cat-dining', name: 'Dining' },
+      },
+    ]);
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 130,
+        expenseTransactionId: 'exp-current',
+        expense: { categoryId: 'cat-dining', date: new Date(Date.UTC(2026, 1, 10)) },
+      },
+    ]);
+
+    const result = await getSpendingTrends('user-1', { month: 202602, range: 3 });
+
+    expect(result.movers[0]).toMatchObject({ categoryName: 'Dining', amount: -10, tone: 'sky' });
   });
 });

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth/session';
 import { updateAccountSchema } from '@/lib/validators/accounts';
 import { deleteAccount, updateAccount } from '@/lib/services/accounts';
-import { ServiceValidationError } from '@/lib/services/common';
+import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -40,6 +40,9 @@ export const DELETE = async (_request: Request, { params }: RouteParams): Promis
     await deleteAccount(session.user.id, id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
+    if (error instanceof ReimbursementConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     if (error instanceof ServiceValidationError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }

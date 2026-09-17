@@ -19,6 +19,9 @@ const base = {
   canBePayment: false,
   isPayment: false,
   isTransfer: false,
+  canBeReimbursable: false,
+  isReimbursable: false,
+  reimbursementExpectedAmount: '',
 };
 
 describe('buildTransactionPayload', () => {
@@ -33,6 +36,8 @@ describe('buildTransactionPayload', () => {
       note: 'morning',
       isPayment: false,
       isTransfer: false,
+      isReimbursable: false,
+      reimbursementExpectedAmount: undefined,
     });
   });
 
@@ -84,5 +89,50 @@ describe('buildTransactionPayload', () => {
 
   it('carries the type from state rather than the form values', () => {
     expect(buildTransactionPayload({ ...base, type: 'INCOME' }).type).toBe('INCOME');
+  });
+
+  it('forces isReimbursable false when the type is not EXPENSE, even if the checkbox is stale', () => {
+    const payload = buildTransactionPayload({
+      ...base,
+      type: 'INCOME',
+      canBeReimbursable: false,
+      isReimbursable: true,
+      reimbursementExpectedAmount: '5.00',
+    });
+    expect(payload.isReimbursable).toBe(false);
+    expect(payload.reimbursementExpectedAmount).toBeUndefined();
+  });
+
+  it('forces isReimbursable false when isTransfer is true, even if the checkbox is stale', () => {
+    const payload = buildTransactionPayload({
+      ...base,
+      isTransfer: true,
+      canBeReimbursable: false,
+      isReimbursable: true,
+      reimbursementExpectedAmount: '5.00',
+    });
+    expect(payload.isReimbursable).toBe(false);
+    expect(payload.reimbursementExpectedAmount).toBeUndefined();
+  });
+
+  it('keeps isReimbursable true and passes the expected amount through on the happy path', () => {
+    const payload = buildTransactionPayload({
+      ...base,
+      canBeReimbursable: true,
+      isReimbursable: true,
+      reimbursementExpectedAmount: '5.00',
+    });
+    expect(payload.isReimbursable).toBe(true);
+    expect(payload.reimbursementExpectedAmount).toBe('5.00');
+  });
+
+  it('sends a blank expected amount as undefined even when reimbursable', () => {
+    const payload = buildTransactionPayload({
+      ...base,
+      canBeReimbursable: true,
+      isReimbursable: true,
+      reimbursementExpectedAmount: '',
+    });
+    expect(payload.reimbursementExpectedAmount).toBeUndefined();
   });
 });

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import { listBudgets } from '@/lib/services/budgets';
 import { getCategorizeQueueStats } from '@/lib/services/categorize';
+import { listReimbursedAmountsByExpenseDate } from '@/lib/services/reimbursements';
 import { getStatementPeriod } from '@/lib/statement';
 
 export type OverviewDayBar = { day: number; income: number; expense: number };
@@ -107,18 +108,35 @@ export const getOverviewData = async (
   const now = new Date();
   const todayOfMonth = isCurrentMonth ? now.getUTCDate() : daysInMonth;
 
-  const [budgets, transactions, cardAccount] = await Promise.all([
+  const [budgets, transactions, cardAccount, reimbursedExpenses] = await Promise.all([
     listBudgets(userId, month),
     prisma.transaction.findMany({
       where: { userId, date: { gte: start, lt: end } },
-      include: { category: { select: { name: true } } },
+      include: {
+        category: { select: { name: true } },
+        _count: { select: { reimbursementIncomeLinks: true } },
+      },
       orderBy: { date: 'asc' },
     }),
     prisma.account.findFirst({
       where: { userId, type: 'CREDIT_CARD', statementDay: { not: null } },
       orderBy: { createdAt: 'asc' },
     }),
+    listReimbursedAmountsByExpenseDate(userId, start, end),
   ]);
+
+  // Reimbursed amount per expense, so hero.expense/the pie/day bars/daySpent can
+  // net out reimbursements the same way budgets.ts already does — otherwise
+  // hero.net would double-count the loss (income excluded, expense still gross).
+  const reimbursedByTransaction = new Map<string, number>();
+  for (const r of reimbursedExpenses) {
+    reimbursedByTransaction.set(
+      r.expenseTransactionId,
+      (reimbursedByTransaction.get(r.expenseTransactionId) ?? 0) + Number(r.amount),
+    );
+  }
+  const netExpenseAmount = (t: (typeof transactions)[number]): number =>
+    Math.max(0, Number(t.amount) - (reimbursedByTransaction.get(t.id) ?? 0));
 
   const limit = budgets.reduce((sum, b) => sum + Number(b.limitAmount), 0);
   const spent = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
@@ -127,16 +145,26 @@ export const getOverviewData = async (
 
   // Both legs of a transfer between the user's own accounts are excluded from
   // every income/spending aggregate — the money never left the ledger. Balance
-  // math further down deliberately still counts them.
+  // math further down deliberately still counts them. Income linked as a
+  // reimbursement is excluded the same way (it's the user's own money coming
+  // back, not new income) — the gate reads live link existence via `_count`,
+  // not a static flag, so it starts/stops applying as links are made/removed.
   const income = transactions
-    .filter((t) => t.type === 'INCOME' && !t.isPayment && !t.isTransfer)
+    .filter(
+      (t) =>
+        t.type === 'INCOME' &&
+        !t.isPayment &&
+        !t.isTransfer &&
+        t._count.reimbursementIncomeLinks === 0,
+    )
     .reduce((sum, t) => sum + Number(t.amount), 0);
   const expense = transactions
     .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .reduce((sum, t) => sum + netExpenseAmount(t), 0);
 
   // Every expense this month, by category — unlike budgetRings this isn't
-  // limited to categories that have a budget set.
+  // limited to categories that have a budget set. Net of reimbursements, same
+  // as `expense` above.
   const expenseTotalsByCategory = new Map<string, { name: string; amount: number }>();
   for (const t of transactions) {
     if (t.type !== 'EXPENSE' || t.isTransfer) continue;
@@ -144,9 +172,9 @@ export const getOverviewData = async (
     const name = t.category?.name ?? 'Uncategorized';
     const entry = expenseTotalsByCategory.get(key);
     if (entry) {
-      entry.amount += Number(t.amount);
+      entry.amount += netExpenseAmount(t);
     } else {
-      expenseTotalsByCategory.set(key, { name, amount: Number(t.amount) });
+      expenseTotalsByCategory.set(key, { name, amount: netExpenseAmount(t) });
     }
   }
   const sortedExpenseSlices = [...expenseTotalsByCategory.entries()]
@@ -191,8 +219,14 @@ export const getOverviewData = async (
   for (const t of transactions) {
     const d = t.date.getUTCDate();
     const bucket = dayMap.get(d)!;
-    if (t.type === 'INCOME' && !t.isPayment && !t.isTransfer) bucket.income += Number(t.amount);
-    if (t.type === 'EXPENSE' && !t.isTransfer) bucket.expense += Number(t.amount);
+    if (
+      t.type === 'INCOME' &&
+      !t.isPayment &&
+      !t.isTransfer &&
+      t._count.reimbursementIncomeLinks === 0
+    )
+      bucket.income += Number(t.amount);
+    if (t.type === 'EXPENSE' && !t.isTransfer) bucket.expense += netExpenseAmount(t);
   }
   const dayBars: OverviewDayBar[] = Array.from(dayMap.entries()).map(([day, v]) => ({
     day,
@@ -207,7 +241,7 @@ export const getOverviewData = async (
   const dayTransactions = transactions.filter((t) => t.date.getUTCDate() === selectedDayNum);
   const daySpent = dayTransactions
     .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .reduce((sum, t) => sum + netExpenseAmount(t), 0);
   const dayFraction = dailyPace > 0 ? daySpent / dailyPace : 0;
   const dayOver = dailyPace > 0 && daySpent > dailyPace;
 

@@ -1,11 +1,15 @@
 import { getServerAuthSession } from '@/lib/auth/session';
 import { listAccounts } from '@/lib/services/accounts';
+import { getPendingReimbursementSummary } from '@/lib/services/reimbursements';
 import { AccountsView } from '@/components/accounts/accounts-view';
 import { ScreenHeader } from '@/components/nav/screen-header';
 
 const AccountsPage = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
-  const accounts = await listAccounts(session!.user.id);
+  const [accounts, pendingReimbursement] = await Promise.all([
+    listAccounts(session!.user.id),
+    getPendingReimbursementSummary(session!.user.id),
+  ]);
 
   return (
     <div className="animate-[fade-up_0.3s_ease-out]">
@@ -13,7 +17,7 @@ const AccountsPage = async (): Promise<React.ReactElement> => {
         title="Accounts"
         description="Each balance is your starting balance plus every transaction logged against it."
       />
-      <AccountsView initialAccounts={accounts} />
+      <AccountsView initialAccounts={accounts} pendingReimbursement={pendingReimbursement} />
     </div>
   );
 };
