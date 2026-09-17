@@ -43,3 +43,18 @@ export class ReimbursementConflictError extends ServiceValidationError {
     this.name = 'ReimbursementConflictError';
   }
 }
+
+/**
+ * A Google-only account tried to delete itself without a fresh, interactive
+ * Google re-authentication in the last few minutes — the passwordless
+ * equivalent of `changePassword`'s "current password is incorrect". Kept
+ * distinct from `ServiceValidationError` so the route can map it to its own
+ * status and the client can render "Confirm with Google" instead of a
+ * generic field error.
+ */
+export class GoogleReauthRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GoogleReauthRequiredError';
+  }
+}

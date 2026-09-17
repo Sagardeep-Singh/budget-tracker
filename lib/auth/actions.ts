@@ -14,6 +14,23 @@ export const signOutAfterPasswordChange = async (): Promise<void> => {
   await signOut({ redirectTo: '/login?passwordChanged=1' });
 };
 
+export const signOutAfterAccountDeletion = async (): Promise<void> => {
+  await signOut({ redirectTo: '/login?accountDeleted=1' });
+};
+
+/**
+ * Forces Google to re-show its authentication screen even when its own IdP
+ * session cookie is still active — `prompt: 'login'` is what makes this a
+ * real "prove you still control this account" step rather than a no-op
+ * redirect that `select_account` alone would be. The `jwt` callback stamps
+ * `token.reauthenticatedAt` on every completed Google sign-in, this one
+ * included, which is what `deleteUserAccount` checks for a Google-only user
+ * (lib/services/accountDeletion.ts).
+ */
+export const reauthenticateWithGoogleAction = async (): Promise<void> => {
+  await signIn('google', { redirectTo: '/settings' }, { prompt: 'login' });
+};
+
 export const signInAction = async (
   _prevState: string | undefined,
   formData: FormData,
