@@ -127,16 +127,18 @@ tabular-nums`), colored with the existing `iris` accent to match "active" states
 
 ## Checklist
 
-- [ ] `components/transactions/transaction-filters-dialog.tsx` (new): dialog UI, draft state,
+- [x] `components/transactions/transaction-filters-dialog.tsx` (new): dialog UI, draft state,
       Apply/Reset
-- [ ] `components/transactions/transactions-view.tsx`: `TransactionFilters` state synced to URL
+- [x] `components/transactions/transactions-view.tsx`: `TransactionFilters` state synced to URL
       query params, payee search input, Filters button + active-count badge, extended `filtered`
       clauses, adapted single-account Period Picker condition
-- [ ] Verify `Input type="date"`/`type="number"` render consistently with existing form usage in
+- [x] Verify `Input type="date"`/`type="number"` render consistently with existing form usage in
       `components/ui/field.tsx` (no changes expected there, just reuse)
-- [ ] Unit tests: filter-count derivation, URL param round-trip (read on mount, write on change),
-      `filtered` clause coverage (each new field alone and combined)
-- [ ] e2e: open the dialog, apply a combination of filters, confirm the ledger and summary bar
-      update, confirm the badge count, confirm a filtered URL reloads to the same state
-- [ ] `npm run format:fix && npm run lint`, `npm run test`, `npm run test:e2e`,
+- [x] Unit tests: filter-count derivation, URL param round-trip (read on mount, write on change),
+      `filtered` clause coverage (each new field alone and combined) — pure logic extracted to
+      `lib/transactions/transaction-filters.ts` for testability, `tests/unit/lib/transaction-filters.test.ts`
+- [x] e2e: open the dialog, apply a combination of filters, confirm the ledger and summary bar
+      update, confirm the badge count, confirm a filtered URL reloads to the same state —
+      `tests/e2e/transaction-filters-dialog.spec.ts`
+- [x] `npm run format:fix && npm run lint`, `npm run test`, `npm run test:e2e`,
       `npx tsc --noEmit`, `npm run build`

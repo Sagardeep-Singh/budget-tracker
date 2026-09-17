@@ -1,15 +1,23 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ArrowLeftRight, HandCoins, Plus, Search, Trash2, Upload } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  ArrowLeftRight,
+  HandCoins,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
-import { Select } from '@/components/ui/field';
 import { TransactionForm } from '@/components/transactions/transaction-form';
+import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
 import { PeriodPicker, type PeriodMode } from '@/components/transactions/period-picker';
 import { cn } from '@/lib/cn';
 import {
@@ -19,14 +27,18 @@ import {
   getStatementPeriod,
   type Period,
 } from '@/lib/statement';
+import {
+  countActiveFilterGroups,
+  matchesTransactionFilters,
+  parseTransactionFilters,
+  transactionFiltersToSearchParams,
+  type TransactionFilters,
+} from '@/lib/transactions/transaction-filters';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
 import { formatDate } from '@/lib/format';
 import { categoryColorVar } from '@/lib/ui/category-color';
-
-const pillSelect =
-  'rounded-full border border-line bg-paper-raised px-3.5 py-2 text-[13px] font-medium text-ink outline-none focus:border-iris';
 
 const toYyyymm = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 
@@ -53,6 +65,8 @@ export const TransactionsView = ({
   categories: FrontendCategory[];
 }): React.ReactElement => {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [drawerKey, setDrawerKey] = useState(0);
@@ -61,21 +75,78 @@ export const TransactionsView = ({
   const [deletePending, setDeletePending] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
   const [matchResult, setMatchResult] = useState<string | null>(null);
-  const [accountFilter, setAccountFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date());
   const [mobileSearch, setMobileSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
+  const [filtersDialogKey, setFiltersDialogKey] = useState(0);
 
-  const selectedAccount = accounts.find((a) => a.id === accountFilter);
+  // The URL is the source of truth for every filter except the payee search
+  // box (below) — re-derived on every searchParams change rather than
+  // mirrored into separate component state, so there's one place filter
+  // state can drift from the URL: nowhere.
+  const filters = useMemo(() => parseTransactionFilters(searchParams), [searchParams]);
+  const activeFilterCount = countActiveFilterGroups(filters);
+
+  // Local, undebounced-to-the-list-but-debounced-to-the-URL: the list must
+  // filter on every keystroke ("no Apply needed" per the feature's search
+  // box), but writing to the URL on every keystroke would spam the router
+  // and fight the user's own typing. `payeeDraft` drives filtering
+  // immediately; the effect below only pushes it to the URL once typing
+  // pauses.
+  const [payeeDraft, setPayeeDraft] = useState(filters.payee);
+  // Re-seeds `payeeDraft` when `filters.payee` changes from outside this
+  // input (the filters dialog's "Reset", browser back/forward, a pasted
+  // URL) — adjusted during render, React's documented pattern for syncing
+  // state to a prop change, rather than in an effect (which would commit
+  // the stale draft for one extra frame first).
+  const [payeeSyncedFrom, setPayeeSyncedFrom] = useState(filters.payee);
+  if (filters.payee !== payeeSyncedFrom) {
+    setPayeeSyncedFrom(filters.payee);
+    setPayeeDraft(filters.payee);
+  }
+
+  const pushFilters = useCallback(
+    (next: TransactionFilters): void => {
+      const query = transactionFiltersToSearchParams(next).toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  useEffect(() => {
+    if (payeeDraft === filters.payee) return;
+    const timeout = setTimeout(() => pushFilters({ ...filters, payee: payeeDraft }), 300);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on payeeDraft changes; `filters`/`pushFilters` reacting here would restart the debounce on every unrelated filter change
+  }, [payeeDraft]);
+
+  const effectiveFilters = useMemo<TransactionFilters>(
+    () => ({ ...filters, payee: payeeDraft }),
+    [filters, payeeDraft],
+  );
+
+  const selectedAccountId = filters.accountIds.length === 1 ? filters.accountIds[0] : null;
+  const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
   const canUseStatementView =
     selectedAccount?.type === 'CREDIT_CARD' && !!selectedAccount.statementDay;
 
-  const handleAccountFilterChange = (value: string): void => {
-    setAccountFilter(value);
-    setPeriodMode('ALL');
-    setPeriodAnchor(new Date());
+  const openFiltersDialog = (): void => {
+    setFiltersDialogKey((k) => k + 1);
+    setFiltersDialogOpen(true);
+  };
+
+  const handleApplyFilters = (next: TransactionFilters): void => {
+    // Switching away from (or into) exactly one selected account changes
+    // whether the statement/month Period Picker is even shown, so its state
+    // resets the same way the old single-select dropdown's onChange did.
+    const nextSingleAccountId = next.accountIds.length === 1 ? next.accountIds[0] : null;
+    if (nextSingleAccountId !== selectedAccountId) {
+      setPeriodMode('ALL');
+      setPeriodAnchor(new Date());
+    }
+    pushFilters(next);
   };
 
   const period: Period | null = useMemo(() => {
@@ -142,8 +213,7 @@ export const TransactionsView = ({
   };
 
   const filtered = initialTransactions.filter((t) => {
-    if (accountFilter && t.accountId !== accountFilter) return false;
-    if (categoryFilter && t.categoryId !== categoryFilter) return false;
+    if (!matchesTransactionFilters(t, effectiveFilters)) return false;
     if (period) {
       const date = new Date(t.date);
       if (date < period.start || date >= period.end) return false;
@@ -215,30 +285,30 @@ export const TransactionsView = ({
         data-testid="transaction-filters-desktop"
         className="hidden items-center gap-2 lg:flex lg:flex-wrap"
       >
-        <Select
-          className={cn(pillSelect, 'shrink-0')}
-          value={accountFilter}
-          onChange={(e) => handleAccountFilterChange(e.target.value)}
+        <div className="border-line bg-paper-raised flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2">
+          <Search size={15} className="text-ink-muted shrink-0" />
+          <input
+            type="text"
+            value={payeeDraft}
+            onChange={(e) => setPayeeDraft(e.target.value)}
+            placeholder="Search payee"
+            className="placeholder:text-ink-muted/70 w-36 bg-transparent text-[13px] outline-none"
+          />
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={openFiltersDialog}
+          icon={SlidersHorizontal}
+          className="shrink-0 px-4 py-2"
         >
-          <option value="">All accounts</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          className={cn(pillSelect, 'shrink-0')}
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-        >
-          <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="bg-iris text-paper-raised rounded-full px-1.5 py-0.5 font-mono text-[11px] tabular-nums">
+              {activeFilterCount}
+            </span>
+          )}
+        </Button>
         <div className="hidden flex-1 lg:block" />
         <Link
           href="/import"
@@ -275,7 +345,7 @@ export const TransactionsView = ({
         </p>
       )}
 
-      {accountFilter && (
+      {selectedAccountId && (
         <div className="mt-3 hidden lg:block">
           <PeriodPicker
             mode={periodMode}
@@ -614,6 +684,15 @@ export const TransactionsView = ({
         pending={deletePending}
         onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+      <TransactionFiltersDialog
+        key={filtersDialogKey}
+        open={filtersDialogOpen}
+        onClose={() => setFiltersDialogOpen(false)}
+        filters={filters}
+        onApply={handleApplyFilters}
+        accounts={accounts}
+        categories={categories}
       />
 
       <div
