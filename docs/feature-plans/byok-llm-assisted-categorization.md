@@ -32,10 +32,10 @@ ui-designer's next pass, built against the contracts below.
 `saveAiProviderKey` makes one minimal, cheap probe call to the provider before
 persisting, and splits on the failure taxonomy we already have to build:
 
-| Probe outcome | Behaviour |
-| --- | --- |
-| 200 | persist, `verifiedAt = now()` |
-| 401 / 403 | **refuse to persist**, throw `AiProviderAuthError` |
+| Probe outcome                 | Behaviour                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| 200                           | persist, `verifiedAt = now()`                                                  |
+| 401 / 403                     | **refuse to persist**, throw `AiProviderAuthError`                             |
 | 429 / 5xx / network / timeout | **persist anyway**, `verifiedAt = null`, return `{ verified: false, warning }` |
 
 Rationale: a typo'd key is the overwhelmingly common failure and must be caught
@@ -140,7 +140,7 @@ deploy` on an existing database.
   export path**, plus a regression test asserting the export payload contains no
   `provider` / `encryptedApiKey` / `keyLast4` key anywhere.
 - **Data import (`wipeUserData`) — the trap:** `wipeUserData` is shared by
-  account deletion *and* full-replace restore. `UserAiSettings` must **not** be
+  account deletion _and_ full-replace restore. `UserAiSettings` must **not** be
   added to it. If it were, restoring a backup would silently destroy the user's
   key — and because the key is excluded from export, it could never come back.
   Decision: `wipeUserData` is unchanged; restore preserves AI settings. Locked
@@ -221,13 +221,11 @@ export type AiSuggestionRequest = {
   payee: string;
   type: 'INCOME' | 'EXPENSE';
   categories: Array<{ id: string; name: string }>;
-  note?: string;   // present only when sendNote
+  note?: string; // present only when sendNote
   amount?: string; // present only when sendAmount, "123.45"
 };
 
-export type AiSuggestionResult =
-  | { outcome: 'match'; categoryId: string }
-  | { outcome: 'none' };
+export type AiSuggestionResult = { outcome: 'match'; categoryId: string } | { outcome: 'none' };
 
 export type AiProviderClient = {
   readonly provider: 'ANTHROPIC' | 'OPENAI';
@@ -248,7 +246,7 @@ export type AiProviderClient = {
 - `lib/ai/openai.ts` — `POST https://api.openai.com/v1/chat/completions`,
   header `Authorization: Bearer`. Probe: `GET /v1/models`. Response constrained
   via **structured outputs** (`response_format: { type: 'json_schema',
-  json_schema: { strict: true, ... } }`).
+json_schema: { strict: true, ... } }`).
 - `lib/ai/index.ts` — `getAiProviderClient(provider): AiProviderClient`, the
   only thing services import. Swapping in a third provider is one file plus one
   enum value.
@@ -269,7 +267,7 @@ via `AbortSignal.timeout`, not by each adapter.
 
 ## 4. Prompt / request design
 
-**File: `lib/ai/prompt.ts`** — one builder shared by both adapters *and* by the
+**File: `lib/ai/prompt.ts`** — one builder shared by both adapters _and_ by the
 disclosure preview, so the disclosure can never drift from what is actually sent.
 
 ```ts
@@ -305,7 +303,7 @@ returns an id directly, removing a name→id lookup and its ambiguity.
 
 `"none"` maps to `{ outcome: 'none' }`; anything else to `{ outcome: 'match',
 categoryId }`. A sentinel value inside the constrained enum is what lets "no
-confident match" be a *valid* structured answer rather than an error, which is
+confident match" be a _valid_ structured answer rather than an error, which is
 the whole point of not free-text parsing.
 
 **Edge case:** a user with zero categories. The enum would be `['none']` only —
@@ -448,7 +446,7 @@ export const getAiDisclosurePreview = (userId: string): Promise<AiDisclosurePrev
     object. **Nothing is written to the transaction** — applying the suggestion
     is the user's existing category-set action.
 
-`getAiDisclosurePreview` builds its example by running the *same*
+`getAiDisclosurePreview` builds its example by running the _same_
 `buildSuggestionPayload` over one real queue row (most recent uncategorized,
 unmatched row; synthetic placeholder row if the queue is empty, flagged by
 `exampleFromRealTransaction: false`). This is what makes the disclosure provably
@@ -487,15 +485,15 @@ bulk suggestions" server-enforced rather than a UI choice.
 All declare `export const runtime = 'nodejs'`. All follow the house shape:
 session check → `safeParse` → service → `NextResponse.json`, no business logic.
 
-| File | Method | Body | Response |
-| --- | --- | --- | --- |
-| `app/api/settings/ai/route.ts` (new) | `GET` | — | `FrontendAiSettings` |
-| | `PUT` | `saveAiSettingsSchema` | `FrontendAiSettings & { warning }` |
-| | `DELETE` | — | `{ ok: true }` |
-| `app/api/settings/ai/toggles/route.ts` (new) | `PATCH` | `updateAiTogglesSchema` | `FrontendAiSettings` |
-| `app/api/settings/ai/disclosure/route.ts` (new) | `GET` | — | `AiDisclosurePreview` |
-| | `POST` | — | `FrontendAiSettings` (records acceptance) |
-| `app/api/categorize/suggest-ai/route.ts` (new) | `POST` | `suggestWithAiSchema` | `AiSuggestion` |
+| File                                            | Method   | Body                    | Response                                  |
+| ----------------------------------------------- | -------- | ----------------------- | ----------------------------------------- |
+| `app/api/settings/ai/route.ts` (new)            | `GET`    | —                       | `FrontendAiSettings`                      |
+|                                                 | `PUT`    | `saveAiSettingsSchema`  | `FrontendAiSettings & { warning }`        |
+|                                                 | `DELETE` | —                       | `{ ok: true }`                            |
+| `app/api/settings/ai/toggles/route.ts` (new)    | `PATCH`  | `updateAiTogglesSchema` | `FrontendAiSettings`                      |
+| `app/api/settings/ai/disclosure/route.ts` (new) | `GET`    | —                       | `AiDisclosurePreview`                     |
+|                                                 | `POST`   | —                       | `FrontendAiSettings` (records acceptance) |
+| `app/api/categorize/suggest-ai/route.ts` (new)  | `POST`   | `suggestWithAiSchema`   | `AiSuggestion`                            |
 
 `suggest-ai` is a **new path under the existing `app/api/categorize/`**, not a
 change to `app/api/categorize/route.ts` — that handler's `{ text } →
@@ -517,20 +515,20 @@ route needs a distinct status, the class is standalone (like
 `ServiceValidationError` (like `ReimbursementConflictError`) so existing
 `instanceof ServiceValidationError` checks still fire.
 
-| Provider condition | Typed error | HTTP | User-facing message |
-| --- | --- | --- | --- |
-| 401 / 403 | `AiProviderAuthError` | 400 | "Your {Provider} API key was rejected. Check it in Settings and save it again." |
-| 429 (provider) | `AiRateLimitedError` | 429 | "{Provider} is rate-limiting your key right now. Wait a minute and try again." |
-| Local daily cap | `AiRateLimitedError` | 429 | "You've hit today's limit of {N} AI suggestions. Try again tomorrow." |
-| 5xx | `AiProviderUnavailableError` | 502 | "{Provider} is having trouble right now. Try again in a few minutes." |
-| Network error / `AbortError` timeout | `AiProviderUnavailableError` | 502 | "The request to {Provider} timed out. Try again in a few minutes." |
-| Response fails the Zod enum parse, or names an id not in the user's set | `AiInvalidResponseError` | 200 | **Not an error to the user** — returned as `{ outcome: 'none' }` with "No confident match — pick a category yourself." Logged server-side as a signal. |
-| Model returns the `"none"` sentinel | — (success) | 200 | "No confident match — pick a category yourself." |
-| Any other non-2xx (e.g. 404 from a retired/invalid model id) | `AiProviderUnavailableError` | 502 | "{Provider} couldn't handle that request. Try again in a few minutes." |
-| `SECRET_ENCRYPTION_KEY` unset | `AiUnavailableError` | 503 | "AI suggestions aren't available on this deployment." |
-| Disclosure not yet accepted | `AiDisclosureRequiredError` | 409 | "Review what gets sent to {Provider}, then try again." |
-| No key configured | `ServiceValidationError` | 400 | "Add an API key in Settings first." |
-| Row no longer eligible / rule already matched | `ServiceValidationError` | 400 | "That transaction is no longer in the categorize queue." / "A rule already categorizes this transaction." |
+| Provider condition                                                      | Typed error                  | HTTP | User-facing message                                                                                                                                    |
+| ----------------------------------------------------------------------- | ---------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 401 / 403                                                               | `AiProviderAuthError`        | 400  | "Your {Provider} API key was rejected. Check it in Settings and save it again."                                                                        |
+| 429 (provider)                                                          | `AiRateLimitedError`         | 429  | "{Provider} is rate-limiting your key right now. Wait a minute and try again."                                                                         |
+| Local daily cap                                                         | `AiRateLimitedError`         | 429  | "You've hit today's limit of {N} AI suggestions. Try again tomorrow."                                                                                  |
+| 5xx                                                                     | `AiProviderUnavailableError` | 502  | "{Provider} is having trouble right now. Try again in a few minutes."                                                                                  |
+| Network error / `AbortError` timeout                                    | `AiProviderUnavailableError` | 502  | "The request to {Provider} timed out. Try again in a few minutes."                                                                                     |
+| Response fails the Zod enum parse, or names an id not in the user's set | `AiInvalidResponseError`     | 200  | **Not an error to the user** — returned as `{ outcome: 'none' }` with "No confident match — pick a category yourself." Logged server-side as a signal. |
+| Model returns the `"none"` sentinel                                     | — (success)                  | 200  | "No confident match — pick a category yourself."                                                                                                       |
+| Any other non-2xx (e.g. 404 from a retired/invalid model id)            | `AiProviderUnavailableError` | 502  | "{Provider} couldn't handle that request. Try again in a few minutes."                                                                                 |
+| `SECRET_ENCRYPTION_KEY` unset                                           | `AiUnavailableError`         | 503  | "AI suggestions aren't available on this deployment."                                                                                                  |
+| Disclosure not yet accepted                                             | `AiDisclosureRequiredError`  | 409  | "Review what gets sent to {Provider}, then try again."                                                                                                 |
+| No key configured                                                       | `ServiceValidationError`     | 400  | "Add an API key in Settings first."                                                                                                                    |
+| Row no longer eligible / rule already matched                           | `ServiceValidationError`     | 400  | "That transaction is no longer in the categorize queue." / "A rule already categorizes this transaction."                                              |
 
 Per PM, "names a nonexistent category" is treated the same as no match — so it
 resolves to a successful `{ outcome: 'none' }` response rather than an error
@@ -554,37 +552,37 @@ code and error `name` only; the provider's own message may echo request content.
 
 ### New
 
-| Path | Purpose |
-| --- | --- |
-| `prisma/schema.prisma` *(edit — needs authorization)* | `AiProvider` enum, `UserAiSettings` model, `User.aiSettings` back-relation |
-| `prisma/migrations/<ts>_add_user_ai_settings/` | generated; additive only |
-| `lib/crypto/secrets.ts` | AES-256-GCM encrypt/decrypt/mask, `isSecretEncryptionConfigured` |
-| `lib/ai/types.ts` | SDK-free request/result/client types |
-| `lib/ai/errors.ts` | typed error taxonomy |
-| `lib/ai/prompt.ts` | system prompt + `buildSuggestionPayload` (shared with disclosure) |
-| `lib/ai/anthropic.ts` | fetch adapter, forced tool use |
-| `lib/ai/openai.ts` | fetch adapter, strict json_schema |
-| `lib/ai/index.ts` | `getAiProviderClient`, `AI_TIMEOUT_MS`, model constants |
-| `lib/validators/ai-settings.ts` | save / toggles schemas |
-| `lib/validators/categorize-ai.ts` | `{ transactionId }` schema |
-| `lib/services/aiSettings.ts` | key lifecycle, masking, probe-on-save |
-| `lib/services/aiCategorize.ts` | suggest orchestration, rate limit, disclosure preview |
-| `app/api/settings/ai/route.ts` | GET / PUT / DELETE |
-| `app/api/settings/ai/toggles/route.ts` | PATCH |
-| `app/api/settings/ai/disclosure/route.ts` | GET preview / POST accept |
-| `app/api/categorize/suggest-ai/route.ts` | POST suggest |
-| `tests/unit/services/aiSettings.test.ts` | save/remove/mask/probe branches |
-| `tests/unit/services/aiCategorize.test.ts` | eligibility, toggles, rate limit, error map |
-| `tests/unit/lib/secrets.test.ts` | round-trip, AAD mismatch, tamper, unconfigured |
-| `tests/unit/lib/ai-prompt.test.ts` | payload shape, note/amount omission, enum build |
-| `tests/unit/validators/ai-settings.test.ts` | schema edges |
-| `docs/runbooks/rotate-secret-encryption-key.md` | manual rotation procedure |
+| Path                                                  | Purpose                                                                    |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| `prisma/schema.prisma` _(edit — needs authorization)_ | `AiProvider` enum, `UserAiSettings` model, `User.aiSettings` back-relation |
+| `prisma/migrations/<ts>_add_user_ai_settings/`        | generated; additive only                                                   |
+| `lib/crypto/secrets.ts`                               | AES-256-GCM encrypt/decrypt/mask, `isSecretEncryptionConfigured`           |
+| `lib/ai/types.ts`                                     | SDK-free request/result/client types                                       |
+| `lib/ai/errors.ts`                                    | typed error taxonomy                                                       |
+| `lib/ai/prompt.ts`                                    | system prompt + `buildSuggestionPayload` (shared with disclosure)          |
+| `lib/ai/anthropic.ts`                                 | fetch adapter, forced tool use                                             |
+| `lib/ai/openai.ts`                                    | fetch adapter, strict json_schema                                          |
+| `lib/ai/index.ts`                                     | `getAiProviderClient`, `AI_TIMEOUT_MS`, model constants                    |
+| `lib/validators/ai-settings.ts`                       | save / toggles schemas                                                     |
+| `lib/validators/categorize-ai.ts`                     | `{ transactionId }` schema                                                 |
+| `lib/services/aiSettings.ts`                          | key lifecycle, masking, probe-on-save                                      |
+| `lib/services/aiCategorize.ts`                        | suggest orchestration, rate limit, disclosure preview                      |
+| `app/api/settings/ai/route.ts`                        | GET / PUT / DELETE                                                         |
+| `app/api/settings/ai/toggles/route.ts`                | PATCH                                                                      |
+| `app/api/settings/ai/disclosure/route.ts`             | GET preview / POST accept                                                  |
+| `app/api/categorize/suggest-ai/route.ts`              | POST suggest                                                               |
+| `tests/unit/services/aiSettings.test.ts`              | save/remove/mask/probe branches                                            |
+| `tests/unit/services/aiCategorize.test.ts`            | eligibility, toggles, rate limit, error map                                |
+| `tests/unit/lib/secrets.test.ts`                      | round-trip, AAD mismatch, tamper, unconfigured                             |
+| `tests/unit/lib/ai-prompt.test.ts`                    | payload shape, note/amount omission, enum build                            |
+| `tests/unit/validators/ai-settings.test.ts`           | schema edges                                                               |
+| `docs/runbooks/rotate-secret-encryption-key.md`       | manual rotation procedure                                                  |
 
 ### Changed
 
-| Path | Change |
-| --- | --- |
-| `README.md` / `.env.example` | document `SECRET_ENCRYPTION_KEY`; note the feature is off when unset |
+| Path                                   | Change                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `README.md` / `.env.example`           | document `SECRET_ENCRYPTION_KEY`; note the feature is off when unset      |
 | `tests/unit/services/userData.test.ts` | add: export contains no AI key fields; restore preserves `UserAiSettings` |
 
 ### Explicitly unchanged (assert, don't edit)
@@ -670,3 +668,59 @@ contracts they consume: `FrontendAiSettings`, `AiDisclosurePreview`,
 - [ ] Run `npm run format:fix && npm run lint` and `npm run test`
 - [ ] Hand the `FrontendAiSettings` / `AiDisclosurePreview` / `AiSuggestion` contracts and the section 6 message table to the ui-designer
 - [ ] Walk the section 8 security checklist line by line before merge
+
+---
+
+## Addendum — UI pass resolutions (2026-09-18)
+
+The ui-designer produced component scaffolds for the three new components below (now committed
+to the repo, non-functional — real fetch/state wiring is the senior-developer's job). Two
+conflicts between the design and the backend design are resolved here so the developer isn't
+guessing:
+
+- **Settings component name is `components/settings/ai-categorization-section.tsx`**, not
+  `ai-provider-card.tsx` as originally named in §7 of the architecture section above — it matches
+  the sibling `reminders-section.tsx` (server-fetched props, one card, own fetch calls) it's
+  cloned from. Treat `ai-categorization-section.tsx` as authoritative.
+
+- **Disclosure-accept ordering is save-first, then accept** — inverted from the ui-designer's
+  original accept-then-save flow. `UserAiSettings.provider`/`encryptedApiKey` are non-nullable, so
+  a row can't exist from an "accept disclosure" call alone before a key is saved. The disclosure
+  modal's "Looks good, continue" button now triggers the real `PUT /api/settings/ai` first; only
+  on a successful save does it follow with `POST /api/settings/ai/disclosure` to stamp
+  acceptance on the now-existing row. If the save fails (key rejected), the accept call never
+  fires and the user sees the disclosure again on the next attempt — harmless, since nothing was
+  sent to a provider either way. See the header comment in `ai-categorization-section.tsx`.
+
+- **No `amber`/warning color token exists in this codebase's palette** (`app/globals.css` only
+  defines `iris`/`sky`/`rose` + soft variants). The "saved, not yet verified" informational state
+  (Q1's outage-tolerant persist) renders as ink-muted text on a neutral border instead, `role`
+  `"status"` not `"alert"` — it's not an error.
+
+- Two small bugs fixed while porting the scaffolds into the repo: `SuggestAiButton` used
+  `Math.random()` for its `aria-describedby` id (unstable across renders, effectively inert) —
+  replaced with `useId()`. `AiDisclosureModal` passed a `ref` to `Button`, which doesn't forward
+  refs — `autoFocus` alone is sufficient and the ref was removed.
+
+Scaffolds now in the repo (non-functional, correct prop signatures/JSX — fetch calls and real
+state are commented inline with exactly what to wire):
+
+- `components/settings/ai-categorization-section.tsx`
+- `components/settings/ai-disclosure-modal.tsx`
+- `components/categorize/suggest-ai-button.tsx`
+
+Still needed from the developer on the UI side (not yet scaffolded — the ui-designer's report
+describes these in prose, see its handback for exact anchor points):
+
+- [ ] Wire `AiCategorizationSection` into `components/settings/settings-view.tsx` (after
+      `RemindersSection`) and `app/(protected)/settings/page.tsx` (add `getAiSettings` to the
+      existing `Promise.all`)
+- [ ] Add `SuggestAiButton` to all three `categorize-view.tsx` render paths (grouped payee cards,
+      desktop table, mobile cards) per the ui-designer's per-site notes — the desktop table's
+      `Select` must become controlled (`aiSuggestions` map) to have somewhere for a suggestion to
+      land before acceptance; this is a required change to existing behavior, not just an
+      addition
+- [ ] `aiSuggestions`/`suggestingId`/`aiErrors`/`dailyCapHit` state additions in `CategorizeView`
+- [ ] Inline `role="alert"`/`role="status"` result rendering next to the triggering row/card (not
+      `Toast` — matches the `matchResult` precedent in `transactions-view.tsx`), per the section-6
+      message table in the architecture section above
