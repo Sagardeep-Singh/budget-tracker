@@ -631,8 +631,14 @@ contracts they consume: `FrontendAiSettings`, `AiDisclosurePreview`,
       user's provider quota or fan out into a bulk run.
 - [ ] Hard `AbortSignal.timeout(AI_TIMEOUT_MS)` on every outbound provider call
       (suggest and probe) so a hung provider cannot pin a serverless function.
-- [ ] Outbound base URLs are module constants — no user-supplied endpoint,
-      base URL or proxy field anywhere in the validators (no SSRF surface).
+- [ ] Outbound base URLs default to the real provider APIs and are never a
+      user-supplied field anywhere in the validators (no SSRF surface). **Approved
+      2026-09-18:** each base URL is overridable via a server-only env var
+      (`AI_ANTHROPIC_BASE_URL` / `AI_OPENAI_BASE_URL`, read only at module
+      load, never from request input) so e2e tests can point them at a local
+      fixture server — see the test plan's "Required new test infrastructure"
+      section. This is deploy-config-supplied, not user-supplied; same trust
+      level as `DATABASE_URL`/`SECRET_ENCRYPTION_KEY`.
 - [ ] Only `payee`, `type`, category names/ids, and opt-in `note`/`amount` leave
       the server. Date, account name, balances, other transactions and the
       transfer/payment/skip flags are never in the payload — asserted by a
@@ -672,6 +678,8 @@ contracts they consume: `FrontendAiSettings`, `AiDisclosurePreview`,
 ---
 
 ## Addendum — UI pass resolutions (2026-09-18)
+
+**Test plan:** the tester pass (unit + e2e cases, written before this UI addendum's implementation work per `CLAUDE.md`'s workflow) lives in its own file — `docs/feature-plans/byok-llm-assisted-categorization-test-plan.md` — rather than inline here, given its length. Read it alongside this addendum before implementing.
 
 The ui-designer produced component scaffolds for the three new components below (now committed
 to the repo, non-functional — real fetch/state wiring is the senior-developer's job). Two
