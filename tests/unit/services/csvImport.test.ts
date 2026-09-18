@@ -138,6 +138,29 @@ describe('previewImport', () => {
     expect(result.rows[0].include).toBe(true);
   });
 
+  it('bounds the existing-rows scan to the submitted rows date range, padded a day each side', async () => {
+    await preview({
+      accountId: 'acc-1',
+      filename: 'march.csv',
+      rows: [
+        { accountId: 'acc-1', date: '2026-03-05', amount: 10, type: 'EXPENSE' },
+        { accountId: 'acc-1', date: '2026-03-20', amount: 20, type: 'EXPENSE' },
+      ],
+    });
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'user-1',
+          date: {
+            gte: new Date('2026-03-04'),
+            lte: new Date('2026-03-21'),
+          },
+        }),
+      }),
+    );
+  });
+
   it('returns no filename warning when no active batch shares the name', async () => {
     const result = await preview({
       accountId: 'acc-1',
@@ -437,7 +460,10 @@ describe('commitImport', () => {
       rows: [commitRow()],
     });
 
-    expect(matchTransfersMock).toHaveBeenCalledWith('user-1');
+    expect(matchTransfersMock).toHaveBeenCalledWith('user-1', {
+      from: new Date('2026-03-01'),
+      to: new Date('2026-03-01'),
+    });
   });
 
   it('does not run transfer matching when nothing was imported', async () => {
