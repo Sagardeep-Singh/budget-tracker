@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { isDesktopViewport } from '@/lib/ui/viewport';
 import { cn } from '@/lib/cn';
 
 const FOCUSABLE_SELECTOR =
@@ -28,8 +29,14 @@ export const Drawer = ({
 
     triggerRef.current = document.activeElement;
 
+    // Below lg this renders full-screen and must lock the background; at lg+
+    // it's a 420px side panel, so the rest of the page — including the
+    // transaction list next to it — stays visible and should stay scrollable.
+    const shouldLockScroll = !isDesktopViewport();
     const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (shouldLockScroll) {
+      document.body.style.overflow = 'hidden';
+    }
 
     const focusable = (): HTMLElement[] =>
       Array.from(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []);
@@ -60,7 +67,9 @@ export const Drawer = ({
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
+      if (shouldLockScroll) {
+        document.body.style.overflow = previousOverflow;
+      }
       if (triggerRef.current instanceof HTMLElement) {
         triggerRef.current.focus();
       }

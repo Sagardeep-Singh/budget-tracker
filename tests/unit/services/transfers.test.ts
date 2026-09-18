@@ -150,6 +150,42 @@ describe('matchTransfers', () => {
     );
   });
 
+  it('scans the full history when no date range is given (manual match button)', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await matchTransfers('user-1');
+
+    const where = prismaMock.transaction.findMany.mock.calls[0][0].where;
+    expect(where.date).toBeUndefined();
+  });
+
+  it('bounds the scan to the given date range padded by the match window', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await matchTransfers('user-1', { from: day(10), to: day(20) });
+
+    const where = prismaMock.transaction.findMany.mock.calls[0][0].where;
+    expect(where.date).toEqual({
+      gte: new Date(day(10).getTime() - 5 * 86_400_000),
+      lte: new Date(day(20).getTime() + 5 * 86_400_000),
+    });
+  });
+
+  it('batches every matched pair into a single $transaction call', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      row('exp-1', 'checking', 100, 'EXPENSE', 10),
+      row('inc-1', 'visa', 100, 'INCOME', 10),
+      row('exp-2', 'checking', 200, 'EXPENSE', 12),
+      row('inc-2', 'savings', 200, 'INCOME', 12),
+    ]);
+
+    const result = await matchTransfers('user-1');
+
+    expect(result).toEqual({ matched: 2 });
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(prismaMock.$transaction.mock.calls[0][0]).toHaveLength(4);
+  });
+
   it('gives each matched pair its own transferMatchId', async () => {
     prismaMock.transaction.findMany.mockResolvedValue([
       row('exp-1', 'checking', 100, 'EXPENSE', 10),

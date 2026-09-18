@@ -33,7 +33,16 @@ const amountKey = (amount: unknown): string => Number(amount).toFixed(2);
  * nearest-dated remaining income candidate wins, and both rows are flagged
  * `isTransfer` with a shared `transferMatchId` in one database transaction.
  */
-export const matchTransfers = async (userId: string): Promise<{ matched: number }> => {
+export const matchTransfers = async (
+  userId: string,
+  /**
+   * When given (the CSV-import path knows the imported rows' date range),
+   * bounds the scan to that range padded by the match window on each side —
+   * a match can't land outside it. Omitted for the manual "Match transfers"
+   * button, which has no range to bound by and falls back to a full scan.
+   */
+  dateRange?: { from: Date; to: Date },
+): Promise<{ matched: number }> => {
   const rows = await prisma.transaction.findMany({
     // A reimbursable expense or a transaction with an active reimbursement
     // link (either side) is excluded: matchTransfers runs automatically after
@@ -47,6 +56,12 @@ export const matchTransfers = async (userId: string): Promise<{ matched: number 
       isReimbursable: false,
       reimbursementExpenseLinks: { none: {} },
       reimbursementIncomeLinks: { none: {} },
+      ...(dateRange && {
+        date: {
+          gte: new Date(dateRange.from.getTime() - MATCH_WINDOW_MS),
+          lte: new Date(dateRange.to.getTime() + MATCH_WINDOW_MS),
+        },
+      }),
     },
     select: { id: true, accountId: true, amount: true, type: true, date: true },
     orderBy: { date: 'asc' },
@@ -97,18 +112,22 @@ export const matchTransfers = async (userId: string): Promise<{ matched: number 
     pairs.push([expense.id, best.id]);
   }
 
-  for (const [expenseId, incomeId] of pairs) {
-    const transferMatchId = randomUUID();
-    await prisma.$transaction([
-      prisma.transaction.update({
-        where: { id: expenseId },
-        data: { isTransfer: true, transferMatchId },
+  if (pairs.length > 0) {
+    await prisma.$transaction(
+      pairs.flatMap(([expenseId, incomeId]) => {
+        const transferMatchId = randomUUID();
+        return [
+          prisma.transaction.update({
+            where: { id: expenseId },
+            data: { isTransfer: true, transferMatchId },
+          }),
+          prisma.transaction.update({
+            where: { id: incomeId },
+            data: { isTransfer: true, transferMatchId },
+          }),
+        ];
       }),
-      prisma.transaction.update({
-        where: { id: incomeId },
-        data: { isTransfer: true, transferMatchId },
-      }),
-    ]);
+    );
   }
 
   return { matched: pairs.length };

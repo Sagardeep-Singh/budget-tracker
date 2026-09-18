@@ -3,6 +3,9 @@
 import { useSyncExternalStore } from 'react';
 import { ChangePasswordForm } from '@/components/settings/change-password-form';
 import { RemindersSection } from '@/components/settings/reminders-section';
+import { ExportDataCard } from '@/components/settings/export-data-card';
+import { ImportDataCard } from '@/components/settings/import-data-card';
+import { DeleteAccountCard } from '@/components/settings/delete-account-card';
 import { pillGroup, pillOption } from '@/components/settings/pills';
 import type { FrontendReminderPreference } from '@/lib/services/reminders';
 import type { FrontendPushSubscription } from '@/lib/services/pushSubscriptions';
@@ -29,12 +32,14 @@ const APPEARANCE_LABELS: Record<Appearance, string> = {
 export const SettingsView = ({
   email,
   hasPassword,
+  googleReauthenticatedAt,
   remindersAvailable,
   reminderPreference,
   pushDevices,
 }: {
   email: string;
   hasPassword: boolean;
+  googleReauthenticatedAt: number | null;
   remindersAvailable: boolean;
   reminderPreference: FrontendReminderPreference;
   pushDevices: FrontendPushSubscription[];
@@ -123,6 +128,14 @@ export const SettingsView = ({
           </p>
         )}
       </div>
+
+      <ExportDataCard />
+      <ImportDataCard />
+      <DeleteAccountCard
+        email={email}
+        hasPassword={hasPassword}
+        googleReauthenticatedAt={googleReauthenticatedAt}
+      />
     </div>
   );
 };

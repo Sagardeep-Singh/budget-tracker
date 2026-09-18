@@ -19,8 +19,14 @@ const GoogleGlyph = (): React.ReactElement => (
   </svg>
 );
 
-export const GoogleSignInButton = ({ label }: { label: string }): React.ReactElement => (
-  <form action={signInWithGoogleAction}>
+export const GoogleSignInButton = ({
+  label,
+  action = signInWithGoogleAction,
+}: {
+  label: string;
+  action?: () => Promise<void>;
+}): React.ReactElement => (
+  <form action={action}>
     <Button type="submit" variant="secondary" className="w-full">
       <GoogleGlyph />
       {label}

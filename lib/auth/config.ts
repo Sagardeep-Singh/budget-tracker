@@ -48,10 +48,37 @@ export const authConfig: NextAuthConfig = {
           if (!user.email) return token;
           const dbUser = await findOrCreateGoogleUser(user.email, user.name ?? null);
           token.userId = dbUser.id;
+          // Marks this token as having just completed a live, interactive
+          // Google sign-in — including a re-sign-in triggered by
+          // `reauthenticateWithGoogleAction`'s `prompt: 'login'`, which is
+          // exactly the same code path. Read by account deletion for a
+          // Google-only user as its live-credential proof, in place of
+          // `currentPassword` (see lib/services/accountDeletion.ts).
+          token.reauthenticatedAt = Date.now();
         } else {
           token.userId = user.id;
         }
         token.name = user.name ?? token.name;
+      }
+      // Deleting an account must take effect everywhere immediately, not
+      // just for the tab that did the deleting — this is the one callback
+      // upstream of every route's own `if (!session?.user)` guard and the
+      // protected layout's redirect, so a `null` here fires all of them
+      // with zero changes to ~20 existing route handlers. No `checkedAt`
+      // throttle: caching this for even a minute would let a deleted user's
+      // other devices keep working past the atomic delete they're supposed
+      // to be locked out of immediately.
+      //
+      // Skipped when `user` was just set above: sign-in/sign-up already
+      // loaded or created that row in this same request, so re-checking its
+      // existence a line later would be a pointless second lookup — only
+      // subsequent reads (no `user` on this call) need it.
+      if (!user && token.userId) {
+        const exists = await prisma.user.findUnique({
+          where: { id: token.userId as string },
+          select: { id: true },
+        });
+        if (!exists) return null;
       }
       return token;
     },
@@ -59,6 +86,7 @@ export const authConfig: NextAuthConfig = {
       if (session.user) {
         session.user.id = token.userId as string;
         session.user.name = (token.name as string | null) ?? session.user.name;
+        session.user.reauthenticatedAt = (token.reauthenticatedAt as number | undefined) ?? null;
       }
       return session;
     },

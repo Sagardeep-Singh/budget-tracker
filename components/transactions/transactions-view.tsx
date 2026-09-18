@@ -18,6 +18,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
 import { TransactionForm } from '@/components/transactions/transaction-form';
 import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
+import { MatchTransfersDialog } from '@/components/transactions/match-transfers-dialog';
 import { PeriodPicker, type PeriodMode } from '@/components/transactions/period-picker';
 import { cn } from '@/lib/cn';
 import {
@@ -81,6 +82,8 @@ export const TransactionsView = ({
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
   const [filtersDialogKey, setFiltersDialogKey] = useState(0);
+  const [matchDialogOpen, setMatchDialogOpen] = useState(false);
+  const [matchDialogKey, setMatchDialogKey] = useState(0);
 
   // The URL is the source of truth for every filter except the payee search
   // box (below) — re-derived on every searchParams change rather than
@@ -102,9 +105,18 @@ export const TransactionsView = ({
   // state to a prop change, rather than in an effect (which would commit
   // the stale draft for one extra frame first).
   const [payeeSyncedFrom, setPayeeSyncedFrom] = useState(filters.payee);
+  // The value we last pushed to the URL ourselves — when the URL's payee
+  // catches up to exactly this, it's the echo of our own debounced push
+  // completing, not an external change, and must not stomp on whatever the
+  // user has kept typing in the meantime (this used to happen: the URL
+  // round-trip for one keystroke could land after the user had already typed
+  // several more, snapping the input back to the older value mid-word).
+  const [lastPushedPayee, setLastPushedPayee] = useState(filters.payee);
   if (filters.payee !== payeeSyncedFrom) {
     setPayeeSyncedFrom(filters.payee);
-    setPayeeDraft(filters.payee);
+    if (filters.payee !== lastPushedPayee) {
+      setPayeeDraft(filters.payee);
+    }
   }
 
   const pushFilters = useCallback(
@@ -117,7 +129,10 @@ export const TransactionsView = ({
 
   useEffect(() => {
     if (payeeDraft === filters.payee) return;
-    const timeout = setTimeout(() => pushFilters({ ...filters, payee: payeeDraft }), 300);
+    const timeout = setTimeout(() => {
+      setLastPushedPayee(payeeDraft);
+      pushFilters({ ...filters, payee: payeeDraft });
+    }, 300);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on payeeDraft changes; `filters`/`pushFilters` reacting here would restart the debounce on every unrelated filter change
   }, [payeeDraft]);
@@ -194,15 +209,25 @@ export const TransactionsView = ({
     router.refresh();
   };
 
-  const handleMatchTransfers = async (): Promise<void> => {
+  const openMatchDialog = (): void => {
+    setMatchDialogKey((k) => k + 1);
+    setMatchDialogOpen(true);
+  };
+
+  const handleMatchTransfers = async (range: { from: Date; to: Date }): Promise<void> => {
     setMatchPending(true);
     setMatchResult(null);
-    const res = await fetch('/api/transactions/match-transfers', { method: 'POST' });
+    const res = await fetch('/api/transactions/match-transfers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(range),
+    });
     setMatchPending(false);
     if (!res.ok) {
       setMatchResult('Could not match transfers. Try again.');
       return;
     }
+    setMatchDialogOpen(false);
     const data: { matched: number } = await res.json();
     setMatchResult(
       data.matched === 0
@@ -320,7 +345,7 @@ export const TransactionsView = ({
         <Button
           type="button"
           variant="secondary"
-          onClick={handleMatchTransfers}
+          onClick={openMatchDialog}
           icon={ArrowLeftRight}
           loading={matchPending}
           className="shrink-0 px-4 py-2"
@@ -513,15 +538,31 @@ export const TransactionsView = ({
       </div>
 
       <div className="lg:hidden">
-        <div className="border-line bg-paper-raised flex items-center gap-2.25 rounded-full border px-3.75 py-0">
-          <Search size={15} className="text-ink-muted shrink-0" />
-          <input
-            type="text"
-            value={mobileSearch}
-            onChange={(e) => setMobileSearch(e.target.value)}
-            placeholder="Search payee or amount"
-            className="placeholder:text-ink-muted/70 min-h-[46px] flex-1 bg-transparent text-sm outline-none"
-          />
+        <div className="flex items-center gap-2">
+          <div className="border-line bg-paper-raised flex flex-1 items-center gap-2.25 rounded-full border px-3.75 py-0">
+            <Search size={15} className="text-ink-muted shrink-0" />
+            <input
+              type="text"
+              value={mobileSearch}
+              onChange={(e) => setMobileSearch(e.target.value)}
+              placeholder="Search payee or amount"
+              className="placeholder:text-ink-muted/70 min-h-[46px] flex-1 bg-transparent text-sm outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openFiltersDialog}
+            aria-label="Filters"
+            data-testid="mobile-filters-button"
+            className="border-line bg-paper-raised text-ink relative flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full border"
+          >
+            <SlidersHorizontal size={17} />
+            {activeFilterCount > 0 && (
+              <span className="bg-iris text-paper-raised absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 font-mono text-[10px] tabular-nums">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
 
         <div
@@ -686,13 +727,20 @@ export const TransactionsView = ({
         onCancel={() => setConfirmDeleteId(null)}
       />
       <TransactionFiltersDialog
-        key={filtersDialogKey}
+        key={`filters-${filtersDialogKey}`}
         open={filtersDialogOpen}
         onClose={() => setFiltersDialogOpen(false)}
         filters={filters}
         onApply={handleApplyFilters}
         accounts={accounts}
         categories={categories}
+      />
+      <MatchTransfersDialog
+        key={`match-${matchDialogKey}`}
+        open={matchDialogOpen}
+        onClose={() => setMatchDialogOpen(false)}
+        onConfirm={handleMatchTransfers}
+        pending={matchPending}
       />
 
       <div
