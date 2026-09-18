@@ -513,15 +513,31 @@ export const TransactionsView = ({
       </div>
 
       <div className="lg:hidden">
-        <div className="border-line bg-paper-raised flex items-center gap-2.25 rounded-full border px-3.75 py-0">
-          <Search size={15} className="text-ink-muted shrink-0" />
-          <input
-            type="text"
-            value={mobileSearch}
-            onChange={(e) => setMobileSearch(e.target.value)}
-            placeholder="Search payee or amount"
-            className="placeholder:text-ink-muted/70 min-h-[46px] flex-1 bg-transparent text-sm outline-none"
-          />
+        <div className="flex items-center gap-2">
+          <div className="border-line bg-paper-raised flex flex-1 items-center gap-2.25 rounded-full border px-3.75 py-0">
+            <Search size={15} className="text-ink-muted shrink-0" />
+            <input
+              type="text"
+              value={mobileSearch}
+              onChange={(e) => setMobileSearch(e.target.value)}
+              placeholder="Search payee or amount"
+              className="placeholder:text-ink-muted/70 min-h-[46px] flex-1 bg-transparent text-sm outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openFiltersDialog}
+            aria-label="Filters"
+            data-testid="mobile-filters-button"
+            className="border-line bg-paper-raised text-ink relative flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full border"
+          >
+            <SlidersHorizontal size={17} />
+            {activeFilterCount > 0 && (
+              <span className="bg-iris text-paper-raised absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 font-mono text-[10px] tabular-nums">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
 
         <div
