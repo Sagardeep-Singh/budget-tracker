@@ -715,7 +715,7 @@ export const TransactionsView = ({
         onCancel={() => setConfirmDeleteId(null)}
       />
       <TransactionFiltersDialog
-        key={filtersDialogKey}
+        key={`filters-${filtersDialogKey}`}
         open={filtersDialogOpen}
         onClose={() => setFiltersDialogOpen(false)}
         filters={filters}
@@ -724,7 +724,7 @@ export const TransactionsView = ({
         categories={categories}
       />
       <MatchTransfersDialog
-        key={matchDialogKey}
+        key={`match-${matchDialogKey}`}
         open={matchDialogOpen}
         onClose={() => setMatchDialogOpen(false)}
         onConfirm={handleMatchTransfers}
