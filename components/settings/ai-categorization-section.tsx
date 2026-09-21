@@ -1,5 +1,3 @@
-// Scaffold only — non-functional; developer wires real fetch/state per the
-// architecture doc's FrontendAiSettings / AiDisclosurePreview contracts.
 // Structurally modeled on components/settings/reminders-section.tsx: an
 // `available` early-return card, then a live card with local optimistic
 // state seeded from server props.
@@ -21,7 +19,6 @@ import { Input, Label } from '@/components/ui/field';
 import { pillGroup, pillOption } from '@/components/settings/pills';
 import { AiDisclosureModal } from '@/components/settings/ai-disclosure-modal';
 import type { FrontendAiSettings } from '@/lib/services/aiSettings';
-import type { AiDisclosurePreview } from '@/lib/services/aiCategorize';
 import { AI_PROVIDERS } from '@/lib/validators/ai-settings';
 
 type Provider = (typeof AI_PROVIDERS)[number]; // 'ANTHROPIC' | 'OPENAI'
@@ -55,7 +52,6 @@ export const AiCategorizationSection = ({
   // per this codebase's remount-on-open convention (see match-transfers-dialog).
   const [disclosureOpen, setDisclosureOpen] = useState(false);
   const [dialogKey, setDialogKey] = useState(0);
-  const [disclosurePreview, setDisclosurePreview] = useState<AiDisclosurePreview | null>(null);
 
   // Entry point for the Save button: if the disclosure has never been
   // accepted, show it first; the modal's own Accept handler runs the real
@@ -75,12 +71,41 @@ export const AiCategorizationSection = ({
     setPending(true);
     setNotice(null);
     setWarning(null);
-    // fetch PUT /api/settings/ai { provider, apiKey, sendNote, sendAmount }
-    // 400 (auth rejected) -> setNotice(message); apiKey input keeps focus; return false
-    // 200 with warning !== null -> setWarning(warning), clear apiKey field; return true
-    // 200 clean -> clear apiKey field, setSettings(response minus warning); return true
-    setPending(false);
-    return false;
+    try {
+      const response = await fetch('/api/settings/ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey: apiKey.trim(), sendNote, sendAmount }),
+      });
+      const body = (await response.json()) as
+        (FrontendAiSettings & { warning: string | null }) | { error: string };
+
+      if (!response.ok) {
+        // The 400 case is a rejected key. Nothing was persisted, so the form
+        // keeps the typed key for a quick correction.
+        setNotice('error' in body ? body.error : 'Could not save your API key. Try again.');
+        return false;
+      }
+
+      const { warning: saveWarning, ...saved } = body as FrontendAiSettings & {
+        warning: string | null;
+      };
+      setSettings(saved);
+      setSendNote(saved.sendNote);
+      setSendAmount(saved.sendAmount);
+      // Write-only form: the field never re-displays what was stored.
+      setApiKey('');
+      setWarning(saveWarning);
+      if (!saveWarning) {
+        setNotice(null);
+      }
+      return true;
+    } catch {
+      setNotice('Could not save your API key. Try again.');
+      return false;
+    } finally {
+      setPending(false);
+    }
   };
 
   // Modal's Accept handler: save the key first (see file header note), then
@@ -89,26 +114,78 @@ export const AiCategorizationSection = ({
     const saved = await doSave();
     if (!saved) return; // modal stays open; doSave already surfaced the error
     setPending(true);
-    // await fetch('/api/settings/ai/disclosure', { method: 'POST' })
-    // on success: setSettings(s => ({ ...s, disclosureAccepted: true })); setDisclosureOpen(false);
-    // on failure: leave disclosureOpen true, setNotice('Key saved, but could not record your review. Try Save again.')
-    setPending(false);
+    try {
+      const response = await fetch('/api/settings/ai/disclosure', { method: 'POST' });
+      if (!response.ok) {
+        setNotice('Key saved, but could not record your review. Try Save again.');
+        return;
+      }
+      setSettings((await response.json()) as FrontendAiSettings);
+      setDisclosureOpen(false);
+    } catch {
+      setNotice('Key saved, but could not record your review. Try Save again.');
+    } finally {
+      setPending(false);
+    }
   };
 
   const handleRemove = async (): Promise<void> => {
     setPending(true);
-    // await fetch('/api/settings/ai', { method: 'DELETE' })
-    // setSettings({ configured: false, provider: null, maskedKey: null, verified: false,
-    //   sendNote: false, sendAmount: false, disclosureAccepted: settings.disclosureAccepted,
-    //   available: settings.available })
-    setPending(false);
+    setNotice(null);
+    setWarning(null);
+    try {
+      const response = await fetch('/api/settings/ai', { method: 'DELETE' });
+      if (!response.ok) {
+        setNotice('Could not remove your API key. Try again.');
+        return;
+      }
+      // The row is gone, so the disclosure stamp went with it — the next save
+      // shows the disclosure again, which is correct rather than a regression.
+      setSettings({
+        configured: false,
+        provider: null,
+        maskedKey: null,
+        verified: false,
+        sendNote: false,
+        sendAmount: false,
+        disclosureAccepted: false,
+        available: settings.available,
+      });
+      setSendNote(false);
+      setSendAmount(false);
+      setApiKey('');
+    } catch {
+      setNotice('Could not remove your API key. Try again.');
+    } finally {
+      setPending(false);
+    }
   };
 
-  // Toggles fire independently via PATCH — never bundled with a key save.
+  // Toggles fire independently via PATCH — never bundled with a key save, so
+  // flipping one can never re-submit or overwrite the stored key.
   const handleToggle = async (next: { sendNote: boolean; sendAmount: boolean }): Promise<void> => {
     setPending(true);
-    // await fetch('/api/settings/ai/toggles', { method: 'PATCH', body: JSON.stringify(next) })
-    setPending(false);
+    try {
+      const response = await fetch('/api/settings/ai/toggles', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      if (!response.ok) {
+        // Roll the optimistic flip back rather than leaving the switch lying.
+        setSendNote(settings.sendNote);
+        setSendAmount(settings.sendAmount);
+        setNotice('Could not save that setting. Try again.');
+        return;
+      }
+      setSettings((await response.json()) as FrontendAiSettings);
+    } catch {
+      setSendNote(settings.sendNote);
+      setSendAmount(settings.sendAmount);
+      setNotice('Could not save that setting. Try again.');
+    } finally {
+      setPending(false);
+    }
   };
 
   if (!settings.available) {
@@ -290,7 +367,9 @@ export const AiCategorizationSection = ({
         onClose={() => setDisclosureOpen(false)}
         onAccept={handleDisclosureAccept}
         pending={pending}
-        preview={disclosurePreview}
+        // The modal owns its own GET (it is remounted per open via dialogKey),
+        // so there is nothing to pre-fetch here.
+        preview={null}
         provider={provider}
       />
     </div>

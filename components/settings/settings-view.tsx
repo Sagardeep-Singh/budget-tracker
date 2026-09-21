@@ -3,12 +3,14 @@
 import { useSyncExternalStore } from 'react';
 import { ChangePasswordForm } from '@/components/settings/change-password-form';
 import { RemindersSection } from '@/components/settings/reminders-section';
+import { AiCategorizationSection } from '@/components/settings/ai-categorization-section';
 import { ExportDataCard } from '@/components/settings/export-data-card';
 import { ImportDataCard } from '@/components/settings/import-data-card';
 import { DeleteAccountCard } from '@/components/settings/delete-account-card';
 import { pillGroup, pillOption } from '@/components/settings/pills';
 import type { FrontendReminderPreference } from '@/lib/services/reminders';
 import type { FrontendPushSubscription } from '@/lib/services/pushSubscriptions';
+import type { FrontendAiSettings } from '@/lib/services/aiSettings';
 import {
   APPEARANCES,
   PALETTES,
@@ -36,6 +38,7 @@ export const SettingsView = ({
   remindersAvailable,
   reminderPreference,
   pushDevices,
+  aiSettings,
 }: {
   email: string;
   hasPassword: boolean;
@@ -43,6 +46,7 @@ export const SettingsView = ({
   remindersAvailable: boolean;
   reminderPreference: FrontendReminderPreference;
   pushDevices: FrontendPushSubscription[];
+  aiSettings: FrontendAiSettings;
 }): React.ReactElement => {
   const palette = useSyncExternalStore(
     subscribeToPreferences,
@@ -117,6 +121,8 @@ export const SettingsView = ({
         preference={reminderPreference}
         devices={pushDevices}
       />
+
+      <AiCategorizationSection settings={aiSettings} />
 
       <div className="border-line bg-paper-raised rounded-2xl border p-5">
         <h2 className="font-display text-[15px] font-semibold">Change password</h2>

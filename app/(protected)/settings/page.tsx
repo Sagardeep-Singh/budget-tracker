@@ -4,13 +4,15 @@ import { ScreenHeader } from '@/components/nav/screen-header';
 import { userHasPassword } from '@/lib/services/users';
 import { getReminderPreference } from '@/lib/services/reminders';
 import { listPushSubscriptions } from '@/lib/services/pushSubscriptions';
+import { getAiSettings } from '@/lib/services/aiSettings';
 
 const SettingsPage = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
-  const [hasPassword, reminderPreference, pushDevices] = await Promise.all([
+  const [hasPassword, reminderPreference, pushDevices, aiSettings] = await Promise.all([
     userHasPassword(session!.user.id),
     getReminderPreference(session!.user.id),
     listPushSubscriptions(session!.user.id),
+    getAiSettings(session!.user.id),
   ]);
 
   return (
@@ -25,6 +27,7 @@ const SettingsPage = async (): Promise<React.ReactElement> => {
         remindersAvailable={Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)}
         reminderPreference={reminderPreference}
         pushDevices={pushDevices}
+        aiSettings={aiSettings}
       />
     </div>
   );

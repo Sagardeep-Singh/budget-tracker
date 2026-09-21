@@ -1,6 +1,6 @@
-// Scaffold only. Modeled on match-transfers-dialog.tsx's Modal usage:
-// remount via `key` (dialogKey, owned by the parent) to get a fresh preview
-// fetch every time it opens, rather than an effect keyed on `open`.
+// Modeled on match-transfers-dialog.tsx's Modal usage: remount via `key`
+// (dialogKey, owned by the parent) to get a fresh preview fetch every time it
+// opens, rather than an effect keyed on `open`.
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -31,12 +31,29 @@ export const AiDisclosureModal = ({
   const [preview, setPreview] = useState<AiDisclosurePreview | null>(previewProp);
   const [loadError, setLoadError] = useState(false);
 
+  // The component is remounted on every open (parent's `dialogKey`), so state
+  // starts clean — nothing to reset synchronously here, which also keeps this
+  // effect free of a cascading setState.
   useEffect(() => {
     if (!open) return;
-    setLoadError(false);
-    // fetch('/api/settings/ai/disclosure') -> setPreview(json) on 200,
-    // setLoadError(true) on failure (network/5xx) so the modal can show a
-    // retry state instead of a blank/incorrect preview.
+    let cancelled = false;
+    void fetch('/api/settings/ai/disclosure')
+      .then(async (response) => {
+        if (cancelled) return;
+        if (!response.ok) {
+          setLoadError(true);
+          return;
+        }
+        // Showing a blank or stale preview would be worse than showing a retry
+        // state: the whole point of this panel is that it is accurate.
+        setPreview((await response.json()) as AiDisclosurePreview);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   return (
