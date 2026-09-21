@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { AiSuggestionRequest } from '@/lib/ai/types';
 
 /**
@@ -54,4 +55,28 @@ export const buildSuggestionPayload = (
     // by the adapter building its structured-output enum.
     categoryIds: request.categories.map((category) => category.id),
   };
+};
+
+/**
+ * The allowed answers for one request: the user's own category ids plus the
+ * `"none"` sentinel. Appended here rather than inside `buildSuggestionPayload`
+ * so the prompt text and the answer constraint stay separable — the sentinel is
+ * an answer, not a category the model should see in the list.
+ */
+export const buildCategoryChoiceValues = (categoryIds: string[]): string[] => [
+  ...categoryIds,
+  NO_MATCH_SENTINEL,
+];
+
+/**
+ * Layer 2 of the response constraint (layer 1 is the provider-side tool /
+ * json_schema enum built from the same values). A model that ignores its schema,
+ * answers in prose, or names an id outside the user's set fails this parse — the
+ * adapter turns that into `AiInvalidResponseError`.
+ */
+export const buildCategoryChoiceSchema = (
+  categoryIds: string[],
+): z.ZodType<{ categoryId: string }> => {
+  const values = buildCategoryChoiceValues(categoryIds) as [string, ...string[]];
+  return z.object({ categoryId: z.enum(values) });
 };

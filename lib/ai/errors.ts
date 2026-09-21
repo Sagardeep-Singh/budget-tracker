@@ -98,6 +98,25 @@ export class AiInvalidResponseError extends Error {
 }
 
 /**
+ * Status → typed error, shared by both adapters so neither can drift. Exhaustive
+ * by construction: `401|403`, `429`, `>=500`, then *everything else* non-2xx
+ * falls to `AiProviderUnavailableError`. No status falls through unclassified,
+ * and the provider's own response body is never read, let alone forwarded.
+ */
+export const classifyProviderStatus = (provider: AiProviderName, status: number): Error => {
+  if (status === 401 || status === 403) {
+    return new AiProviderAuthError(provider);
+  }
+  if (status === 429) {
+    return new AiRateLimitedError({ reason: 'provider', provider });
+  }
+  if (status >= 500) {
+    return new AiProviderUnavailableError(provider, 'server');
+  }
+  return new AiProviderUnavailableError(provider, 'other');
+};
+
+/**
  * Maps one of our errors to an HTTP status and a user-safe message. Returns
  * `null` for anything that isn't ours, so the route rethrows instead of
  * swallowing an unrecognized failure into a fake 400.
