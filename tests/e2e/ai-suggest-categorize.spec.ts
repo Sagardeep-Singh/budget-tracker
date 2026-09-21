@@ -261,6 +261,16 @@ test('the note/amount opt-ins are enforced at the real HTTP boundary', async ({ 
   expect(lastUserMessage(sent?.body)).not.toContain(noteToken);
   expect(lastUserMessage(sent?.body)).not.toContain('42.50');
 
+  // Data minimization at the real HTTP boundary, not just in the builder: the
+  // account name and the transaction date must never leave the server. This is
+  // what would catch a future field added to AiSuggestionRequest.
+  const wholeBody = JSON.stringify(sent?.body);
+  expect(wholeBody).not.toContain('E2E Checking');
+  expect(wholeBody).not.toContain(new Date().toISOString().slice(0, 10));
+  for (const flag of ['isTransfer', 'isPayment', 'skippedAt', 'accountId']) {
+    expect(wholeBody).not.toContain(flag);
+  }
+
   await page.request.patch('/api/settings/ai/toggles', {
     data: { sendNote: true, sendAmount: true },
   });

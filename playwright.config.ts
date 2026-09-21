@@ -7,6 +7,11 @@ import { defineConfig, devices } from '@playwright/test';
  * base URLs and the encryption master key are therefore supplied to the dev
  * server here. Both are test-only values; `SECRET_ENCRYPTION_KEY` below is a
  * throwaway, deliberately not a real secret.
+ *
+ * Heads up: `reuseExistingServer` is on outside CI, so a dev server you started
+ * by hand gets reused *without* these vars — the AI specs would then try to
+ * reach the real provider APIs. Stop any hand-started `npm run dev` before
+ * running the suite.
  */
 const AI_FIXTURE_PORT = Number(process.env.AI_FIXTURE_PORT ?? 4599);
 const AI_FIXTURE_URL = `http://127.0.0.1:${AI_FIXTURE_PORT}`;
