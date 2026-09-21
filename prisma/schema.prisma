@@ -31,6 +31,11 @@ enum ReminderCadence {
   MONTHLY
 }
 
+enum AiProvider {
+  ANTHROPIC
+  OPENAI
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -49,6 +54,7 @@ model User {
 
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
+  aiSettings             UserAiSettings?
 }
 
 model Account {
@@ -224,6 +230,44 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([enabled])
+}
+
+/// per-user BYOK settings for AI-assisted categorization. A row exists only
+/// once the user saves a key from Settings — absence of a row means the
+/// feature is off, which is the default for every existing and new user, so
+/// no backfill migration is needed. Deliberately excluded from data export
+/// (see lib/services/userData.ts) and preserved across data import.
+model UserAiSettings {
+  id       String     @id @default(cuid())
+  userId   String     @unique
+  provider AiProvider
+  /// AES-256-GCM ciphertext of the provider API key, packed as
+  /// "v1:<iv-b64>:<tag-b64>:<ciphertext-b64>" by lib/crypto/secrets.ts.
+  /// Never returned by any service, never logged, never exported.
+  encryptedApiKey String
+  /// last 4 chars of the plaintext key, stored separately so Settings can
+  /// render "sk-…a1b2" without ever decrypting. Display-only.
+  keyLast4        String
+  /// set when a probe call to the provider last succeeded. null means the key
+  /// was persisted during a provider outage and is unverified.
+  verifiedAt      DateTime?
+  /// opt-in: include Transaction.note in the prompt. Default off.
+  sendNote        Boolean   @default(false)
+  /// opt-in: include Transaction.amount in the prompt. Default off.
+  sendAmount      Boolean   @default(false)
+  /// set the first time the user acknowledges the data-disclosure panel;
+  /// the suggest endpoint refuses to run while null.
+  disclosureAcceptedAt DateTime?
+  /// UTC calendar date (YYYYMMDD int, same idiom as Budget.month) the
+  /// suggest counter belongs to; rolls the counter over without a cron job
+  suggestCountDate     Int?
+  /// suggest calls made on suggestCountDate. DB-backed because serverless is
+  /// multi-instance: an in-memory limiter would not limit.
+  suggestCount         Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// one browser/device push registration. A user may hold several (phone,
