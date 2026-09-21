@@ -1,7 +1,7 @@
 import type { AiProvider } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { AI_TIMEOUT_MS, getAiProviderClient } from '@/lib/ai';
-import { AiProviderAuthError } from '@/lib/ai/errors';
+import { AiProviderAuthError, AiUnavailableError } from '@/lib/ai/errors';
 import { PROVIDER_LABELS } from '@/lib/ai/types';
 import { decryptSecret, encryptSecret, isSecretEncryptionConfigured } from '@/lib/crypto/secrets';
 import { ServiceValidationError } from '@/lib/services/common';
@@ -87,6 +87,13 @@ export const saveAiSettings = async (
   userId: string,
   input: SaveAiSettingsInput,
 ): Promise<FrontendAiSettings & { warning: string | null }> => {
+  // Guard before the probe, not just at `encryptSecret` time below — an unset
+  // or malformed `SECRET_ENCRYPTION_KEY` must fail closed with the documented
+  // 503, not spend a real provider call first and then throw unguarded.
+  if (!isSecretEncryptionConfigured()) {
+    throw new AiUnavailableError();
+  }
+
   const client = getAiProviderClient(input.provider);
 
   let verifiedAt: Date | null = new Date();

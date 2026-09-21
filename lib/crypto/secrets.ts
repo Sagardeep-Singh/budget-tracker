@@ -47,12 +47,23 @@ export class SecretDecryptionError extends Error {
 }
 
 /**
- * Mirrors `isPushConfigured()` / the `AUTH_GOOGLE_ID` idiom: an unset env var
- * makes the feature invisible rather than crashing at import time. Read at call
- * time, never at module load.
+ * Mirrors `isPushConfigured()` / the `AUTH_GOOGLE_ID` idiom: an unset OR
+ * malformed env var makes the feature invisible rather than crashing partway
+ * through a write. A presence-only check here (the shape used to be
+ * `Boolean(process.env.SECRET_ENCRYPTION_KEY)`) let a wrong-length/bad-base64
+ * key report `available: true` in Settings, so a save would probe, succeed,
+ * then throw unguarded from `encryptSecret` — an opaque 500 instead of the
+ * documented 503. Validating shape here closes that off at the one place
+ * every caller already checks before touching the crypto surface.
  */
-export const isSecretEncryptionConfigured = (): boolean =>
-  Boolean(process.env.SECRET_ENCRYPTION_KEY);
+export const isSecretEncryptionConfigured = (): boolean => {
+  try {
+    masterKey();
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const masterKey = (): Buffer => {
   const raw = process.env.SECRET_ENCRYPTION_KEY;

@@ -50,6 +50,58 @@ test('first-time save shows the disclosure; accepting saves and masks the key', 
   await expect(page.locator('#ai-api-key')).toHaveAttribute('placeholder', /a1b2$/);
 });
 
+test('if recording disclosure acceptance fails after a successful save, the key stays in the field and retrying "Looks good" succeeds without re-pasting', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-settings');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, apiKey, { status: 200 });
+
+  // The disclosure-accept POST is a browser->Next.js call (unlike the
+  // provider probe/suggest calls, which happen server-side and need the
+  // fixture provider server) — page.route can fail it directly, once. The
+  // modal also GETs this same path for its preview, so the route handler
+  // must filter by method or it fails the preview fetch instead.
+  let disclosureCalls = 0;
+  await page.route('**/api/settings/ai/disclosure', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    disclosureCalls += 1;
+    if (disclosureCalls === 1) {
+      await route.fulfill({ status: 500, body: '{}' });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+
+  const dialog = disclosureDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Payee')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Looks good, continue' }).click();
+
+  // First accept call failed: the key was already saved server-side (the PUT
+  // succeeded), but disclosure wasn't recorded. The dialog stays open and the
+  // key must still be in the field — clearing it here would leave no way to
+  // pass the 20-char minimum on retry without re-pasting from scratch.
+  await expect(dialog).toBeVisible();
+  await expect(page.getByText(/could not record your review/i)).toBeVisible();
+  await expect(page.locator('#ai-api-key')).toHaveValue(apiKey);
+
+  // Retry: same button, no re-typing. Second route hit falls through to the
+  // real handler and succeeds.
+  await dialog.getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#ai-api-key')).toHaveValue('');
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+  expect(disclosureCalls).toBe(2);
+});
+
 test('swapping to the second provider does not re-show the disclosure', async ({ page }) => {
   const anthropicKey = uniqueApiKey();
   const openaiKey = uniqueApiKey('sk-openai-e2e');

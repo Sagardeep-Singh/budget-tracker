@@ -67,7 +67,16 @@ export const AiCategorizationSection = ({
 
   // PUT /api/settings/ai. Returns whether the save succeeded, so the
   // disclosure-modal flow knows whether it's safe to stamp acceptance.
-  const doSave = async (): Promise<boolean> => {
+  //
+  // `clearKeyOnSuccess` defaults to true for the direct-save path (disclosure
+  // already accepted). The disclosure-accept path passes false: if the
+  // save-first-then-accept sequence's second call (POST /disclosure) fails,
+  // the typed key must still be in the field, or the user is stuck — the
+  // 20-char-minimum validator rejects an empty resubmit, and there was no
+  // other way back into this state (`/categorize` never checked
+  // `disclosureAccepted` before showing "Suggest with AI", so every click
+  // there would 409 with no visible path back to this modal).
+  const doSave = async (clearKeyOnSuccess = true): Promise<boolean> => {
     setPending(true);
     setNotice(null);
     setWarning(null);
@@ -93,8 +102,11 @@ export const AiCategorizationSection = ({
       setSettings(saved);
       setSendNote(saved.sendNote);
       setSendAmount(saved.sendAmount);
-      // Write-only form: the field never re-displays what was stored.
-      setApiKey('');
+      // Write-only form: the field never re-displays what was stored. Only
+      // cleared once nothing later in the flow still needs it (see above).
+      if (clearKeyOnSuccess) {
+        setApiKey('');
+      }
       setWarning(saveWarning);
       if (!saveWarning) {
         setNotice(null);
@@ -109,21 +121,24 @@ export const AiCategorizationSection = ({
   };
 
   // Modal's Accept handler: save the key first (see file header note), then
-  // stamp disclosure acceptance only if that succeeded.
+  // stamp disclosure acceptance only if that succeeded. The key stays in the
+  // field until acceptance actually lands, so a failed accept call can be
+  // retried without re-pasting anything.
   const handleDisclosureAccept = async (): Promise<void> => {
-    const saved = await doSave();
+    const saved = await doSave(false);
     if (!saved) return; // modal stays open; doSave already surfaced the error
     setPending(true);
     try {
       const response = await fetch('/api/settings/ai/disclosure', { method: 'POST' });
       if (!response.ok) {
-        setNotice('Key saved, but could not record your review. Try Save again.');
+        setNotice('Key saved, but could not record your review. Click "Looks good" to retry.');
         return;
       }
       setSettings((await response.json()) as FrontendAiSettings);
+      setApiKey('');
       setDisclosureOpen(false);
     } catch {
-      setNotice('Key saved, but could not record your review. Try Save again.');
+      setNotice('Key saved, but could not record your review. Click "Looks good" to retry.');
     } finally {
       setPending(false);
     }

@@ -32,7 +32,7 @@ vi.mock('@/lib/ai', async () => {
   return { ...actual, getAiProviderClient: getAiProviderClientMock };
 });
 
-const { AiProviderAuthError, AiProviderUnavailableError, AiRateLimitedError } =
+const { AiProviderAuthError, AiProviderUnavailableError, AiRateLimitedError, AiUnavailableError } =
   await import('@/lib/ai/errors');
 const { ServiceValidationError } = await import('@/lib/services/common');
 const aiSettingsModule = await import('@/lib/services/aiSettings');
@@ -150,6 +150,14 @@ describe('getAiSettings', () => {
 });
 
 describe('saveAiSettings', () => {
+  it('fails closed with AiUnavailableError when SECRET_ENCRYPTION_KEY is unset/malformed, before probing or encrypting', async () => {
+    cryptoMock.isSecretEncryptionConfigured.mockReturnValue(false);
+    await expect(saveAiSettings('user-1', SAVE_INPUT)).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(clientMock.listModels).not.toHaveBeenCalled();
+    expect(cryptoMock.encryptSecret).not.toHaveBeenCalled();
+    expect(prismaMock.userAiSettings.upsert).not.toHaveBeenCalled();
+  });
+
   it('persists an encrypted key with verifiedAt set when the probe returns 200', async () => {
     const result = await saveAiSettings('user-1', SAVE_INPUT);
 

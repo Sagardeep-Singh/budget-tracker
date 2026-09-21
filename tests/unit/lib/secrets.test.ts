@@ -39,6 +39,16 @@ describe('isSecretEncryptionConfigured', () => {
     expect(isSecretEncryptionConfigured()).toBe(true);
   });
 
+  it('is false for a wrong-length or non-base64 SECRET_ENCRYPTION_KEY, not just when unset', () => {
+    // A presence-only check here previously let a malformed key report
+    // `available: true`, so a save would probe successfully and then throw
+    // unguarded from encryptSecret instead of failing closed up front.
+    process.env.SECRET_ENCRYPTION_KEY = Buffer.from('too short').toString('base64');
+    expect(isSecretEncryptionConfigured()).toBe(false);
+    process.env.SECRET_ENCRYPTION_KEY = 'not-valid-base64!!!';
+    expect(isSecretEncryptionConfigured()).toBe(false);
+  });
+
   it('only throws at call time, never at import time, when unconfigured', () => {
     delete process.env.SECRET_ENCRYPTION_KEY;
     // The module import at the top of this file already happened without a key
