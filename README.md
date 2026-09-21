@@ -30,6 +30,13 @@ For local development, `npm run db:setup` also seeds a known dev account from `A
 `ADMIN_PASSWORD` in `.env`, prepopulated with sample categories/rules/an account for convenience
 when testing — this isn't required for real usage, anyone can sign up from `/signup`.
 
+AI-assisted categorization is opt-in and off by default. Set `SECRET_ENCRYPTION_KEY` (32 random
+bytes, base64 — `openssl rand -base64 32`) to enable the "AI categorization" card in Settings,
+where each user saves their own Anthropic or OpenAI API key. Keys are encrypted at rest with that
+master key, excluded from data export, and never returned to the client. Left unset, the feature
+is invisible. See `.env.example` for the optional `AI_ANTHROPIC_BASE_URL` / `AI_OPENAI_BASE_URL`
+test overrides and `docs/runbooks/rotate-secret-encryption-key.md` for rotation.
+
 For a production deploy: run `npm run prisma:deploy` to apply migrations. `npm run
 prisma:bootstrap-admin` is optional — it seeds/updates one known account by email, useful for an
 admin or demo login.
