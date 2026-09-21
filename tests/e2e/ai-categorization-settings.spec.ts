@@ -130,13 +130,9 @@ test('removing the key takes the Suggest affordance away app-wide', async ({ pag
   await expect(page.getByRole('button', { name: 'Remove key' })).toHaveCount(0);
 
   await page.goto('/categorize');
-  const suggest = page.getByRole('button', { name: 'Suggest with AI' });
-  const count = await suggest.count();
-  if (count > 0) {
-    // Accepted alternative to absence: disabled, with the reason on screen.
-    await expect(suggest.first()).toBeDisabled();
-    await expect(page.getByText('Add an API key in Settings first.').first()).toBeVisible();
-  }
+  // Absent, not disabled: a permanently-inert control in every queue row is
+  // noise for a user who has not opted into BYOK.
+  await expect(page.getByRole('button', { name: 'Suggest with AI' })).toHaveCount(0);
 });
 
 test('the toggles gate on a configured key and persist independently', async ({ page }) => {

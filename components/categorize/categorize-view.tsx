@@ -72,11 +72,11 @@ export const CategorizeView = ({
   const [aiResults, setAiResults] = useState<Record<string, AiRowResult>>({});
   const [dailyCapHit, setDailyCapHit] = useState<string | null>(null);
 
-  // One reason string for the whole queue: the server is the enforcer, this
-  // just avoids offering a button that is guaranteed to fail.
-  const aiDisabledReason = !aiSettings.configured
-    ? 'Add an API key in Settings first.'
-    : dailyCapHit;
+  // No key, no button at all — rather than a disabled one with a hint. A
+  // permanently-inert control in every queue row is noise for the (majority)
+  // case of a user who has not opted into BYOK. The daily cap is different: it
+  // is temporary and the user needs to know why the button stopped working.
+  const showSuggest = aiSettings.available && aiSettings.configured;
 
   const suggestAi = async (transactionId: string): Promise<void> => {
     setSuggestingId(transactionId);
@@ -132,11 +132,11 @@ export const CategorizeView = ({
   /** Rendered only for rows no rule matched — AI is for the leftovers, and the
    * server refuses a rule-matched row anyway. */
   const renderSuggest = (transactionId: string, compact: boolean): React.ReactElement | null =>
-    aiSettings.available ? (
+    showSuggest ? (
       <SuggestAiButton
         compact={compact}
         state={suggestingId === transactionId ? 'loading' : 'idle'}
-        disabledReason={aiDisabledReason}
+        disabledReason={dailyCapHit}
         onClick={() => void suggestAi(transactionId)}
       />
     ) : null;

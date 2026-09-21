@@ -131,7 +131,12 @@ describe('suggestCategoryWithAi — rate limit', () => {
 
     const [rollover, claim] = prismaMock.userAiSettings.updateMany.mock.calls.map((c) => c[0]);
     expect(rollover.where.userId).toBe('user-1');
-    expect(rollover.where.suggestCountDate).toEqual({ not: expect.any(Number) });
+    // Covers the never-suggested row too: `NULL <> today` is NULL in SQL, so a
+    // bare `{ not: today }` would never roll a fresh row over.
+    expect(rollover.where.OR).toEqual([
+      { suggestCountDate: null },
+      { suggestCountDate: { not: expect.any(Number) } },
+    ]);
     expect(rollover.data).toEqual({
       suggestCountDate: expect.any(Number),
       suggestCount: 0,
@@ -141,6 +146,7 @@ describe('suggestCategoryWithAi — rate limit', () => {
     expect(claim.data).toEqual({ suggestCount: { increment: 1 } });
     // Same day key in both statements.
     expect(claim.where.suggestCountDate).toBe(rollover.data.suggestCountDate);
+    expect(rollover.where.OR[1].suggestCountDate.not).toBe(rollover.data.suggestCountDate);
   });
 
   it('throws the local-cap error and makes no provider call when the claim fails', async () => {

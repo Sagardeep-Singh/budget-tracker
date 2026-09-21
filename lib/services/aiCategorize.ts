@@ -132,7 +132,12 @@ export const suggestCategoryWithAi = async (
   // bulk suggestions" server-enforced rather than a UI choice.
   const today = utcDateKey(new Date());
   await prisma.userAiSettings.updateMany({
-    where: { userId, suggestCountDate: { not: today } },
+    // The `null` arm is load-bearing, not defensive: a row that has never been
+    // suggested from has `suggestCountDate = NULL`, and SQL's `NULL <> today`
+    // is NULL, not true — so a bare `{ not: today }` would silently skip the
+    // rollover and leave the claim below with nothing to match, rate-limiting
+    // every user on their very first suggestion.
+    where: { userId, OR: [{ suggestCountDate: null }, { suggestCountDate: { not: today } }] },
     data: { suggestCountDate: today, suggestCount: 0 },
   });
   const claimed = await prisma.userAiSettings.updateMany({
