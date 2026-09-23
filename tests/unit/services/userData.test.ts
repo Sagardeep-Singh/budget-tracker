@@ -16,6 +16,9 @@ const { prismaMock } = vi.hoisted(() => {
     budget: makeModel(),
     categoryRule: makeModel(),
     reimbursementLink: makeModel(),
+    // Not part of the 7-model export/import contract. Present only so the two
+    // BYOK regression tests below can assert *zero* calls on it.
+    userAiSettings: makeModel(),
   };
   return {
     prismaMock: {
@@ -256,5 +259,54 @@ describe('importUserData', () => {
     for (const row of [...accountArg.data, ...categoryArg.data, ...txArg.data]) {
       expect(row.userId).toBe('some-other-user');
     }
+  });
+});
+
+/**
+ * BYOK AI settings are excluded from export *by omission* (exportUserData
+ * builds an explicit `select` per model and never lists `UserAiSettings`) and
+ * preserved across a full-replace restore (`wipeUserData` deliberately does not
+ * delete them — the key is not in the export, so wiping it on restore would
+ * destroy it irrecoverably). Both properties are invisible in the source; these
+ * tests are what make a future accidental addition fail loudly.
+ */
+describe('BYOK AI settings are excluded from export and survive import', () => {
+  it('never reads UserAiSettings, and puts no AI key field in the export payload', async () => {
+    prismaMock.user.findUniqueOrThrow.mockResolvedValue({ email: 'a@example.com', name: 'A' });
+    for (const model of [
+      prismaMock.account,
+      prismaMock.category,
+      prismaMock.importBatch,
+      prismaMock.transaction,
+      prismaMock.budget,
+      prismaMock.categoryRule,
+      prismaMock.reimbursementLink,
+    ]) {
+      model.findMany.mockResolvedValue([]);
+    }
+    // A row is available in the mocked layer — the export must still not reach it.
+    prismaMock.userAiSettings.findMany.mockResolvedValue([
+      {
+        provider: 'ANTHROPIC',
+        encryptedApiKey: 'v1:iv:tag:ct',
+        keyLast4: 'a1b2',
+      },
+    ]);
+
+    const serialized = JSON.stringify(await exportUserData('user-1'));
+
+    expect(serialized).not.toContain('provider');
+    expect(serialized).not.toContain('encryptedApiKey');
+    expect(serialized).not.toContain('keyLast4');
+    expect(prismaMock.userAiSettings.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.userAiSettings.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('restore-from-backup preserves AI provider settings', async () => {
+    await wipeUserData(prismaMock as never, 'user-1');
+
+    expect(prismaMock.userAiSettings.deleteMany).not.toHaveBeenCalled();
+    expect(prismaMock.userAiSettings.createMany).not.toHaveBeenCalled();
+    expect(prismaMock.userAiSettings.findMany).not.toHaveBeenCalled();
   });
 });

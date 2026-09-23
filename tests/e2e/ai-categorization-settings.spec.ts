@@ -1,0 +1,445 @@
+import { test, expect, type Page } from '@playwright/test';
+import {
+  addTransactionThroughApi,
+  programModels,
+  programProbe,
+  seedAccountAndCategories,
+  signUpFreshUser,
+  uniqueApiKey,
+} from './fixtures/ai-control';
+
+/**
+ * Every test signs up its own user: `UserAiSettings` is one row per user, so
+ * sharing the dev login across `fullyParallel: true` workers would have these
+ * tests racing each other's key state. The provider itself is the local fixture
+ * server, keyed by the (unique per test) API key — see fixtures/ai-control.ts.
+ */
+
+const disclosureDialog = (page: Page) =>
+  page.getByRole('dialog').filter({ hasText: 'Review what gets sent' });
+
+const saveKey = async (page: Page, apiKey: string): Promise<void> => {
+  await page.locator('#ai-api-key').fill(apiKey);
+  await page.getByRole('button', { name: 'Save key' }).click();
+};
+
+test('first-time save shows the disclosure; accepting saves and masks the key', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-settings');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, apiKey, { status: 200 });
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+
+  const dialog = disclosureDialog(page);
+  await expect(dialog).toBeVisible();
+  // Past the loading skeleton: the preview is populated from the real endpoint.
+  await expect(dialog.getByText('Payee')).toBeVisible();
+  await expect(dialog.getByText(/names of all \d+ of your categories/)).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Looks good, continue' }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#ai-api-key')).toHaveValue('');
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+  await expect(page.locator('#ai-api-key')).toHaveAttribute('placeholder', /a1b2$/);
+});
+
+test('if recording disclosure acceptance fails after a successful save, the key stays in the field and retrying "Looks good" succeeds without re-pasting', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-settings');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, apiKey, { status: 200 });
+
+  // The disclosure-accept POST is a browser->Next.js call (unlike the
+  // provider probe/suggest calls, which happen server-side and need the
+  // fixture provider server) — page.route can fail it directly, once. The
+  // modal also GETs this same path for its preview, so the route handler
+  // must filter by method or it fails the preview fetch instead.
+  let disclosureCalls = 0;
+  await page.route('**/api/settings/ai/disclosure', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    disclosureCalls += 1;
+    if (disclosureCalls === 1) {
+      await route.fulfill({ status: 500, body: '{}' });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+
+  const dialog = disclosureDialog(page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Payee')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Looks good, continue' }).click();
+
+  // First accept call failed: the key was already saved server-side (the PUT
+  // succeeded), but disclosure wasn't recorded. The dialog stays open and the
+  // key must still be in the field — clearing it here would leave no way to
+  // pass the 20-char minimum on retry without re-pasting from scratch.
+  await expect(dialog).toBeVisible();
+  await expect(page.getByText(/could not record your review/i)).toBeVisible();
+  await expect(page.locator('#ai-api-key')).toHaveValue(apiKey);
+
+  // Retry: same button, no re-typing. Second route hit falls through to the
+  // real handler and succeeds.
+  await dialog.getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('#ai-api-key')).toHaveValue('');
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+  expect(disclosureCalls).toBe(2);
+});
+
+test('swapping to the second provider does not re-show the disclosure', async ({ page }) => {
+  const anthropicKey = uniqueApiKey();
+  const openaiKey = uniqueApiKey('sk-openai-e2e');
+  await signUpFreshUser(page, 'ai-swap');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, anthropicKey, { status: 200 });
+  await programProbe(page.request, openaiKey, { status: 200 });
+
+  await page.goto('/settings');
+  await saveKey(page, anthropicKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'OpenAI', exact: true }).click();
+  await saveKey(page, openaiKey);
+
+  // Asserted as a count, not a wait-and-miss: the dialog must never appear.
+  await expect(page.getByText('OpenAI key saved and verified.')).toBeVisible();
+  await expect(disclosureDialog(page)).toHaveCount(0);
+});
+
+test('a key the provider rejects is refused, not persisted', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-reject');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, apiKey, { status: 401 });
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Your Anthropic API key was rejected.' }),
+  ).toHaveText('Your Anthropic API key was rejected. Check it in Settings and save it again.');
+
+  await page.reload();
+  await expect(page.getByText(/key saved/)).toHaveCount(0);
+  await expect(page.locator('#ai-api-key')).toHaveAttribute('placeholder', 'sk-...');
+});
+
+test('a provider outage on save persists the key unverified, with an informational notice', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-outage');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, apiKey, { status: 500 });
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+
+  // role="status", not role="alert" — a provider outage is not the user's error.
+  await expect(page.getByRole('status').filter({ hasText: 'not yet verified' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'not yet verified' })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByText(/key saved — not yet verified/)).toBeVisible();
+});
+
+test('removing the key takes the Suggest affordance away app-wide', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-remove');
+  const { accountId } = await seedAccountAndCategories(page);
+  await addTransactionThroughApi(page, accountId, { payee: `Suggestable ${Date.now()}` });
+  await programProbe(page.request, apiKey, { status: 200 });
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+
+  await page.goto('/categorize');
+  await expect(page.getByRole('button', { name: 'Suggest with AI' }).first()).toBeEnabled();
+
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Remove key' }).click();
+  await expect(page.getByRole('button', { name: 'Remove key' })).toHaveCount(0);
+
+  await page.goto('/categorize');
+  // Absent, not disabled: a permanently-inert control in every queue row is
+  // noise for a user who has not opted into BYOK.
+  await expect(page.getByRole('button', { name: 'Suggest with AI' })).toHaveCount(0);
+});
+
+test('the toggles gate on a configured key and persist independently', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-toggles');
+  await seedAccountAndCategories(page);
+  await programProbe(page.request, apiKey, { status: 200 });
+
+  await page.goto('/settings');
+  const note = page.getByRole('switch', { name: 'Include the transaction note' });
+  const amount = page.getByRole('switch', { name: 'Include the amount' });
+
+  await expect(note).toHaveAttribute('aria-checked', 'false');
+  await expect(note).toBeDisabled();
+  await expect(amount).toBeDisabled();
+  await expect(page.getByText('Save an API key to turn these on.')).toBeVisible();
+
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+
+  const notePatched = page.waitForResponse(
+    (r) => r.url().includes('/api/settings/ai/toggles') && r.ok(),
+  );
+  await note.click();
+  await expect(note).toHaveAttribute('aria-checked', 'true');
+  await notePatched;
+
+  await page.reload();
+  await expect(page.getByRole('switch', { name: 'Include the transaction note' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+
+  const amountPatched = page.waitForResponse(
+    (r) => r.url().includes('/api/settings/ai/toggles') && r.ok(),
+  );
+  await page.getByRole('switch', { name: 'Include the amount' }).click();
+  await amountPatched;
+
+  await page.reload();
+  // One toggle's PATCH must not clobber the other.
+  await expect(page.getByRole('switch', { name: 'Include the transaction note' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(page.getByRole('switch', { name: 'Include the amount' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+});
+
+/**
+ * Model picker. `programModels` sets the probe's status and its `/v1/models`
+ * body in one call — the fixture replaces the whole programmed object per call,
+ * so status and models must always be programmed together.
+ */
+
+const modelSelect = (page: Page) => page.locator('#ai-model');
+
+const CHAT_MODELS = [
+  { id: 'gpt-newest', created: 300 },
+  { id: 'gpt-older', created: 100 },
+];
+
+test('the picker populates from the save response, and a pick survives a reload', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-pick');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, CHAT_MODELS);
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(page.getByText('Anthropic key saved and verified.')).toBeVisible();
+
+  // Asserted *before* any reload: this is the only check that exercises the
+  // PUT response reseeding the picker. A router refresh would not reseed it,
+  // because the section holds its state in useState seeded from props.
+  await expect(modelSelect(page)).toHaveValue('gpt-newest');
+  await expect(modelSelect(page).locator('option').first()).toHaveText(/\(newest\)/);
+
+  const patched = page.waitForResponse((r) => r.url().includes('/api/settings/ai/model') && r.ok());
+  await modelSelect(page).selectOption('gpt-older');
+  await patched;
+
+  // After a full reload: proves the PATCH persisted, not just optimistic UI.
+  await page.reload();
+  await expect(modelSelect(page)).toHaveValue('gpt-older');
+});
+
+test('non-chat OpenAI entries never reach the picker', async ({ page }) => {
+  const apiKey = uniqueApiKey('sk-openai-e2e');
+  await signUpFreshUser(page, 'ai-model-filter');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, [
+    { id: 'whisper-1', created: 400 },
+    { id: 'text-embedding-3-small', created: 350 },
+    { id: 'gpt-4o-mini', created: 300 },
+  ]);
+
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'OpenAI', exact: true }).click();
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(page.getByText('OpenAI key saved and verified.')).toBeVisible();
+
+  await expect(modelSelect(page).locator('option')).toHaveCount(1);
+  await expect(modelSelect(page)).toHaveValue('gpt-4o-mini');
+});
+
+test('a list we cannot load leaves the stored model visible but not changeable', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-unavail');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, CHAT_MODELS);
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(modelSelect(page)).toHaveValue('gpt-newest');
+
+  // The unavailable path is driven by listAiModels at *render* time against the
+  // already-saved credentials, so reprogramming this same key's /v1/models and
+  // reloading is what reaches it.
+  await programProbe(page.request, apiKey, { status: 500 });
+  await page.reload();
+
+  // Informational, not the user's error.
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Anthropic is having trouble right now' }),
+  ).toBeVisible();
+  await expect(modelSelect(page)).toBeDisabled();
+  await expect(modelSelect(page).locator('option')).toHaveCount(1);
+  await expect(modelSelect(page)).toHaveValue('gpt-newest');
+});
+
+test('a list that is empty from the very first probe renders a notice and no picker', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-empty');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, []);
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(page.getByText('Anthropic key saved')).toBeVisible();
+
+  await expect(
+    page.getByRole('status').filter({ hasText: "didn't return any usable models" }),
+  ).toBeVisible();
+  // Nothing is in force, so there is nothing to show: no control at all.
+  await expect(modelSelect(page)).toHaveCount(0);
+});
+
+test('changing the model does not spin the key form or disable the toggles', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-pending');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, CHAT_MODELS);
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(modelSelect(page)).toHaveValue('gpt-newest');
+
+  // Same-origin Next route, so page.route() can hold it in flight (unlike the
+  // provider calls, which never leave the server process).
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/settings/ai/model', async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  await modelSelect(page).selectOption('gpt-older');
+
+  // aria-busy, never disabled: disabling mid-PATCH would move focus and hide
+  // the value the user just picked.
+  await expect(modelSelect(page)).toHaveAttribute('aria-busy', 'true');
+  await expect(modelSelect(page)).not.toBeDisabled();
+  await expect(page.getByRole('switch', { name: 'Include the transaction note' })).toBeEnabled();
+  await expect(page.getByRole('switch', { name: 'Include the amount' })).toBeEnabled();
+  // The key form's own pending state is untouched.
+  await expect(
+    page.getByRole('button', { name: 'Save key' }).locator('svg.animate-spin'),
+  ).toHaveCount(0);
+
+  release();
+  await expect(modelSelect(page)).toHaveAttribute('aria-busy', 'false');
+});
+
+test('saving another key rewrites the model selection rather than keeping a stale one', async ({
+  page,
+}) => {
+  const anthropicKey = uniqueApiKey();
+  const openaiKey = uniqueApiKey('sk-openai-e2e');
+  await signUpFreshUser(page, 'ai-model-reset');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, anthropicKey, CHAT_MODELS);
+  await programModels(page.request, openaiKey, [
+    { id: 'gpt-second-key-a', created: 900 },
+    { id: 'gpt-second-key-b', created: 800 },
+  ]);
+
+  await page.goto('/settings');
+  await saveKey(page, anthropicKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(modelSelect(page)).toHaveValue('gpt-newest');
+
+  const patched = page.waitForResponse((r) => r.url().includes('/api/settings/ai/model') && r.ok());
+  await modelSelect(page).selectOption('gpt-older');
+  await patched;
+
+  await page.getByRole('button', { name: 'OpenAI', exact: true }).click();
+  await saveKey(page, openaiKey);
+  await expect(page.getByText('OpenAI key saved and verified.')).toBeVisible();
+
+  // The full-row upsert writes modelId unconditionally, so the previous key's
+  // hand-picked id can never survive.
+  await expect(modelSelect(page)).toHaveValue('gpt-second-key-a');
+  await page.reload();
+  await expect(modelSelect(page)).toHaveValue('gpt-second-key-a');
+});
+
+test('a second Settings render shows the current list, not a cached copy', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-stale');
+  await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, CHAT_MODELS);
+
+  await page.goto('/settings');
+  await saveKey(page, apiKey);
+  await disclosureDialog(page).getByRole('button', { name: 'Looks good, continue' }).click();
+  await expect(modelSelect(page)).toHaveValue('gpt-newest');
+  await expect(modelSelect(page).locator('option')).toHaveCount(2);
+
+  // Same key, a different catalogue. A cached list would still show list A.
+  await programModels(page.request, apiKey, [
+    { id: 'gpt-list-b-one', created: 700 },
+    { id: 'gpt-list-b-two', created: 600 },
+    { id: 'gpt-list-b-three', created: 500 },
+  ]);
+  await page.goto('/settings');
+
+  await expect(modelSelect(page).locator('option')).toHaveCount(4);
+  await expect(page.locator('#ai-model option[value="gpt-list-b-one"]')).toHaveCount(1);
+  await expect(page.locator('#ai-model option[value="gpt-newest"]')).toHaveCount(1);
+});
