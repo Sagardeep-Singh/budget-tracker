@@ -9,7 +9,13 @@ import {
   buildSuggestionPayload,
   NO_MATCH_SENTINEL,
 } from '@/lib/ai/prompt';
-import type { AiProviderClient, AiSuggestionRequest, AiSuggestionResult } from '@/lib/ai/types';
+import { filterChatModels, parseModelsResponse } from '@/lib/ai/models';
+import type {
+  AiModelSummary,
+  AiProviderClient,
+  AiSuggestionRequest,
+  AiSuggestionResult,
+} from '@/lib/ai/types';
 
 /**
  * Hand-rolled `fetch` transport for OpenAI — the mirror image of
@@ -19,12 +25,16 @@ import type { AiProviderClient, AiSuggestionRequest, AiSuggestionResult } from '
 const BASE_URL = process.env.AI_OPENAI_BASE_URL ?? 'https://api.openai.com';
 
 /**
- * Cheapest current-generation tier.
+ * Last-resort model id, used only when the user's stored `modelId` is still
+ * null — i.e. the key was saved during a provider outage and no Settings render
+ * has since managed to fetch a list. Cheapest current-generation tier.
  *
- * TODO: reverify this id against https://platform.openai.com/docs/models before
- * shipping. A retired id surfaces as a 404 → `AiProviderUnavailableError`.
+ * A stale id here is low-stakes and needs no periodic reverification: it is
+ * reached only when the list fetch itself failed, and it surfaces as
+ * `AiModelRejectedError`, which points the user straight at the Settings model
+ * picker rather than at a dead end.
  */
-export const OPENAI_MODEL = 'gpt-4o-mini';
+export const OPENAI_FALLBACK_MODEL = 'gpt-4o-mini';
 
 const SCHEMA_NAME = 'pick_category';
 
@@ -33,12 +43,24 @@ const provider = 'OPENAI' as const;
 const asUnavailable = (): AiProviderUnavailableError =>
   new AiProviderUnavailableError(provider, 'timeout');
 
-export const listModels = async (apiKey: string, signal: AbortSignal): Promise<void> => {
+/**
+ * No query string: unlike Anthropic, `/v1/models` here is unpaginated.
+ *
+ * `cache: 'no-store'`: this now runs on a server-component render path as well
+ * as from a POST handler, and the product decision is that the list is fetched
+ * live on every Settings render. (Within-a-render memoization is separately
+ * opted out of by passing a `signal`.)
+ */
+export const listModels = async (
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<AiModelSummary[]> => {
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}/v1/models`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}` },
+      cache: 'no-store',
       signal,
     });
   } catch {
@@ -47,10 +69,20 @@ export const listModels = async (apiKey: string, signal: AbortSignal): Promise<v
   if (!response.ok) {
     throw classifyProviderStatus(provider, response.status);
   }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new AiInvalidResponseError(provider);
+  }
+  // The list mixes in embeddings/audio/image models that cannot satisfy the
+  // structured-output contract below; keep them out of the picker.
+  return filterChatModels(parseModelsResponse(provider, body));
 };
 
 export const suggestCategory = async (
   apiKey: string,
+  model: string,
   request: AiSuggestionRequest,
   signal: AbortSignal,
 ): Promise<AiSuggestionResult> => {
@@ -66,7 +98,7 @@ export const suggestCategory = async (
       },
       signal,
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -95,7 +127,9 @@ export const suggestCategory = async (
   }
 
   if (!response.ok) {
-    throw classifyProviderStatus(provider, response.status);
+    // `context` is what turns a 400/404 into the actionable
+    // "pick a different model" error rather than a generic 502.
+    throw classifyProviderStatus(provider, response.status, { modelId: model });
   }
 
   let body: unknown;

@@ -251,6 +251,17 @@ model UserAiSettings {
   /// set when a probe call to the provider last succeeded. null means the key
   /// was persisted during a provider outage and is unverified.
   verifiedAt      DateTime?
+  /// provider model id the user picked for suggestions (e.g.
+  /// "claude-3-5-haiku-latest", "gpt-4o-mini"). Saving a key or switching
+  /// provider rewrites this column in the same write, so it starts out
+  /// belonging to the `provider` in the same row. Not enforced afterward: the
+  /// model-only PATCH path (`updateAiModel`) writes this column without a
+  /// provider check, so a stale client could in principle write a value that
+  /// no longer matches — self-heals via `AiModelRejectedError` at the next
+  /// suggest call rather than being validated here. null = not yet picked:
+  /// the next successful models-list fetch backfills it with the first entry.
+  /// Existing rows start null, so no backfill migration is needed.
+  modelId         String?
   /// opt-in: include Transaction.note in the prompt. Default off.
   sendNote        Boolean   @default(false)
   /// opt-in: include Transaction.amount in the prompt. Default off.

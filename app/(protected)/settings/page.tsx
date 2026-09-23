@@ -4,15 +4,20 @@ import { ScreenHeader } from '@/components/nav/screen-header';
 import { userHasPassword } from '@/lib/services/users';
 import { getReminderPreference } from '@/lib/services/reminders';
 import { listPushSubscriptions } from '@/lib/services/pushSubscriptions';
-import { getAiSettings } from '@/lib/services/aiSettings';
+import { getAiSettings, listAiModels } from '@/lib/services/aiSettings';
 
 const SettingsPage = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
-  const [hasPassword, reminderPreference, pushDevices, aiSettings] = await Promise.all([
+  const [hasPassword, reminderPreference, pushDevices, aiSettings, aiModels] = await Promise.all([
     userHasPassword(session!.user.id),
     getReminderPreference(session!.user.id),
     listPushSubscriptions(session!.user.id),
     getAiSettings(session!.user.id),
+    // Safe to sit in this Promise.all precisely because it never rejects: it
+    // returns a discriminated union rather than throwing on a provider blip,
+    // so a provider outage cannot take password change, reminders, export and
+    // import down with it.
+    listAiModels(session!.user.id),
   ]);
 
   return (
@@ -28,6 +33,7 @@ const SettingsPage = async (): Promise<React.ReactElement> => {
         reminderPreference={reminderPreference}
         pushDevices={pushDevices}
         aiSettings={aiSettings}
+        aiModels={aiModels}
       />
     </div>
   );

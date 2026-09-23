@@ -98,17 +98,58 @@ export class AiInvalidResponseError extends Error {
 }
 
 /**
+ * The model id stored in the user's Settings was rejected by the completion
+ * endpoint. Distinct from `AiProviderUnavailableError` because the user action
+ * is different and actionable: pick another model, not "try again in a few
+ * minutes".
+ *
+ * The id is carried on `modelId` and never interpolated into the message. It is
+ * the user's own stored setting rather than provider body content, but keeping
+ * messages id-free stays consistent with rule 2 above.
+ */
+export class AiModelRejectedError extends Error {
+  constructor(
+    public readonly provider: AiProviderName,
+    public readonly modelId: string,
+  ) {
+    super(
+      `${PROVIDER_LABELS[provider]} wouldn't accept the AI model saved in your Settings. Pick a different model in Settings.`,
+    );
+    this.name = 'AiModelRejectedError';
+  }
+}
+
+/**
  * Status → typed error, shared by both adapters so neither can drift. Exhaustive
  * by construction: `401|403`, `429`, `>=500`, then *everything else* non-2xx
  * falls to `AiProviderUnavailableError`. No status falls through unclassified,
  * and the provider's own response body is never read, let alone forwarded.
+ *
+ * `context` is passed only by the `suggestCategory` call sites, which know which
+ * model id was on the wire. Without it the function behaves exactly as it always
+ * has — `listModels` passes nothing, so a 404 from the probe stays an
+ * `AiProviderUnavailableError`.
+ *
+ * - 404 → model rejected. This is the unpermitted/retired-id status.
+ * - 400 → also mapped, deliberately. 400 is ambiguous (malformed payload,
+ *   oversized enum, bad model id), which is why the message says the provider
+ *   "wouldn't accept the model saved in your Settings" rather than "that model
+ *   doesn't exist": it is not actively false in the malformed-payload case, and
+ *   a payload bug is our bug, surfaced to the user either way.
  */
-export const classifyProviderStatus = (provider: AiProviderName, status: number): Error => {
+export const classifyProviderStatus = (
+  provider: AiProviderName,
+  status: number,
+  context?: { modelId: string },
+): Error => {
   if (status === 401 || status === 403) {
     return new AiProviderAuthError(provider);
   }
   if (status === 429) {
     return new AiRateLimitedError({ reason: 'provider', provider });
+  }
+  if (context && (status === 404 || status === 400)) {
+    return new AiModelRejectedError(provider, context.modelId);
   }
   if (status >= 500) {
     return new AiProviderUnavailableError(provider, 'server');
@@ -136,6 +177,11 @@ export const aiErrorToResponse = (error: unknown): { status: number; message: st
   }
   if (error instanceof AiDisclosureRequiredError) {
     return { status: 409, message: error.message };
+  }
+  // A 400 the user can actually act on: the stored model, not the key, is what
+  // the provider refused.
+  if (error instanceof AiModelRejectedError) {
+    return { status: 400, message: error.message };
   }
   // Checked last: subclasses above are standalone, and a plain
   // ServiceValidationError (no key, ineligible row, rule already matched) is a

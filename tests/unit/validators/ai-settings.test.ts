@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aiProviderSchema,
   saveAiSettingsSchema,
+  updateAiModelSchema,
   updateAiTogglesSchema,
 } from '@/lib/validators/ai-settings';
 import { suggestWithAiSchema } from '@/lib/validators/categorize-ai';
@@ -113,4 +114,47 @@ describe('suggestWithAiSchema', () => {
       expect(suggestWithAiSchema.safeParse(value).success).toBe(false);
     },
   );
+});
+
+describe('updateAiModelSchema', () => {
+  it.each(['claude-3-5-haiku-latest', 'gpt-4o-mini', 'o3', 'ft:gpt-4o-mini:acme:v1'])(
+    'accepts the plausible model id %s',
+    (modelId) => {
+      expect(updateAiModelSchema.parse({ modelId })).toEqual({ modelId });
+    },
+  );
+
+  it('rejects an empty id with the pick-a-model message', () => {
+    const parsed = updateAiModelSchema.safeParse({ modelId: '' });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error!.issues[0].message).toBe('Pick a model');
+  });
+
+  it('rejects a whitespace-only id, which trims to empty', () => {
+    expect(updateAiModelSchema.safeParse({ modelId: '   ' }).success).toBe(false);
+  });
+
+  it('rejects an id past the 200-character bound', () => {
+    expect(updateAiModelSchema.safeParse({ modelId: 'a'.repeat(201) }).success).toBe(false);
+    expect(updateAiModelSchema.safeParse({ modelId: 'a'.repeat(200) }).success).toBe(true);
+  });
+
+  it.each(['gpt 4o mini', '../../etc/passwd', 'gpt-4o/mini', 'gpt-4o?x=1', 'gpt<4o>'])(
+    'rejects %s, which is not shaped like a model id',
+    (modelId) => {
+      const parsed = updateAiModelSchema.safeParse({ modelId });
+      expect(parsed.success).toBe(false);
+      expect(parsed.error!.issues[0].message).toBe('That does not look like a model id');
+    },
+  );
+
+  it('rejects a smuggled apiKey outright rather than silently dropping it', () => {
+    expect(
+      updateAiModelSchema.safeParse({ modelId: 'gpt-4o-mini', apiKey: 'sk-attacker' }).success,
+    ).toBe(false);
+  });
+
+  it.each([{}, { modelId: 123 }, { modelId: null }, []])('rejects %p', (value) => {
+    expect(updateAiModelSchema.safeParse(value).success).toBe(false);
+  });
 });

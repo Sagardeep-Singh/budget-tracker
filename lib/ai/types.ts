@@ -19,12 +19,24 @@ export type AiSuggestionRequest = {
 
 export type AiSuggestionResult = { outcome: 'match'; categoryId: string } | { outcome: 'none' };
 
+/** One selectable model. `label` is display-only; `id` is what goes on the wire. */
+export type AiModelSummary = { id: string; label: string };
+
 export type AiProviderClient = {
   readonly provider: AiProviderName;
-  /** cheap GET used by save-time validation; sends no user data */
-  listModels: (apiKey: string, signal: AbortSignal) => Promise<void>;
+  /**
+   * Cheap GET, used both as the save-time verification probe and as the
+   * Settings-page picker source. Sends no user data: no body, and no header or
+   * query parameter derived from user data (Anthropic sends a constant
+   * `limit`). Returns provider-filtered, chat-capable models in a deterministic
+   * order — `[0]` is the auto-pick default. The return value is a list of model
+   * ids only; nothing about the user is sent to obtain it.
+   */
+  listModels: (apiKey: string, signal: AbortSignal) => Promise<AiModelSummary[]>;
   suggestCategory: (
     apiKey: string,
+    /** resolved by the service; deliberately NOT part of AiSuggestionRequest */
+    model: string,
     request: AiSuggestionRequest,
     signal: AbortSignal,
   ) => Promise<AiSuggestionResult>;

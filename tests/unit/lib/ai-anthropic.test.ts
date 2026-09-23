@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { anthropicClient, ANTHROPIC_MODEL } from '@/lib/ai/anthropic';
+import { anthropicClient, ANTHROPIC_FALLBACK_MODEL } from '@/lib/ai/anthropic';
 import {
   AiInvalidResponseError,
+  AiModelRejectedError,
   AiProviderAuthError,
   AiProviderUnavailableError,
   AiRateLimitedError,
@@ -10,6 +11,10 @@ import {
 import type { AiSuggestionRequest } from '@/lib/ai/types';
 
 const API_KEY = 'sk-ant-unit-test-key-abcd1234';
+
+/** Deliberately not the fallback constant: every suggest call in this file
+ * proves the *parameter* drives the request. */
+const MODEL = 'claude-unit-test-model';
 
 const REQUEST: AiSuggestionRequest = {
   payee: 'Blue Bottle',
@@ -51,12 +56,46 @@ afterEach(() => {
 });
 
 describe('anthropic listModels', () => {
-  it('resolves on 200', async () => {
+  it('resolves [] on a 200 with an empty list', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
-    await expect(anthropicClient.listModels(API_KEY, signal())).resolves.toBeUndefined();
-    expect(fetchMock.mock.calls[0][0]).toBe('https://api.anthropic.com/v1/models');
+    await expect(anthropicClient.listModels(API_KEY, signal())).resolves.toEqual([]);
     expect(fetchMock.mock.calls[0][1].method).toBe('GET');
     expect(fetchMock.mock.calls[0][1].headers['x-api-key']).toBe(API_KEY);
+  });
+
+  it('resolves the parsed model list on 200, labelled from display_name', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        data: [{ id: 'claude-newest', display_name: 'Claude Newest' }, { id: 'claude-older' }],
+      }),
+    );
+    await expect(anthropicClient.listModels(API_KEY, signal())).resolves.toEqual([
+      { id: 'claude-newest', label: 'Claude Newest' },
+      { id: 'claude-older', label: 'claude-older' },
+    ]);
+  });
+
+  it('requests ?limit=100 — the one place the single-page decision is checkable', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
+    await anthropicClient.listModels(API_KEY, signal());
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.anthropic.com/v1/models?limit=100');
+  });
+
+  it("passes cache: 'no-store' and sends no body", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
+    await anthropicClient.listModels(API_KEY, signal());
+    // The mechanism behind "the list is fetched live on every Settings render".
+    expect(fetchMock.mock.calls[0][1].cache).toBe('no-store');
+    // Still sends no user data, now that it has a return value to distract
+    // from that property.
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+  });
+
+  it('throws AiInvalidResponseError on an unparseable list body', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { notData: true }));
+    await expect(anthropicClient.listModels(API_KEY, signal())).rejects.toBeInstanceOf(
+      AiInvalidResponseError,
+    );
   });
 
   it.each([401, 403])('throws AiProviderAuthError on %i', async (status) => {
@@ -101,7 +140,9 @@ describe('anthropic listModels', () => {
 describe('anthropic suggestCategory', () => {
   it('resolves a match for a real category id', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, toolUse('cat-food')));
-    await expect(anthropicClient.suggestCategory(API_KEY, REQUEST, signal())).resolves.toEqual({
+    await expect(
+      anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, signal()),
+    ).resolves.toEqual({
       outcome: 'match',
       categoryId: 'cat-food',
     });
@@ -109,7 +150,9 @@ describe('anthropic suggestCategory', () => {
 
   it('resolves { outcome: none } for the "none" sentinel', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, toolUse('none')));
-    await expect(anthropicClient.suggestCategory(API_KEY, REQUEST, signal())).resolves.toEqual({
+    await expect(
+      anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, signal()),
+    ).resolves.toEqual({
       outcome: 'none',
     });
   });
@@ -117,7 +160,7 @@ describe('anthropic suggestCategory', () => {
   it('throws AiInvalidResponseError on a non-JSON body', async () => {
     fetchMock.mockResolvedValue(brokenJsonResponse());
     await expect(
-      anthropicClient.suggestCategory(API_KEY, REQUEST, signal()),
+      anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, signal()),
     ).rejects.toBeInstanceOf(AiInvalidResponseError);
   });
 
@@ -126,14 +169,14 @@ describe('anthropic suggestCategory', () => {
       jsonResponse(200, { content: [{ type: 'text', text: 'I think Food.' }] }),
     );
     await expect(
-      anthropicClient.suggestCategory(API_KEY, REQUEST, signal()),
+      anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, signal()),
     ).rejects.toBeInstanceOf(AiInvalidResponseError);
   });
 
   it('throws AiInvalidResponseError when the id is outside the caller-supplied set', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, toolUse('cat-someone-elses')));
     await expect(
-      anthropicClient.suggestCategory(API_KEY, REQUEST, signal()),
+      anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, signal()),
     ).rejects.toBeInstanceOf(AiInvalidResponseError);
   });
 
@@ -141,16 +184,16 @@ describe('anthropic suggestCategory', () => {
     const marker = 'PROVIDER-BODY-LEAK-MARKER';
     fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: 'text', text: marker }] }));
     const error = await anthropicClient
-      .suggestCategory(API_KEY, REQUEST, signal())
+      .suggestCategory(API_KEY, MODEL, REQUEST, signal())
       .catch((e: Error) => e);
     expect((error as Error).message).not.toContain(marker);
     expect((error as Error).message).not.toContain(API_KEY);
   });
 
-  it('posts to the messages endpoint with the pinned model and a forced tool choice', async () => {
+  it('posts to the messages endpoint with the caller-supplied model and a forced tool choice', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, toolUse('cat-fun')));
     const abort = signal();
-    await anthropicClient.suggestCategory(API_KEY, REQUEST, abort);
+    await anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, abort);
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.anthropic.com/v1/messages');
@@ -161,7 +204,9 @@ describe('anthropic suggestCategory', () => {
     expect(init.signal).toBe(abort);
 
     const body = JSON.parse(init.body);
-    expect(body.model).toBe(ANTHROPIC_MODEL);
+    // The parameter, not the constant, is what goes on the wire.
+    expect(body.model).toBe(MODEL);
+    expect(MODEL).not.toBe(ANTHROPIC_FALLBACK_MODEL);
     expect(body.tool_choice).toEqual({ type: 'tool', name: 'pick_category' });
     expect(body.tools[0].input_schema.properties.categoryId.enum).toEqual([
       'cat-food',
@@ -170,10 +215,31 @@ describe('anthropic suggestCategory', () => {
     ]);
   });
 
-  it('falls back to AiProviderUnavailableError on an unenumerated status (404)', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(404, {}));
-    await expect(anthropicClient.suggestCategory(API_KEY, REQUEST, signal())).rejects.toThrowError(
-      "Anthropic couldn't handle that request. Try again in a few minutes.",
-    );
-  });
+  it.each([404, 400])(
+    'maps %i to AiModelRejectedError carrying the model that was actually sent',
+    async (status) => {
+      fetchMock.mockResolvedValue(jsonResponse(status, {}));
+      const error = await anthropicClient
+        .suggestCategory(API_KEY, MODEL, REQUEST, signal())
+        .catch((e: Error) => e);
+      expect(error).toBeInstanceOf(AiModelRejectedError);
+      expect((error as InstanceType<typeof AiModelRejectedError>).provider).toBe('ANTHROPIC');
+      expect((error as InstanceType<typeof AiModelRejectedError>).modelId).toBe(MODEL);
+      expect((error as Error).message).toBe(
+        "Anthropic wouldn't accept the AI model saved in your Settings. Pick a different model in Settings.",
+      );
+      // The id lives on the property, never in the copy.
+      expect((error as Error).message).not.toContain(MODEL);
+    },
+  );
+
+  it.each([402, 418])(
+    'still falls back to AiProviderUnavailableError on an unenumerated status (%i) even with a model in context',
+    async (status) => {
+      fetchMock.mockResolvedValue(jsonResponse(status, {}));
+      await expect(
+        anthropicClient.suggestCategory(API_KEY, MODEL, REQUEST, signal()),
+      ).rejects.toThrowError("Anthropic couldn't handle that request. Try again in a few minutes.");
+    },
+  );
 });

@@ -18,7 +18,8 @@ import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 import { pillGroup, pillOption } from '@/components/settings/pills';
 import { AiDisclosureModal } from '@/components/settings/ai-disclosure-modal';
-import type { FrontendAiSettings } from '@/lib/services/aiSettings';
+import type { AiModelsResult, FrontendAiSettings } from '@/lib/services/aiSettings';
+import type { AiModelSummary } from '@/lib/ai/types';
 import { AI_PROVIDERS } from '@/lib/validators/ai-settings';
 
 type Provider = (typeof AI_PROVIDERS)[number]; // 'ANTHROPIC' | 'OPENAI'
@@ -30,10 +31,28 @@ const PROVIDER_LABELS: Record<Provider, string> = {
 
 export const AiCategorizationSection = ({
   settings: initialSettings,
+  models: initialModels,
 }: {
   settings: FrontendAiSettings;
+  models: AiModelsResult;
 }): React.ReactElement => {
   const [settings, setSettings] = useState(initialSettings);
+
+  // The model picker owns its own state, seeded from the server prop and
+  // replaced from the PUT response after a key save — `useState` seeding means
+  // a router refresh would not reseed it.
+  //
+  // Precedence: when the server says `ok`, its `selectedModelId` is
+  // authoritative and `settings.modelId` is never read by the picker.
+  // `getAiSettings` and `listAiModels` run concurrently in the same
+  // `Promise.all` over the same row, and `listAiModels` *writes* modelId as a
+  // side effect, so `settings.modelId` can legitimately be the staler of the
+  // two. Only the `unavailable` arm falls back to it.
+  const [modelState, setModelState] = useState<AiModelsResult>(initialModels);
+  // Deliberately separate from `pending`: changing the model must not put the
+  // key form or the toggles into their pending state.
+  const [modelPending, setModelPending] = useState(false);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
 
   // Draft state for the (write-only) key form. `apiKey` is never populated
   // from `settings.maskedKey` — the masked value is display-only and the
@@ -87,7 +106,8 @@ export const AiCategorizationSection = ({
         body: JSON.stringify({ provider, apiKey: apiKey.trim(), sendNote, sendAmount }),
       });
       const body = (await response.json()) as
-        (FrontendAiSettings & { warning: string | null }) | { error: string };
+        | (FrontendAiSettings & { warning: string | null; models: AiModelSummary[] })
+        | { error: string };
 
       if (!response.ok) {
         // The 400 case is a rejected key. Nothing was persisted, so the form
@@ -96,10 +116,37 @@ export const AiCategorizationSection = ({
         return false;
       }
 
-      const { warning: saveWarning, ...saved } = body as FrontendAiSettings & {
-        warning: string | null;
-      };
+      // `models` is pulled out by name alongside `warning`: left in the rest
+      // element it would be spread into the `settings` object, which is typed
+      // as FrontendAiSettings and has no such field.
+      const {
+        warning: saveWarning,
+        models: savedModels,
+        ...saved
+      } = body as FrontendAiSettings & { warning: string | null; models: AiModelSummary[] };
       setSettings(saved);
+      setModelNotice(null);
+      setModelState(
+        savedModels.length > 0
+          ? {
+              outcome: 'ok',
+              models: savedModels,
+              selectedModelId: saved.modelId ?? savedModels[0].id,
+            }
+          : {
+              // Nothing to pick from yet. The next Settings render re-fetches
+              // and backfills. `saveWarning` already told the user their key
+              // wasn't verified because the probe couldn't reach the
+              // provider — reusing the "no usable models" copy here would
+              // read as "your key is bad" right next to that, so a soft-failed
+              // probe gets its own message distinct from a genuinely empty list.
+              outcome: 'unavailable',
+              message: saveWarning
+                ? `We couldn't load ${PROVIDER_LABELS[provider]}'s model list just now. It'll load next time you're on this page.`
+                : `${PROVIDER_LABELS[provider]} didn't return any usable models for this key.`,
+              selectedModelId: saved.modelId,
+            },
+      );
       setSendNote(saved.sendNote);
       setSendAmount(saved.sendAmount);
       // Write-only form: the field never re-displays what was stored. Only
@@ -165,10 +212,14 @@ export const AiCategorizationSection = ({
         sendAmount: false,
         disclosureAccepted: false,
         available: settings.available,
+        modelId: null,
       });
       setSendNote(false);
       setSendAmount(false);
       setApiKey('');
+      // The row is gone, so there is no model selection left to show.
+      setModelState({ outcome: 'not-configured' });
+      setModelNotice(null);
     } catch {
       setNotice('Could not remove your API key. Try again.');
     } finally {
@@ -202,6 +253,41 @@ export const AiCategorizationSection = ({
       setPending(false);
     }
   };
+
+  // Same optimistic-with-rollback shape as handleToggle, on its own pending
+  // flag so an in-flight model change never spins the "Save key" button or
+  // disables the toggles.
+  const handleModelChange = async (nextModelId: string): Promise<void> => {
+    if (modelState.outcome !== 'ok') return;
+    const previous = modelState;
+    setModelState({ ...previous, selectedModelId: nextModelId });
+    setModelPending(true);
+    setModelNotice(null);
+    try {
+      const response = await fetch('/api/settings/ai/model', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: nextModelId }),
+      });
+      if (!response.ok) {
+        setModelState(previous);
+        setModelNotice('Could not save that model. Try again.');
+        return;
+      }
+      setSettings((await response.json()) as FrontendAiSettings);
+    } catch {
+      setModelState(previous);
+      setModelNotice('Could not save that model. Try again.');
+    } finally {
+      setModelPending(false);
+    }
+  };
+
+  // The `unavailable` arm is the only one that falls back to `settings.modelId`
+  // (see the precedence note above). Hoisted out of the JSX so the `<select>`'s
+  // `value` is a plain identifier.
+  const storedModelId =
+    modelState.outcome === 'unavailable' ? (modelState.selectedModelId ?? settings.modelId) : null;
 
   if (!settings.available) {
     return (
@@ -296,6 +382,88 @@ export const AiCategorizationSection = ({
         >
           {warning}
         </p>
+      )}
+
+      {/* Model — a native <select>, not the Provider row's pill group: the list
+          is long and unbounded (40+ ids for OpenAI) and pills do not scale to
+          that. Rendered only once a key is configured; there is nothing to pick
+          from before one exists. */}
+      {settings.configured && modelState.outcome !== 'not-configured' && (
+        <div className="ledger-row py-3.5">
+          <Label htmlFor="ai-model">Model</Label>
+          {modelState.outcome === 'ok' ? (
+            <>
+              <select
+                id="ai-model"
+                className="border-line bg-paper-sunk mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                value={modelState.selectedModelId}
+                // aria-busy, never disabled: disabling the control mid-PATCH
+                // would move focus and hide the value the user just picked.
+                aria-busy={modelPending}
+                aria-describedby="ai-model-hint"
+                onChange={(e) => void handleModelChange(e.target.value)}
+              >
+                {/* A stored id the list did not return is prepended rather than
+                    dropped: a <select> whose value matches no option renders
+                    blank, which is exactly what keeping the id is meant to
+                    prevent. */}
+                {!modelState.models.some((m) => m.id === modelState.selectedModelId) && (
+                  <option value={modelState.selectedModelId}>
+                    {`${modelState.selectedModelId} (current)`}
+                  </option>
+                )}
+                {modelState.models.map((model, index) => (
+                  <option key={model.id} value={model.id}>
+                    {index === 0 ? `${model.label} (newest)` : model.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-ink-muted mt-1.5 text-[12.5px]" id="ai-model-hint">
+                Used for every suggestion. The list comes from{' '}
+                {PROVIDER_LABELS[settings.provider ?? provider]} and is refreshed each time you open
+                Settings.
+              </p>
+            </>
+          ) : (
+            <>
+              {/* Informational, not an error: a list we could not load is not
+                  the user's mistake. Same muted treatment as `warning`. */}
+              <p
+                className="border-line text-ink-muted mt-1 rounded-lg border px-3 py-2 text-[13px]"
+                role="status"
+              >
+                {modelState.message}
+              </p>
+              {/* With a model already in force, show it — disabled, single
+                  option — so the user can see what is being used and cannot
+                  half-change it against a list we could not load. With nothing
+                  stored there is nothing to show, so no control renders. */}
+              {storedModelId !== null && (
+                <select
+                  id="ai-model"
+                  className="border-line bg-paper-sunk mt-1.5 w-full rounded-lg border px-3 py-2 text-sm opacity-60"
+                  value={storedModelId}
+                  disabled
+                  aria-describedby="ai-model-hint"
+                  onChange={() => {}}
+                >
+                  <option value={storedModelId}>{storedModelId}</option>
+                </select>
+              )}
+              <p className="text-ink-muted mt-1.5 text-[12.5px]" id="ai-model-hint">
+                Reopen Settings to try loading the list again.
+              </p>
+            </>
+          )}
+          {modelNotice && (
+            <p
+              className="bg-rose-soft text-rose mt-1.5 rounded-lg px-3 py-2 text-[13px]"
+              role="alert"
+            >
+              {modelNotice}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Toggles — visually subordinate to (and disabled without) a configured

@@ -4,6 +4,7 @@ import {
   configureAiThroughApi,
   lastProviderRequest,
   lastUserMessage,
+  programModels,
   programSuggest,
   seedAccountAndCategories,
   signUpFreshUser,
@@ -284,4 +285,105 @@ test('the note/amount opt-ins are enforced at the real HTTP boundary', async ({ 
   sent = await lastProviderRequest(page.request, apiKey);
   expect(lastUserMessage(sent?.body)).toContain(noteToken);
   expect(lastUserMessage(sent?.body)).toContain('42.50');
+});
+
+test('the suggestion request carries the model the user picked', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-used');
+  const { accountId, categories } = await seedAccountAndCategories(page);
+  await programModels(page.request, apiKey, [
+    { id: 'model-newest', created: 300 },
+    { id: 'model-picked', created: 100 },
+  ]);
+  const saved = await page.request.put('/api/settings/ai', {
+    data: { provider: 'ANTHROPIC', apiKey, sendNote: false, sendAmount: false },
+  });
+  expect(saved.ok()).toBe(true);
+  await page.request.post('/api/settings/ai/disclosure');
+
+  // Pick the one that is *not* the auto-picked first entry.
+  const patched = await page.request.patch('/api/settings/ai/model', {
+    data: { modelId: 'model-picked' },
+  });
+  expect(patched.ok()).toBe(true);
+
+  await programSuggest(page.request, apiKey, { status: 200, categoryId: categories[0].id });
+  const transactionId = await addTransactionThroughApi(page, accountId, {
+    payee: `E2E AI Model ${Date.now()}`,
+  });
+  await page.request.post('/api/categorize/suggest-ai', { data: { transactionId } });
+
+  const sent = await lastProviderRequest(page.request, apiKey);
+  expect(sent?.body.model).toBe('model-picked');
+});
+
+test('a model the provider rejects gives an actionable per-row error, not a sticky disable', async ({
+  page,
+}) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-reject');
+  const { accountId } = await seedAccountAndCategories(page);
+  await configureAiThroughApi(page, apiKey);
+
+  const rejected = `E2E AI Rejected ${Date.now()}`;
+  const other = `E2E AI Other ${Date.now()}`;
+  await addTransactionThroughApi(page, accountId, { payee: rejected });
+  await addTransactionThroughApi(page, accountId, { payee: other });
+
+  // 404 from the *suggest* endpoint: an unpermitted or retired model id.
+  await programSuggest(page.request, apiKey, { status: 404 });
+
+  await page.goto('/categorize');
+  const rejectedCard = page.getByTestId('payee-group-card').filter({ hasText: rejected });
+  await rejectedCard.waitFor();
+  await rejectedCard.getByRole('button', { name: 'Suggest with AI' }).click();
+
+  await expect(
+    page.getByRole('alert').filter({ hasText: "wouldn't accept the AI model" }),
+  ).toHaveText(
+    "Anthropic wouldn't accept the AI model saved in your Settings. Pick a different model in Settings.",
+  );
+
+  // Only the daily cap latches the disable-everything branch; a model problem
+  // on one row must not take the rest of the queue with it.
+  await expect(
+    page
+      .getByTestId('payee-group-card')
+      .filter({ hasText: other })
+      .getByRole('button', { name: 'Suggest with AI' }),
+  ).toBeEnabled();
+});
+
+test('a rejected model is never auto-cleared from Settings', async ({ page }) => {
+  const apiKey = uniqueApiKey();
+  await signUpFreshUser(page, 'ai-model-noclear');
+  const { accountId } = await seedAccountAndCategories(page);
+  await configureAiThroughApi(page, apiKey);
+  const payee = `E2E AI NoClear ${Date.now()}`;
+  await addTransactionThroughApi(page, accountId, { payee });
+  await programSuggest(page.request, apiKey, { status: 404 });
+
+  await page.goto('/categorize');
+  const card = page.getByTestId('payee-group-card').filter({ hasText: payee });
+  await card.waitFor();
+  await card.getByRole('button', { name: 'Suggest with AI' }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: "wouldn't accept the AI model" }),
+  ).toBeVisible();
+
+  const settings = await (await page.request.get('/api/settings/ai')).json();
+  expect(settings.modelId).toBe('fixture-model');
+
+  // The same failure again, rather than a different one: the stored id is
+  // unchanged, so nothing "helpfully" fell back to another model.
+  await page.goto('/categorize');
+  const again = page.getByTestId('payee-group-card').filter({ hasText: payee });
+  await again.waitFor();
+  await again.getByRole('button', { name: 'Suggest with AI' }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: "wouldn't accept the AI model" }),
+  ).toBeVisible();
+
+  const sent = await lastProviderRequest(page.request, apiKey);
+  expect(sent?.body.model).toBe('fixture-model');
 });

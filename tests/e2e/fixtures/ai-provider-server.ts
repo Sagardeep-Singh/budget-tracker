@@ -26,6 +26,15 @@ type Programmed = {
   categoryId?: string;
   /** For a 200 suggest: a raw body, used to simulate a malformed response. */
   raw?: unknown;
+  /**
+   * For a 200 GET /v1/models: the list entries to return. Lives on the same
+   * `Programmed` object as `status`/`delayMs` and is set through the same
+   * `/__control/probe` POST — the handler *replaces* this object per call, so a
+   * separate control endpoint would have one call silently clobber the other's
+   * fields. Unset keeps the historic single-entry default, which is what lets
+   * the pre-existing Settings specs pass unmodified.
+   */
+  models?: Array<{ id: string; created?: number; display_name?: string }>;
 };
 
 type KeyState = {
@@ -101,6 +110,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
       delayMs: body?.delayMs ?? 0,
       categoryId: body?.categoryId,
       raw: body?.raw,
+      models: body?.models,
     };
     const target = stateFor(key);
     if (url.pathname === '/__control/probe') target.probe = programmed;
@@ -134,7 +144,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
   }
 
   if (url.pathname === '/v1/models') {
-    send(res, 200, { data: [{ id: 'fixture-model' }] });
+    send(res, 200, { data: programmed?.models ?? [{ id: 'fixture-model' }] });
     return;
   }
 

@@ -34,6 +34,7 @@ vi.mock('@/lib/ai', async () => {
 
 const { AiProviderAuthError, AiProviderUnavailableError, AiRateLimitedError, AiUnavailableError } =
   await import('@/lib/ai/errors');
+const { PROVIDER_LABELS } = await import('@/lib/ai/types');
 const { ServiceValidationError } = await import('@/lib/services/common');
 const aiSettingsModule = await import('@/lib/services/aiSettings');
 const {
@@ -43,6 +44,8 @@ const {
   acceptAiDisclosure,
   removeAiSettings,
   loadAiCredentials,
+  listAiModels,
+  updateAiModel,
 } = aiSettingsModule;
 
 const API_KEY = 'sk-ant-e2e-fixture-key-a1b2';
@@ -61,6 +64,7 @@ const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> =
   encryptedApiKey: 'v1:iv:tag:ct',
   keyLast4: 'a1b2',
   verifiedAt: new Date('2026-09-01T00:00:00.000Z'),
+  modelId: null,
   sendNote: false,
   sendAmount: false,
   disclosureAcceptedAt: new Date('2026-09-01T00:00:00.000Z'),
@@ -80,6 +84,12 @@ const FRONTEND_KEYS = [
   'sendAmount',
   'disclosureAccepted',
   'available',
+  'modelId',
+];
+
+const MODELS = [
+  { id: 'model-a', label: 'Model A' },
+  { id: 'model-b', label: 'Model B' },
 ];
 
 beforeEach(() => {
@@ -89,7 +99,10 @@ beforeEach(() => {
     (plaintext: string) => `v1:iv:tag:ct-of-${plaintext.length}`,
   );
   getAiProviderClientMock.mockReturnValue(clientMock);
-  clientMock.listModels.mockResolvedValue(undefined);
+  // Must resolve a real list: `models[0]?.id` runs on every saveAiSettings
+  // call, so every test that does not override this depends on it.
+  clientMock.listModels.mockResolvedValue(MODELS);
+  cryptoMock.decryptSecret.mockReturnValue('sk-ant-decrypted-key-1234');
   prismaMock.userAiSettings.upsert.mockImplementation(
     async (args: { create: Record<string, unknown> }) => row(args.create),
   );
@@ -109,6 +122,7 @@ describe('getAiSettings', () => {
       sendAmount: false,
       disclosureAccepted: false,
       available: true,
+      modelId: null,
     });
   });
 
@@ -174,7 +188,7 @@ describe('saveAiSettings', () => {
 
   it('returns exactly FrontendAiSettings plus warning', async () => {
     const result = await saveAiSettings('user-1', SAVE_INPUT);
-    expect(Object.keys(result).sort()).toEqual([...FRONTEND_KEYS, 'warning'].sort());
+    expect(Object.keys(result).sort()).toEqual([...FRONTEND_KEYS, 'warning', 'models'].sort());
   });
 
   it.each([401, 403])('refuses to persist when the probe rejects the key (%i)', async () => {
@@ -217,6 +231,53 @@ describe('saveAiSettings', () => {
     expect(update.provider).toBe('OPENAI');
     expect(update.keyLast4).toBe('9999');
     expect(update.encryptedApiKey).toMatch(/^v1:/);
+  });
+
+  it('auto-picks models[0].id into BOTH upsert branches', async () => {
+    await saveAiSettings('user-1', SAVE_INPUT);
+    const args = prismaMock.userAiSettings.upsert.mock.calls[0][0];
+    expect(args.create.modelId).toBe('model-a');
+    expect(args.update.modelId).toBe('model-a');
+  });
+
+  it('writes a null modelId when the probe returns an empty list', async () => {
+    clientMock.listModels.mockResolvedValue([]);
+    await saveAiSettings('user-1', SAVE_INPUT);
+    const args = prismaMock.userAiSettings.upsert.mock.calls[0][0];
+    expect(args.create.modelId).toBeNull();
+    expect(args.update.modelId).toBeNull();
+  });
+
+  it.each([
+    ['rate limit', new AiRateLimitedError({ reason: 'provider', provider: 'ANTHROPIC' })],
+    ['5xx', new AiProviderUnavailableError('ANTHROPIC', 'server')],
+    ['timeout', new AiProviderUnavailableError('ANTHROPIC', 'timeout')],
+  ])('leaves modelId null on a soft-failed probe (%s)', async (_label, failure) => {
+    clientMock.listModels.mockRejectedValue(failure);
+    const result = await saveAiSettings('user-1', SAVE_INPUT);
+    const args = prismaMock.userAiSettings.upsert.mock.calls[0][0];
+    expect(args.create.modelId).toBeNull();
+    expect(args.update.modelId).toBeNull();
+    // The next Settings render backfills it; nothing to return here.
+    expect(result.models).toEqual([]);
+  });
+
+  it("resets a stale model id on a provider swap — never the previous provider's", async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'old-anthropic-model' }));
+    clientMock.listModels.mockResolvedValue([{ id: 'gpt-fresh', label: 'gpt-fresh' }]);
+    await saveAiSettings('user-1', {
+      ...SAVE_INPUT,
+      provider: 'OPENAI',
+      apiKey: 'sk-openai-zzzz9999',
+    });
+    const update = prismaMock.userAiSettings.upsert.mock.calls[0][0].update;
+    expect(update.modelId).toBe('gpt-fresh');
+    expect(update.modelId).not.toBe('old-anthropic-model');
+  });
+
+  it('returns exactly the list the probe resolved', async () => {
+    const result = await saveAiSettings('user-1', SAVE_INPUT);
+    expect(result.models).toEqual(MODELS);
   });
 
   it('never leaks the raw key through an error message or the console', async () => {
@@ -323,10 +384,16 @@ describe('module surface', () => {
     expect(credentials).toEqual({
       provider: 'ANTHROPIC',
       apiKey: 'sk-ant-decrypted-key-1234',
+      modelId: null,
       sendNote: false,
       sendAmount: false,
       disclosureAccepted: true,
     });
+  });
+
+  it('carries the stored modelId through to the sibling service', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-b' }));
+    await expect(loadAiCredentials('user-1')).resolves.toMatchObject({ modelId: 'model-b' });
   });
 
   it('returns null when no row exists', async () => {
@@ -342,5 +409,184 @@ describe('module surface', () => {
     const error = await loadAiCredentials('user-1').catch((e: Error) => e);
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect((error as Error).message).not.toContain('v1:iv:tag:ct');
+  });
+});
+
+describe('updateAiModel', () => {
+  it('writes only the modelId column, scoped by userId, with no provider call', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-b' }));
+    const result = await updateAiModel('user-1', { modelId: 'model-b' });
+
+    const args = prismaMock.userAiSettings.updateMany.mock.calls[0][0];
+    expect(args.where).toEqual({ userId: 'user-1' });
+    expect(Object.keys(args.data)).toEqual(['modelId']);
+    expect(args.data).not.toHaveProperty('verifiedAt');
+    expect(args.data).not.toHaveProperty('encryptedApiKey');
+    expect(args.data).not.toHaveProperty('provider');
+    // Changing the model is not a re-verification of the key.
+    expect(getAiProviderClientMock).not.toHaveBeenCalled();
+    expect(cryptoMock.decryptSecret).not.toHaveBeenCalled();
+    expect(cryptoMock.encryptSecret).not.toHaveBeenCalled();
+    // Full FrontendAiSettings, not a partial.
+    expect(Object.keys(result).sort()).toEqual([...FRONTEND_KEYS].sort());
+    expect(result.modelId).toBe('model-b');
+  });
+
+  it('ignores a smuggled extra field', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row());
+    await updateAiModel('user-1', {
+      modelId: 'model-a',
+      // @ts-expect-error — the point of the test: the service has no path for it
+      provider: 'OPENAI',
+    });
+    const data = prismaMock.userAiSettings.updateMany.mock.calls[0][0].data;
+    expect(data).toEqual({ modelId: 'model-a' });
+  });
+
+  it('throws and creates nothing when no row exists', async () => {
+    prismaMock.userAiSettings.updateMany.mockResolvedValue({ count: 0 });
+    await expect(updateAiModel('user-1', { modelId: 'model-a' })).rejects.toBeInstanceOf(
+      ServiceValidationError,
+    );
+    expect(prismaMock.userAiSettings.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('listAiModels', () => {
+  it('returns not-configured with no row, touching neither crypto nor a provider', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(null);
+    await expect(listAiModels('user-1')).resolves.toEqual({ outcome: 'not-configured' });
+    expect(getAiProviderClientMock).not.toHaveBeenCalled();
+    expect(cryptoMock.decryptSecret).not.toHaveBeenCalled();
+  });
+
+  it('returns not-configured when the deployment has no master key, without decrypting', async () => {
+    cryptoMock.isSecretEncryptionConfigured.mockReturnValue(false);
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row());
+    await expect(listAiModels('user-1')).resolves.toEqual({ outcome: 'not-configured' });
+    expect(cryptoMock.decryptSecret).not.toHaveBeenCalled();
+  });
+
+  it('scopes the read by userId', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(null);
+    await listAiModels('user-1');
+    expect(prismaMock.userAiSettings.findUnique).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+    });
+  });
+
+  it('surfaces an undecryptable key as unavailable rather than throwing', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-b' }));
+    cryptoMock.decryptSecret.mockImplementation(() => {
+      throw new Error('unsupported state or unable to authenticate data');
+    });
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'unavailable',
+      message: 'Your saved API key could not be read. Save it again in Settings.',
+      selectedModelId: 'model-b',
+    });
+  });
+
+  it('passes a typed provider error through as its own user-safe copy', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-b' }));
+    const failure = new AiProviderAuthError('ANTHROPIC');
+    clientMock.listModels.mockRejectedValue(failure);
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'unavailable',
+      message: failure.message,
+      selectedModelId: 'model-b',
+    });
+  });
+
+  it('gives an unrecognized failure generic copy and warns by name only', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row());
+    clientMock.listModels.mockRejectedValue(new Error('ECONNRESET at 10.0.0.1 secret-detail'));
+
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'unavailable',
+      message: "Couldn't load the model list from Anthropic just now.",
+      selectedModelId: null,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-detail');
+    expect(JSON.stringify(warn.mock.calls)).toContain('ANTHROPIC');
+    warn.mockRestore();
+  });
+
+  it('never throws even when the rejection is not an Error at all', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row());
+    clientMock.listModels.mockRejectedValue('a bare string');
+    await expect(listAiModels('user-1')).resolves.toMatchObject({ outcome: 'unavailable' });
+    warn.mockRestore();
+  });
+
+  it('reports an empty list as unavailable, keeping the stored id and writing nothing', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-b' }));
+    clientMock.listModels.mockResolvedValue([]);
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'unavailable',
+      message: `${PROVIDER_LABELS.ANTHROPIC} didn't return any usable models for this key.`,
+      selectedModelId: 'model-b',
+    });
+    expect(prismaMock.userAiSettings.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('handles an empty list with nothing stored — the empty check runs before the backfill', async () => {
+    // Load-bearing ordering: backfilling first would evaluate models[0].id on
+    // an empty array and throw, breaking the never-throws property.
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: null }));
+    clientMock.listModels.mockResolvedValue([]);
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'unavailable',
+      message: `${PROVIDER_LABELS.ANTHROPIC} didn't return any usable models for this key.`,
+      selectedModelId: null,
+    });
+    expect(prismaMock.userAiSettings.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('backfills the first entry on the first successful fetch, guarded on modelId: null', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: null }));
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'ok',
+      models: MODELS,
+      selectedModelId: 'model-a',
+    });
+    expect(prismaMock.userAiSettings.updateMany).toHaveBeenCalledTimes(1);
+    // The null guard IS the concurrency guard: a second concurrent render that
+    // has already written a value matches zero rows here.
+    expect(prismaMock.userAiSettings.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', modelId: null },
+      data: { modelId: 'model-a' },
+    });
+  });
+
+  it('does not consult the backfill write outcome on a lost race', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: null }));
+    prismaMock.userAiSettings.updateMany.mockResolvedValue({ count: 0 });
+    // Documented behavior: the locally computed value is returned and the next
+    // render reconciles. Flagged to the architect as unspecified in the plan.
+    await expect(listAiModels('user-1')).resolves.toMatchObject({ selectedModelId: 'model-a' });
+    expect(prismaMock.userAiSettings.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the user's own pick, not models[0], and writes nothing when one is stored", async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-b' }));
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'ok',
+      models: MODELS,
+      selectedModelId: 'model-b',
+    });
+    expect(prismaMock.userAiSettings.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps a stored id the list no longer contains', async () => {
+    prismaMock.userAiSettings.findUnique.mockResolvedValue(row({ modelId: 'model-retired' }));
+    await expect(listAiModels('user-1')).resolves.toEqual({
+      outcome: 'ok',
+      models: MODELS,
+      selectedModelId: 'model-retired',
+    });
+    expect(prismaMock.userAiSettings.updateMany).not.toHaveBeenCalled();
   });
 });

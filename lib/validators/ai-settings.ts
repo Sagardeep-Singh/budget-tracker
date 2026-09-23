@@ -32,5 +32,26 @@ export const updateAiTogglesSchema = z
   })
   .strict();
 
+/**
+ * Model id only — `.strict()`, following `updateAiTogglesSchema`: a client that
+ * smuggles an `apiKey` or `provider` field gets a 400 rather than a silent drop.
+ *
+ * Deliberately not checked against a live list: that would cost a provider call
+ * per model change, and the list is not ground truth for what the completion
+ * endpoint accepts anyway (a rejected id surfaces as `AiModelRejectedError`).
+ * This only bounds the value to a plausible model id.
+ */
+export const updateAiModelSchema = z
+  .object({
+    modelId: z
+      .string()
+      .trim()
+      .min(1, 'Pick a model')
+      .max(200)
+      .regex(/^[A-Za-z0-9._:-]+$/, 'That does not look like a model id'),
+  })
+  .strict();
+
 export type SaveAiSettingsInput = z.infer<typeof saveAiSettingsSchema>;
 export type UpdateAiTogglesInput = z.infer<typeof updateAiTogglesSchema>;
+export type UpdateAiModelInput = z.infer<typeof updateAiModelSchema>;

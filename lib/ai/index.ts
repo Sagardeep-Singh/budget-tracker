@@ -1,12 +1,21 @@
-import { ANTHROPIC_MODEL, anthropicClient } from '@/lib/ai/anthropic';
-import { OPENAI_MODEL, openaiClient } from '@/lib/ai/openai';
+import { ANTHROPIC_FALLBACK_MODEL, anthropicClient } from '@/lib/ai/anthropic';
+import { OPENAI_FALLBACK_MODEL, openaiClient } from '@/lib/ai/openai';
 import type { AiProviderClient, AiProviderName } from '@/lib/ai/types';
 
 /**
  * The only thing services import from `lib/ai/`. Adding a third provider is one
  * new adapter file plus one enum value plus one line here.
  */
-export { ANTHROPIC_MODEL, OPENAI_MODEL };
+export { ANTHROPIC_FALLBACK_MODEL, OPENAI_FALLBACK_MODEL };
+
+/**
+ * Last resort only: reached when the row's `modelId` is still null, i.e. the
+ * key was saved during a provider outage and no Settings render has since
+ * succeeded in fetching a list. A stale id here is low-stakes — it surfaces as
+ * `AiModelRejectedError`, which points the user at the picker.
+ */
+export const getFallbackModel = (provider: AiProviderName): string =>
+  provider === 'ANTHROPIC' ? ANTHROPIC_FALLBACK_MODEL : OPENAI_FALLBACK_MODEL;
 
 /**
  * Hard outbound timeout, applied by the caller via `AbortSignal.timeout` so it
@@ -15,6 +24,13 @@ export { ANTHROPIC_MODEL, OPENAI_MODEL };
  * serverless function.
  */
 export const AI_TIMEOUT_MS = 10_000;
+
+/**
+ * Shorter than `AI_TIMEOUT_MS`, because this one sits on the Settings *render*
+ * path: the model list is fetched on every Settings load, so a hung provider
+ * would otherwise add the full suggest timeout to every one of them.
+ */
+export const AI_LIST_TIMEOUT_MS = 5_000;
 
 /**
  * Per-user, per-UTC-day cap on `POST /api/categorize/suggest-ai`. Kept small

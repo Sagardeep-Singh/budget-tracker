@@ -12,7 +12,15 @@ export const AI_FIXTURE_URL = `http://127.0.0.1:${process.env.AI_FIXTURE_PORT ??
 export const uniqueApiKey = (prefix = 'sk-ant-e2e'): string =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}-a1b2`;
 
-type Programmed = { status?: number; delayMs?: number; categoryId?: string; raw?: unknown };
+type ModelEntry = { id: string; created?: number; display_name?: string };
+
+type Programmed = {
+  status?: number;
+  delayMs?: number;
+  categoryId?: string;
+  raw?: unknown;
+  models?: ModelEntry[];
+};
 
 export const programProbe = async (
   request: APIRequestContext,
@@ -22,6 +30,23 @@ export const programProbe = async (
   await request.post(`${AI_FIXTURE_URL}/__control/probe?key=${encodeURIComponent(apiKey)}`, {
     data: programmed,
   });
+};
+
+/**
+ * Program the probe's status *and* its model list in one call.
+ *
+ * Deliberately posts to the existing `/__control/probe`, not a second endpoint:
+ * the fixture replaces the whole `Programmed` object per call rather than
+ * merging it, so calling `programProbe(..., { status: 200 })` afterwards would
+ * silently drop `models`. Program both together, always.
+ */
+export const programModels = async (
+  request: APIRequestContext,
+  apiKey: string,
+  models: ModelEntry[],
+  status = 200,
+): Promise<void> => {
+  await programProbe(request, apiKey, { status, models });
 };
 
 export const programSuggest = async (

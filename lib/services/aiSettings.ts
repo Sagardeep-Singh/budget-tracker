@@ -1,11 +1,21 @@
 import type { AiProvider } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
-import { AI_TIMEOUT_MS, getAiProviderClient } from '@/lib/ai';
-import { AiProviderAuthError, AiUnavailableError } from '@/lib/ai/errors';
-import { PROVIDER_LABELS } from '@/lib/ai/types';
+import { AI_LIST_TIMEOUT_MS, AI_TIMEOUT_MS, getAiProviderClient } from '@/lib/ai';
+import {
+  AiProviderAuthError,
+  AiProviderUnavailableError,
+  AiRateLimitedError,
+  AiInvalidResponseError,
+  AiUnavailableError,
+} from '@/lib/ai/errors';
+import { PROVIDER_LABELS, type AiModelSummary } from '@/lib/ai/types';
 import { decryptSecret, encryptSecret, isSecretEncryptionConfigured } from '@/lib/crypto/secrets';
 import { ServiceValidationError } from '@/lib/services/common';
-import type { SaveAiSettingsInput, UpdateAiTogglesInput } from '@/lib/validators/ai-settings';
+import type {
+  SaveAiSettingsInput,
+  UpdateAiModelInput,
+  UpdateAiTogglesInput,
+} from '@/lib/validators/ai-settings';
 
 /**
  * The BYOK key lifecycle. The only module in the app that imports
@@ -25,12 +35,15 @@ export type FrontendAiSettings = {
   disclosureAccepted: boolean;
   /** `isSecretEncryptionConfigured()` — the feature is off, not broken, when false */
   available: boolean;
+  /** null until the first successful list fetch auto-picks one */
+  modelId: string | null;
 };
 
 type SettingsRow = {
   provider: AiProvider;
   keyLast4: string;
   verifiedAt: Date | null;
+  modelId: string | null;
   sendNote: boolean;
   sendAmount: boolean;
   disclosureAcceptedAt: Date | null;
@@ -45,6 +58,7 @@ const UNCONFIGURED = (): FrontendAiSettings => ({
   sendAmount: false,
   disclosureAccepted: false,
   available: isSecretEncryptionConfigured(),
+  modelId: null,
 });
 
 /**
@@ -64,6 +78,7 @@ const toFrontend = (row: SettingsRow | null): FrontendAiSettings => {
     sendAmount: row.sendAmount,
     disclosureAccepted: row.disclosureAcceptedAt !== null,
     available: isSecretEncryptionConfigured(),
+    modelId: row.modelId,
   };
 };
 
@@ -86,7 +101,7 @@ export const getAiSettings = async (userId: string): Promise<FrontendAiSettings>
 export const saveAiSettings = async (
   userId: string,
   input: SaveAiSettingsInput,
-): Promise<FrontendAiSettings & { warning: string | null }> => {
+): Promise<FrontendAiSettings & { warning: string | null; models: AiModelSummary[] }> => {
   // Guard before the probe, not just at `encryptSecret` time below — an unset
   // or malformed `SECRET_ENCRYPTION_KEY` must fail closed with the documented
   // 503, not spend a real provider call first and then throw unguarded.
@@ -98,9 +113,12 @@ export const saveAiSettings = async (
 
   let verifiedAt: Date | null = new Date();
   let warning: string | null = null;
+  // The probe already calls /v1/models; now it keeps the body instead of
+  // throwing it away, so the auto-pick costs no second provider call.
+  let models: AiModelSummary[] = [];
 
   try {
-    await client.listModels(input.apiKey, AbortSignal.timeout(AI_TIMEOUT_MS));
+    models = await client.listModels(input.apiKey, AbortSignal.timeout(AI_TIMEOUT_MS));
   } catch (error) {
     if (error instanceof AiProviderAuthError) {
       throw error;
@@ -108,6 +126,13 @@ export const saveAiSettings = async (
     verifiedAt = null;
     warning = `Key saved — not yet verified. ${PROVIDER_LABELS[input.provider]} was unreachable just now, so we'll verify it the next time you use it.`;
   }
+
+  // Auto-pick the first entry of the list the probe just returned. `?? null` is
+  // what resets a stale selection when the user switches provider or saves a new
+  // key: the full-row upsert writes this column unconditionally, so a model id
+  // belonging to the previous provider can never survive. A soft probe failure
+  // leaves it null, and the next Settings render backfills it via listAiModels.
+  const modelId = models[0]?.id ?? null;
 
   // The `@unique userId` row is fully replaced, so swapping providers leaves no
   // leftover key material from the previous one.
@@ -122,6 +147,7 @@ export const saveAiSettings = async (
       encryptedApiKey,
       keyLast4,
       verifiedAt,
+      modelId,
       sendNote: input.sendNote,
       sendAmount: input.sendAmount,
     },
@@ -130,12 +156,16 @@ export const saveAiSettings = async (
       encryptedApiKey,
       keyLast4,
       verifiedAt,
+      modelId,
       sendNote: input.sendNote,
       sendAmount: input.sendAmount,
     },
   });
 
-  return { ...toFrontend(row), warning };
+  // `models` rides along on the response because the Settings section holds its
+  // state in `useState` seeded from props: a router refresh would not reseed the
+  // picker after a key save, and the list is already in hand here.
+  return { ...toFrontend(row), warning, models };
 };
 
 export const updateAiToggles = async (
@@ -152,6 +182,115 @@ export const updateAiToggles = async (
     throw new ServiceValidationError('Add an API key in Settings first.');
   }
   return getAiSettings(userId);
+};
+
+export const updateAiModel = async (
+  userId: string,
+  input: UpdateAiModelInput,
+): Promise<FrontendAiSettings> => {
+  // `updateMany` scoped by userId carrying only `modelId`: no code path here can
+  // touch encryptedApiKey, provider or verifiedAt, and no provider call is made
+  // — changing the model is not a re-verification of the key.
+  //
+  // The value is deliberately not validated against a live list: that would mean
+  // a provider call per model change, and the list is not ground truth for what
+  // the completion endpoint accepts. `AiModelRejectedError` at suggest time is
+  // the real backstop; Zod bounds the id to a plausible shape.
+  const updated = await prisma.userAiSettings.updateMany({
+    where: { userId },
+    data: { modelId: input.modelId },
+  });
+  if (updated.count === 0) {
+    throw new ServiceValidationError('Add an API key in Settings first.');
+  }
+  return getAiSettings(userId);
+};
+
+export type AiModelsResult =
+  | { outcome: 'not-configured' }
+  | { outcome: 'ok'; models: AiModelSummary[]; selectedModelId: string }
+  | { outcome: 'unavailable'; message: string; selectedModelId: string | null };
+
+const UNREADABLE_KEY = 'Your saved API key could not be read. Save it again in Settings.';
+
+/**
+ * The Settings-render model-list fetch.
+ *
+ * **Never throws.** `app/(protected)/settings/page.tsx` runs this inside a
+ * `Promise.all` alongside password/reminders/push-device reads; one rejection
+ * would blank the entire Settings page over a provider blip. Every failure is a
+ * value in the discriminated union instead.
+ */
+export const listAiModels = async (userId: string): Promise<AiModelsResult> => {
+  const row = await prisma.userAiSettings.findUnique({ where: { userId } });
+  if (!row || !isSecretEncryptionConfigured()) {
+    return { outcome: 'not-configured' };
+  }
+
+  let apiKey: string;
+  try {
+    apiKey = decryptSecret(row.encryptedApiKey, userId);
+  } catch {
+    // Same copy as loadAiCredentials, and it never echoes the blob.
+    return { outcome: 'unavailable', message: UNREADABLE_KEY, selectedModelId: row.modelId };
+  }
+
+  let models: AiModelSummary[];
+  try {
+    models = await getAiProviderClient(row.provider).listModels(
+      apiKey,
+      AbortSignal.timeout(AI_LIST_TIMEOUT_MS),
+    );
+  } catch (error) {
+    // Our own typed errors already carry user-safe copy. Anything else — a bug,
+    // a non-Error throw — gets generic copy and a name-only console.warn, so no
+    // unrecognized detail reaches the user or the log.
+    const known =
+      error instanceof AiProviderAuthError ||
+      error instanceof AiRateLimitedError ||
+      error instanceof AiProviderUnavailableError ||
+      error instanceof AiInvalidResponseError;
+    if (!known) {
+      console.warn(`[ai] model list failed for ${row.provider}`);
+    }
+    return {
+      outcome: 'unavailable',
+      message: known
+        ? (error as Error).message
+        : `Couldn't load the model list from ${PROVIDER_LABELS[row.provider]} just now.`,
+      selectedModelId: row.modelId,
+    };
+  }
+
+  // Ordering is load-bearing: this empty check must run *before* the backfill
+  // below, or `models[0].id` would throw a TypeError on an empty list and break
+  // the never-throws property.
+  if (models.length === 0) {
+    return {
+      outcome: 'unavailable',
+      message: `${PROVIDER_LABELS[row.provider]} didn't return any usable models for this key.`,
+      selectedModelId: row.modelId,
+    };
+  }
+
+  let selectedModelId = row.modelId;
+  if (selectedModelId === null) {
+    selectedModelId = models[0].id;
+    await prisma.userAiSettings.updateMany({
+      // The `modelId: null` guard is the concurrency guard: a second concurrent
+      // render or tab that has already backfilled a value matches zero rows
+      // here rather than clobbering an explicit pick. The write's `count` is
+      // deliberately not consulted — on a lost race this render returns the
+      // value it computed locally and the next render reconciles.
+      where: { userId, modelId: null },
+      data: { modelId: selectedModelId },
+    });
+  }
+
+  // A stored id absent from the returned list is kept and returned anyway: the
+  // list is not ground truth, and silently reassigning a user's setting on a
+  // page render is worse than a picker showing an id the list omitted.
+  return { outcome: 'ok', models, selectedModelId };
 };
 
 export const acceptAiDisclosure = async (userId: string): Promise<FrontendAiSettings> => {
@@ -179,6 +318,8 @@ export const removeAiSettings = async (userId: string): Promise<{ ok: true }> =>
 export type AiCredentials = {
   provider: AiProvider;
   apiKey: string;
+  /** null when no list fetch has ever succeeded; the caller falls back */
+  modelId: string | null;
   sendNote: boolean;
   sendAmount: boolean;
   disclosureAccepted: boolean;
@@ -212,6 +353,7 @@ export const loadAiCredentials = async (userId: string): Promise<AiCredentials |
   return {
     provider: row.provider,
     apiKey,
+    modelId: row.modelId,
     sendNote: row.sendNote,
     sendAmount: row.sendAmount,
     disclosureAccepted: row.disclosureAcceptedAt !== null,

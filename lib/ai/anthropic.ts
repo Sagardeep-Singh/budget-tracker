@@ -9,7 +9,13 @@ import {
   buildSuggestionPayload,
   NO_MATCH_SENTINEL,
 } from '@/lib/ai/prompt';
-import type { AiProviderClient, AiSuggestionRequest, AiSuggestionResult } from '@/lib/ai/types';
+import { parseModelsResponse } from '@/lib/ai/models';
+import type {
+  AiModelSummary,
+  AiProviderClient,
+  AiSuggestionRequest,
+  AiSuggestionResult,
+} from '@/lib/ai/types';
 
 /**
  * Hand-rolled `fetch` transport for Anthropic — no SDK (see the architecture
@@ -28,14 +34,17 @@ const BASE_URL = process.env.AI_ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com
 const ANTHROPIC_VERSION = '2023-06-01';
 
 /**
- * Cheapest current-generation tier — this is one short classification per call
- * and the user pays for it.
+ * Last-resort model id, used only when the user's stored `modelId` is still
+ * null — i.e. the key was saved during a provider outage and no Settings render
+ * has since managed to fetch a list. Cheapest current-generation tier, since
+ * this is one short classification per call and the user pays for it.
  *
- * TODO: reverify this id against https://docs.anthropic.com/en/docs/about-claude/models
- * before shipping. A retired id surfaces as a 404, which the classifier maps to
- * `AiProviderUnavailableError` ("couldn't handle that request"), not a crash.
+ * A stale id here is low-stakes and needs no periodic reverification: it is
+ * reached only when the list fetch itself failed, and it surfaces as
+ * `AiModelRejectedError`, which points the user straight at the Settings model
+ * picker rather than at a dead end.
  */
-export const ANTHROPIC_MODEL = 'claude-3-5-haiku-latest';
+export const ANTHROPIC_FALLBACK_MODEL = 'claude-4-5-haiku-latest';
 
 const TOOL_NAME = 'pick_category';
 const MAX_TOKENS = 256;
@@ -49,12 +58,27 @@ const provider = 'ANTHROPIC' as const;
 const asUnavailable = (): AiProviderUnavailableError =>
   new AiProviderUnavailableError(provider, 'timeout');
 
-export const listModels = async (apiKey: string, signal: AbortSignal): Promise<void> => {
+/**
+ * `?limit=100` is a constant, not derived from anything about the user: it
+ * comfortably exceeds Anthropic's catalogue, so one page is the whole list and
+ * the `has_more` envelope can be ignored rather than multiplying the
+ * Settings-render cost.
+ *
+ * `cache: 'no-store'`: this now runs on a server-component render path as well
+ * as from a POST handler, and the product decision is that the list is fetched
+ * live on every Settings render. (Within-a-render memoization is separately
+ * opted out of by passing a `signal`.)
+ */
+export const listModels = async (
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<AiModelSummary[]> => {
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}/v1/models`, {
+    response = await fetch(`${BASE_URL}/v1/models?limit=100`, {
       method: 'GET',
       headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION },
+      cache: 'no-store',
       signal,
     });
   } catch {
@@ -63,10 +87,20 @@ export const listModels = async (apiKey: string, signal: AbortSignal): Promise<v
   if (!response.ok) {
     throw classifyProviderStatus(provider, response.status);
   }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new AiInvalidResponseError(provider);
+  }
+  // Every model Anthropic lists takes /v1/messages with tools, so there is
+  // nothing to filter out here.
+  return parseModelsResponse(provider, body);
 };
 
 export const suggestCategory = async (
   apiKey: string,
+  model: string,
   request: AiSuggestionRequest,
   signal: AbortSignal,
 ): Promise<AiSuggestionResult> => {
@@ -83,7 +117,7 @@ export const suggestCategory = async (
       },
       signal,
       body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
+        model,
         max_tokens: MAX_TOKENS,
         system,
         messages: [{ role: 'user', content: user }],
@@ -110,7 +144,9 @@ export const suggestCategory = async (
   }
 
   if (!response.ok) {
-    throw classifyProviderStatus(provider, response.status);
+    // `context` is what turns a 400/404 into the actionable
+    // "pick a different model" error rather than a generic 502.
+    throw classifyProviderStatus(provider, response.status, { modelId: model });
   }
 
   let body: unknown;

@@ -1,5 +1,10 @@
 import { prisma } from '@/lib/db/prisma';
-import { AI_DAILY_SUGGEST_LIMIT, AI_TIMEOUT_MS, getAiProviderClient } from '@/lib/ai';
+import {
+  AI_DAILY_SUGGEST_LIMIT,
+  AI_TIMEOUT_MS,
+  getAiProviderClient,
+  getFallbackModel,
+} from '@/lib/ai';
 import {
   AiDisclosureRequiredError,
   AiInvalidResponseError,
@@ -182,14 +187,25 @@ export const suggestCategoryWithAi = async (
   const request = buildRequest(transaction, categories, credentials);
 
   // 9. One outbound call, with the hard timeout applied here and nowhere else.
+  // The effective model is resolved from the row alone — no list call — so this
+  // step stays a single provider request. The fallback is reached only when no
+  // list fetch has ever succeeded for this key.
+  const model = credentials.modelId ?? getFallbackModel(credentials.provider);
   let result;
   try {
     result = await getAiProviderClient(credentials.provider).suggestCategory(
       credentials.apiKey,
+      model,
       request,
       AbortSignal.timeout(AI_TIMEOUT_MS),
     );
   } catch (error) {
+    // AiModelRejectedError deliberately falls through to the rethrow below: it
+    // is actionable ("pick a different model"), so the route must surface it as
+    // a 400 rather than have it read as "no confident match". The stored
+    // modelId is *not* cleared here — auto-repair was never asked for, and
+    // silently mutating a user's setting on an error path is worse than the
+    // error.
     if (error instanceof AiInvalidResponseError) {
       // Per the PM: "named a nonexistent category" reads to the user as "no
       // confident match". Logged as a signal — name and provider only, never

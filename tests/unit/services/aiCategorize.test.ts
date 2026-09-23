@@ -42,10 +42,12 @@ vi.mock('@/lib/ai', async () => {
   return { ...actual, getAiProviderClient: getAiProviderClientMock };
 });
 
-const { AI_DAILY_SUGGEST_LIMIT } = await import('@/lib/ai');
+const { AI_DAILY_SUGGEST_LIMIT, getFallbackModel } = await import('@/lib/ai');
+const { ANTHROPIC_FALLBACK_MODEL } = await import('@/lib/ai/anthropic');
 const {
   AiDisclosureRequiredError,
   AiInvalidResponseError,
+  AiModelRejectedError,
   AiProviderAuthError,
   AiProviderUnavailableError,
   AiRateLimitedError,
@@ -64,6 +66,9 @@ const CATEGORIES = [
 const CREDENTIALS = {
   provider: 'ANTHROPIC' as const,
   apiKey: 'sk-ant-decrypted-key-1234',
+  // null by default: the fallback-resolution path is the one every other test
+  // in this file exercises incidentally.
+  modelId: null as string | null,
   sendNote: false,
   sendAmount: false,
   disclosureAccepted: true,
@@ -77,7 +82,17 @@ const TX = {
   amount: '12.50',
 };
 
-const lastRequest = (): Record<string, unknown> => clientMock.suggestCategory.mock.calls.at(-1)![1];
+/**
+ * Index [2], not [1]: the signature is
+ * `suggestCategory(apiKey, model, request, signal)`. Left at [1] this returns
+ * the model *string*, against which `.not.toHaveProperty('note')` passes
+ * vacuously forever — i.e. the data-minimization assertions below would stay
+ * green while testing nothing.
+ */
+const lastRequest = (): Record<string, unknown> => clientMock.suggestCategory.mock.calls.at(-1)![2];
+
+/** The model argument actually sent, for the resolution tests. */
+const lastModel = (): string => clientMock.suggestCategory.mock.calls.at(-1)![1];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -312,6 +327,13 @@ describe('suggestCategoryWithAi — result mapping', () => {
       new AiProviderUnavailableError('ANTHROPIC', 'server'),
       AiProviderUnavailableError,
     ],
+    [
+      // Actionable, so it must reach the route as a 400 rather than read as
+      // "no confident match".
+      'AiModelRejectedError',
+      new AiModelRejectedError('ANTHROPIC', 'model-x'),
+      AiModelRejectedError,
+    ],
   ])('propagates %s rather than swallowing it', async (_label, thrown, ctor) => {
     clientMock.suggestCategory.mockRejectedValue(thrown);
     await expect(suggestCategoryWithAi('user-1', 'txn-1')).rejects.toBeInstanceOf(ctor);
@@ -441,6 +463,59 @@ describe('suggestCategoryWithAi — every query is userId-scoped', () => {
     expect(wheres.length).toBeGreaterThan(0);
     for (const where of wheres) {
       expect(where.userId).toBe('user-1');
+    }
+  });
+});
+
+describe('suggestCategoryWithAi — effective model resolution', () => {
+  it('sends the stored model id as the 2nd argument', async () => {
+    loadAiCredentialsMock.mockResolvedValue({ ...CREDENTIALS, modelId: 'stored-model-id' });
+    await suggestCategoryWithAi('user-1', 'txn-1');
+    expect(lastModel()).toBe('stored-model-id');
+  });
+
+  it('falls back to the provider constant when no model has ever been picked', async () => {
+    loadAiCredentialsMock.mockResolvedValue({ ...CREDENTIALS, modelId: null });
+    await suggestCategoryWithAi('user-1', 'txn-1');
+    // The real constant, not a duplicated literal that could silently drift.
+    expect(lastModel()).toBe(getFallbackModel('ANTHROPIC'));
+    expect(lastModel()).toBe(ANTHROPIC_FALLBACK_MODEL);
+  });
+
+  it('still makes exactly one outbound call on either resolution path', async () => {
+    loadAiCredentialsMock.mockResolvedValue({ ...CREDENTIALS, modelId: 'stored-model-id' });
+    await suggestCategoryWithAi('user-1', 'txn-1');
+    expect(clientMock.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(clientMock.listModels).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    getAiProviderClientMock.mockReturnValue(clientMock);
+    prismaMock.userAiSettings.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.transaction.findFirst.mockResolvedValue({ ...TX });
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.category.findMany.mockResolvedValue(CATEGORIES);
+    clientMock.suggestCategory.mockResolvedValue({ outcome: 'match', categoryId: 'cat-food' });
+    loadAiCredentialsMock.mockResolvedValue({ ...CREDENTIALS, modelId: null });
+    matchCategoryRuleMock.mockReturnValue(null);
+    isConfiguredMock.mockReturnValue(true);
+
+    await suggestCategoryWithAi('user-1', 'txn-1');
+    expect(clientMock.suggestCategory).toHaveBeenCalledTimes(1);
+    expect(clientMock.listModels).not.toHaveBeenCalled();
+  });
+
+  it('does not clear the stored modelId when the provider rejects it', async () => {
+    loadAiCredentialsMock.mockResolvedValue({ ...CREDENTIALS, modelId: 'stored-model-id' });
+    clientMock.suggestCategory.mockRejectedValue(
+      new AiModelRejectedError('ANTHROPIC', 'stored-model-id'),
+    );
+    await expect(suggestCategoryWithAi('user-1', 'txn-1')).rejects.toBeInstanceOf(
+      AiModelRejectedError,
+    );
+    // Only the two rate-limit writes from step 4; no auto-repair write.
+    expect(prismaMock.userAiSettings.updateMany).toHaveBeenCalledTimes(2);
+    for (const call of prismaMock.userAiSettings.updateMany.mock.calls) {
+      expect(call[0].data).not.toHaveProperty('modelId');
     }
   });
 });

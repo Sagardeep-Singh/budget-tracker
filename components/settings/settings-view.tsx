@@ -10,7 +10,7 @@ import { DeleteAccountCard } from '@/components/settings/delete-account-card';
 import { pillGroup, pillOption } from '@/components/settings/pills';
 import type { FrontendReminderPreference } from '@/lib/services/reminders';
 import type { FrontendPushSubscription } from '@/lib/services/pushSubscriptions';
-import type { FrontendAiSettings } from '@/lib/services/aiSettings';
+import type { AiModelsResult, FrontendAiSettings } from '@/lib/services/aiSettings';
 import {
   APPEARANCES,
   PALETTES,
@@ -39,6 +39,7 @@ export const SettingsView = ({
   reminderPreference,
   pushDevices,
   aiSettings,
+  aiModels,
 }: {
   email: string;
   hasPassword: boolean;
@@ -47,6 +48,7 @@ export const SettingsView = ({
   reminderPreference: FrontendReminderPreference;
   pushDevices: FrontendPushSubscription[];
   aiSettings: FrontendAiSettings;
+  aiModels: AiModelsResult;
 }): React.ReactElement => {
   const palette = useSyncExternalStore(
     subscribeToPreferences,
@@ -122,7 +124,7 @@ export const SettingsView = ({
         devices={pushDevices}
       />
 
-      <AiCategorizationSection settings={aiSettings} />
+      <AiCategorizationSection settings={aiSettings} models={aiModels} />
 
       <div className="border-line bg-paper-raised rounded-2xl border p-5">
         <h2 className="font-display text-[15px] font-semibold">Change password</h2>
