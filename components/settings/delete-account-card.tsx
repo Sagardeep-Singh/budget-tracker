@@ -48,8 +48,7 @@ export const DeleteAccountCard = ({
   const emailMatches = confirmEmailInput.trim().toLowerCase() === email.toLowerCase();
   const canSubmit = emailMatches && (hasPassword ? password.length > 0 : googleReauthFresh);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
+  const handleSubmit = (): void => {
     if (!canSubmit) return;
     setConfirmOpen(true);
   };
@@ -109,13 +108,26 @@ export const DeleteAccountCard = ({
         and reimbursement history. This cannot be undone.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-3.5 flex flex-col gap-3.5">
+      {/*
+        A plain div, not a <form>: the Google branch below renders
+        GoogleSignInButton, which is itself a <form> (it posts a server
+        action). Nesting a <form> inside a <form> is invalid HTML and Next
+        flags it as a hydration error, so submission here is driven by the
+        button's onClick rather than a form's onSubmit.
+      */}
+      <div className="mt-3.5 flex flex-col gap-3.5">
         <div>
           <Label htmlFor="confirmEmail">{`Type ${email} to confirm`}</Label>
           <Input
             id="confirmEmail"
             value={confirmEmailInput}
             onChange={(e) => setConfirmEmailInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
             aria-describedby="confirmEmail-hint"
             autoComplete="off"
           />
@@ -134,6 +146,12 @@ export const DeleteAccountCard = ({
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
               autoComplete="current-password"
             />
           </div>
@@ -153,7 +171,8 @@ export const DeleteAccountCard = ({
         )}
 
         <Button
-          type="submit"
+          type="button"
+          onClick={handleSubmit}
           variant="danger"
           icon={Trash2}
           disabled={!canSubmit}
@@ -161,7 +180,7 @@ export const DeleteAccountCard = ({
         >
           Delete account
         </Button>
-      </form>
+      </div>
 
       {error && (
         <p className="bg-rose-soft text-rose mt-3 rounded-lg px-3 py-2 text-sm" role="alert">
