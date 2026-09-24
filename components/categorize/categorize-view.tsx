@@ -7,8 +7,11 @@ import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
 import { Toast } from '@/components/ui/toast';
+import { SuggestAiButton } from '@/components/categorize/suggest-ai-button';
 import type { CategorizeProgress, CategorizeQueueRow } from '@/lib/services/categorize';
 import type { FrontendCategory } from '@/lib/services/categories';
+import type { FrontendAiSettings } from '@/lib/services/aiSettings';
+import type { AiSuggestion } from '@/lib/services/aiCategorize';
 
 type PayeeGroup = {
   payee: string;
@@ -30,14 +33,22 @@ const patchCategory = (id: string, categoryId: string | null): Promise<Response>
 const skipTransaction = (id: string): Promise<Response> =>
   fetch(`/api/transactions/${id}/skip`, { method: 'POST' });
 
+/** Result of a suggest call, shown inline next to the triggering row/card —
+ * matching the `matchResult` precedent in transactions-view.tsx rather than a
+ * Toast, since it belongs to one row, not to the page. `alert` for a real
+ * failure, `status` for the informational "no confident match". */
+type AiRowResult = { message: string; tone: 'alert' | 'status' };
+
 export const CategorizeView = ({
   initialQueue,
   categories,
   progress,
+  aiSettings,
 }: {
   initialQueue: CategorizeQueueRow[];
   categories: FrontendCategory[];
   progress: CategorizeProgress;
+  aiSettings: FrontendAiSettings;
 }): React.ReactElement => {
   const router = useRouter();
   const [queue, setQueue] = useState(initialQueue);
@@ -52,6 +63,99 @@ export const CategorizeView = ({
   // unresponsive during testing.
   const GROUP_PAGE_SIZE = 60;
   const [visibleGroupCount, setVisibleGroupCount] = useState(GROUP_PAGE_SIZE);
+
+  // AI suggestions land here first, by transaction id — they are never applied
+  // automatically. Accepting one goes through the same explicit category-set
+  // action a rule suggestion does.
+  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
+  const [suggestingId, setSuggestingId] = useState<string | null>(null);
+  const [aiResults, setAiResults] = useState<Record<string, AiRowResult>>({});
+  const [dailyCapHit, setDailyCapHit] = useState<string | null>(null);
+
+  // No key, no button at all — rather than a disabled one with a hint. A
+  // permanently-inert control in every queue row is noise for the (majority)
+  // case of a user who has not opted into BYOK. The daily cap is different: it
+  // is temporary and the user needs to know why the button stopped working.
+  const showSuggest = aiSettings.available && aiSettings.configured;
+
+  const suggestAi = async (transactionId: string): Promise<void> => {
+    setSuggestingId(transactionId);
+    setAiResults((r) => {
+      const next = { ...r };
+      delete next[transactionId];
+      return next;
+    });
+    try {
+      const response = await fetch('/api/categorize/suggest-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId }),
+      });
+      const body = (await response.json()) as AiSuggestion | { error: string };
+
+      if (!response.ok) {
+        const message =
+          'error' in body ? body.error : 'Could not get a suggestion. Try again in a moment.';
+        setAiResults((r) => ({ ...r, [transactionId]: { message, tone: 'alert' } }));
+        // The daily cap is the one failure that stays true for the rest of the
+        // day, so it disables every other Suggest button too.
+        if (response.status === 429 && message.includes("today's limit")) {
+          setDailyCapHit(message);
+        }
+        return;
+      }
+
+      if ('outcome' in body && body.outcome === 'match') {
+        setAiSuggestions((s) => ({ ...s, [transactionId]: body.categoryId }));
+        return;
+      }
+      setAiResults((r) => ({
+        ...r,
+        [transactionId]: {
+          message: 'No confident match — pick a category yourself.',
+          tone: 'status',
+        },
+      }));
+    } catch {
+      setAiResults((r) => ({
+        ...r,
+        [transactionId]: {
+          message: 'Could not get a suggestion. Try again in a moment.',
+          tone: 'alert',
+        },
+      }));
+    } finally {
+      setSuggestingId(null);
+    }
+  };
+
+  /** Rendered only for rows no rule matched — AI is for the leftovers, and the
+   * server refuses a rule-matched row anyway. */
+  const renderSuggest = (transactionId: string, compact: boolean): React.ReactElement | null =>
+    showSuggest ? (
+      <SuggestAiButton
+        compact={compact}
+        state={suggestingId === transactionId ? 'loading' : 'idle'}
+        disabledReason={dailyCapHit}
+        onClick={() => void suggestAi(transactionId)}
+      />
+    ) : null;
+
+  const renderAiResult = (transactionId: string): React.ReactElement | null => {
+    const result = aiResults[transactionId];
+    if (!result) return null;
+    return (
+      <p
+        role={result.tone}
+        className={cn(
+          'mt-2 rounded-lg px-3 py-2 text-[12.5px]',
+          result.tone === 'alert' ? 'bg-rose-soft text-rose' : 'border-line text-ink-muted border',
+        )}
+      >
+        {result.message}
+      </p>
+    );
+  };
 
   const matched = queue.filter((r) => r.suggestedCategoryId);
 
@@ -219,7 +323,10 @@ export const CategorizeView = ({
           {payeeGroups.slice(0, visibleGroupCount).map((group) => {
             const showMore = groupMore[group.payee] ?? false;
             const chipCategories = showMore ? categories : categories.slice(0, 3);
-            const chosenId = groupChoice[group.payee] ?? null;
+            // An AI suggestion lands here exactly like a chip tap would: it
+            // pre-selects, it does not apply. "Categorize all N" is still the
+            // user's explicit accept.
+            const chosenId = groupChoice[group.payee] ?? aiSuggestions[group.rows[0].id] ?? null;
             return (
               <div
                 key={group.payee}
@@ -281,6 +388,10 @@ export const CategorizeView = ({
                     <p className="text-ink-muted mt-2.5 text-[12.5px] leading-snug">
                       {group.why ?? 'No rule matches this payee. Pick a category for the batch.'}
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {renderSuggest(group.rows[0].id, false)}
+                    </div>
+                    {renderAiResult(group.rows[0].id)}
                     <div className="mt-3.5 flex flex-wrap gap-2">
                       {chipCategories.map((c) => (
                         <button
@@ -351,51 +462,77 @@ export const CategorizeView = ({
           reviewOne ? 'hidden lg:block' : 'hidden',
         )}
       >
-        {visibleRows.map((row) => (
-          <div key={row.id} className="ledger-row flex items-center gap-5 py-4.5">
-            <div className="w-[230px] min-w-0 shrink-0">
-              <div className="truncate text-sm font-medium">{row.payee}</div>
-              <div className="text-ink-muted mt-0.5 text-xs">{row.meta}</div>
+        {visibleRows.map((row) => {
+          const aiChoice = aiSuggestions[row.id] ?? null;
+          return (
+            <div key={row.id} className="ledger-row py-4.5">
+              <div className="flex items-center gap-5">
+                <div className="w-[230px] min-w-0 shrink-0">
+                  <div className="truncate text-sm font-medium">{row.payee}</div>
+                  <div className="text-ink-muted mt-0.5 text-xs">{row.meta}</div>
+                </div>
+                <span className="text-rose w-24 shrink-0 text-right font-mono text-sm tabular-nums">
+                  -{row.amount}
+                </span>
+                <div className="text-ink-muted w-[250px] shrink-0 text-[12.5px] leading-snug">
+                  {row.why ?? 'No rule matches this transaction.'}
+                </div>
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {!row.suggestedCategoryId && renderSuggest(row.id, true)}
+                  {/* Controlled, so an AI suggestion has somewhere to land
+                    before it is accepted — exactly how a rule match already
+                    pre-fills it. Picking any option still applies
+                    immediately; there is no separate confirm step. */}
+                  <Select
+                    disabled={pending}
+                    className="border-line bg-paper rounded-full px-3 py-2 text-sm"
+                    onChange={(e) => {
+                      if (e.target.value) void confirm(row, e.target.value);
+                    }}
+                    value={aiChoice ?? row.suggestedCategoryId ?? ''}
+                  >
+                    {!row.suggestedCategoryId && !aiChoice && (
+                      <option value="" disabled>
+                        Choose category
+                      </option>
+                    )}
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {/* Only exists while an unaccepted AI suggestion is sitting in
+                    the select — re-picking the value already selected fires no
+                    change event, so without this the row would have no way to
+                    accept it. */}
+                  {aiChoice && (
+                    <Button
+                      type="button"
+                      onClick={() => void confirm(row, aiChoice)}
+                      icon={Check}
+                      loading={pending}
+                      className="px-3 py-2 text-[13px]"
+                    >
+                      Apply
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void skip(row)}
+                    icon={SkipForward}
+                    loading={pending}
+                    className="px-3 py-2 text-[13px]"
+                  >
+                    Skip
+                  </Button>
+                </div>
+              </div>
+              {renderAiResult(row.id)}
             </div>
-            <span className="text-rose w-24 shrink-0 text-right font-mono text-sm tabular-nums">
-              -{row.amount}
-            </span>
-            <div className="text-ink-muted w-[250px] shrink-0 text-[12.5px] leading-snug">
-              {row.why ?? 'No rule matches this transaction.'}
-            </div>
-            <div className="ml-auto flex shrink-0 gap-1.5">
-              <Select
-                disabled={pending}
-                className="border-line bg-paper rounded-full px-3 py-2 text-sm"
-                onChange={(e) => {
-                  if (e.target.value) void confirm(row, e.target.value);
-                }}
-                defaultValue={row.suggestedCategoryId ?? ''}
-              >
-                {!row.suggestedCategoryId && (
-                  <option value="" disabled>
-                    Choose category
-                  </option>
-                )}
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void skip(row)}
-                icon={SkipForward}
-                loading={pending}
-                className="px-3 py-2 text-[13px]"
-              >
-                Skip
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Mobile: one card, category chips instead of a dropdown — tapping a
@@ -404,10 +541,13 @@ export const CategorizeView = ({
           first and gets an accent ring so it's the easiest chip to reach. */}
       <div className={cn('mt-4 flex flex-col gap-3', reviewOne ? 'lg:hidden' : 'hidden')}>
         {visibleRows.map((row) => {
-          const sortedCategories = row.suggestedCategoryId
+          // A rule match wins the top slot; an AI suggestion takes it otherwise,
+          // so the accent chip always means "the suggestion for this row".
+          const highlightId = row.suggestedCategoryId ?? aiSuggestions[row.id] ?? null;
+          const sortedCategories = highlightId
             ? [
-                ...categories.filter((c) => c.id === row.suggestedCategoryId),
-                ...categories.filter((c) => c.id !== row.suggestedCategoryId),
+                ...categories.filter((c) => c.id === highlightId),
+                ...categories.filter((c) => c.id !== highlightId),
               ]
             : categories;
           return (
@@ -428,6 +568,12 @@ export const CategorizeView = ({
               <p className="text-ink-muted text-[12.5px] leading-snug">
                 {row.why ?? 'No rule matches this transaction.'}
               </p>
+              {!row.suggestedCategoryId && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {renderSuggest(row.id, false)}
+                </div>
+              )}
+              {renderAiResult(row.id)}
               <div className="flex flex-wrap gap-2">
                 {sortedCategories.map((c) => (
                   <button
@@ -437,7 +583,7 @@ export const CategorizeView = ({
                     onClick={() => void confirm(row, c.id)}
                     className={cn(
                       'rounded-full border px-3.5 py-2 text-[13px] font-medium disabled:opacity-50',
-                      c.id === row.suggestedCategoryId
+                      c.id === highlightId
                         ? 'border-iris bg-iris-soft text-iris'
                         : 'border-line text-ink',
                     )}
