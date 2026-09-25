@@ -9,6 +9,7 @@ import { ServiceValidationError } from '@/lib/services/common';
 import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
 import { clientIpFromHeaders } from '@/lib/http/clientIp';
 import { AuthRateLimitedError } from '@/lib/auth/errors';
+import { issueAndSendVerificationEmail } from '@/lib/services/emailVerification';
 
 const TOO_MANY_ATTEMPTS = 'Too many attempts. Try again in a few minutes.';
 
@@ -98,13 +99,23 @@ export const signUpAction = async (
     }
   }
 
+  let userId: string;
   try {
-    await createUser(parsed.data);
+    userId = (await createUser(parsed.data)).id;
   } catch (error) {
     if (error instanceof ServiceValidationError) {
       return error.message;
     }
     throw error;
+  }
+
+  // Best-effort: the account is already created and usable — a Brevo outage
+  // shouldn't turn a successful signup into a form error. Verification can
+  // always be retried from the unverified-email banner's resend button.
+  try {
+    await issueAndSendVerificationEmail(userId, parsed.data.email);
+  } catch {
+    // swallowed deliberately — see comment above
   }
 
   try {
