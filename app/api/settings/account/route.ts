@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireSession } from '@/lib/auth/session';
 import { deleteAccountSchema } from '@/lib/validators/account-deletion';
 import { deleteUserAccount } from '@/lib/services/accountDeletion';
 import { GoogleReauthRequiredError, ServiceValidationError } from '@/lib/services/common';
 
 export const DELETE = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // `requireSession` rather than `requireUserId`: account deletion also needs
+  // the token's `reauthenticatedAt` as its live-credential proof.
+  const session = await requireSession();
+  if (session instanceof NextResponse) {
+    return session;
   }
 
   const parsed = deleteAccountSchema.safeParse(await request.json());

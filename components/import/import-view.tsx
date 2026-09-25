@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label, Select } from '@/components/ui/field';
 import { Money } from '@/components/ui/money';
+import { postJSON } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { categoryColorVar } from '@/lib/ui/category-color';
@@ -122,18 +123,17 @@ export const ImportView = ({
       };
     });
 
-    const res = await fetch('/api/import/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId, filename: fileName, rows }),
-    });
+    const res = await postJSON<{ rows: PreviewRow[]; filenameWarning: FilenameWarning | null }>(
+      '/api/import/preview',
+      { accountId, filename: fileName, rows },
+    );
 
     setLoading(false);
     if (!res.ok) {
       setError('Could not preview these rows. Check your column mapping.');
       return;
     }
-    const data: { rows: PreviewRow[]; filenameWarning: FilenameWarning | null } = await res.json();
+    const data = res.data;
     setPreview(data.rows);
     setFilenameWarning(data.filenameWarning);
   };
@@ -161,20 +161,19 @@ export const ImportView = ({
     setLoading(true);
     setError(null);
     setDuplicateBatch(null);
-    const res = await fetch('/api/import/commit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await postJSON<{ imported: number; skippedDuplicates: number }>(
+      '/api/import/commit',
+      {
         accountId,
         filename: fileName,
         rows: preview,
         overrideDuplicateFilename: override,
-      }),
-    });
+      },
+    );
     setLoading(false);
     if (!res.ok) {
       setCommitting(false);
-      const body = await res.json().catch(() => null);
+      const body = res.body as { code?: string; batch?: FrontendImportBatch } | null;
       if (res.status === 409 && body?.code === 'DUPLICATE_FILENAME') {
         // keep the preview on screen: the rows stay reviewable behind the error
         setDuplicateBatch(body.batch as FrontendImportBatch);
@@ -183,8 +182,7 @@ export const ImportView = ({
       setError('Import failed.');
       return;
     }
-    const data = await res.json();
-    setCommitted(data);
+    setCommitted(res.data);
     setFilenameWarning(null);
     setDuplicateBatch(null);
     // committing was never reset on the success path, so every import after

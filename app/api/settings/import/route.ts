@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { MAX_IMPORT_BYTES, userDataFileSchema } from '@/lib/validators/user-data';
 import { importUserData } from '@/lib/services/userData';
 import { ServiceValidationError } from '@/lib/services/common';
@@ -7,9 +7,9 @@ import { ServiceValidationError } from '@/lib/services/common';
 export const maxDuration = 60;
 
 export const POST = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   // A client can lie about or omit Content-Length, so it's a fast-path
@@ -45,7 +45,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    const result = await importUserData(session.user.id, parsed.data);
+    const result = await importUserData(userId, parsed.data);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     if (error instanceof ServiceValidationError) {

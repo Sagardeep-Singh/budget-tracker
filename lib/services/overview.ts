@@ -1,3 +1,4 @@
+import { daysInMonth as daysInMonthOf, monthRange } from '@/lib/date';
 import { prisma } from '@/lib/db/prisma';
 import { listBudgets } from '@/lib/services/budgets';
 import { getCategorizeQueueStats } from '@/lib/services/categorize';
@@ -82,15 +83,6 @@ const currentMonth = (): number => {
   return now.getUTCFullYear() * 100 + (now.getUTCMonth() + 1);
 };
 
-const monthRange = (month: number): { start: Date; end: Date; daysInMonth: number } => {
-  const year = Math.floor(month / 100);
-  const monthIndex = (month % 100) - 1;
-  const start = new Date(Date.UTC(year, monthIndex, 1));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 1));
-  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-  return { start, end, daysInMonth };
-};
-
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long' });
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
@@ -103,7 +95,8 @@ export const getOverviewData = async (
   options: { month?: number; day?: number } = {},
 ): Promise<OverviewData> => {
   const month = options.month ?? currentMonth();
-  const { start, end, daysInMonth } = monthRange(month);
+  const { start, end } = monthRange(month);
+  const daysInMonth = daysInMonthOf(month);
   const isCurrentMonth = month === currentMonth();
   const now = new Date();
   const todayOfMonth = isCurrentMonth ? now.getUTCDate() : daysInMonth;

@@ -5,6 +5,7 @@ import { Lock } from 'lucide-react';
 import { signOutAfterPasswordChange } from '@/lib/auth/actions';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
+import { postJSON } from '@/lib/api-client';
 import { MIN_PASSWORD_LENGTH } from '@/lib/validators/password';
 
 export const ChangePasswordForm = (): React.ReactElement => {
@@ -26,24 +27,14 @@ export const ChangePasswordForm = (): React.ReactElement => {
     }
 
     setPending(true);
-    let res: Response;
-    try {
-      res = await fetch('/api/settings/password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-    } catch {
-      setPending(false);
-      setError('Could not reach the server. Check your connection and try again.');
-      return;
-    }
+    const res = await postJSON('/api/settings/password', { currentPassword, newPassword });
 
     if (!res.ok) {
       setPending(false);
-      const body = await res.json().catch(() => null);
       setError(
-        typeof body?.error === 'string' ? body.error : 'Could not change your password. Try again.',
+        res.networkError
+          ? 'Could not reach the server. Check your connection and try again.'
+          : (res.error ?? 'Could not change your password. Try again.'),
       );
       return;
     }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { updateReimbursementLinkSchema } from '@/lib/validators/reimbursements';
 import { deleteReimbursementLink, updateReimbursementLink } from '@/lib/services/reimbursements';
 import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
@@ -7,8 +7,10 @@ import { ReimbursementConflictError, ServiceValidationError } from '@/lib/servic
 type RouteParams = { params: Promise<{ id: string }> };
 
 export const PATCH = async (request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const { id } = await params;
   const parsed = updateReimbursementLinkSchema.safeParse(await request.json());
@@ -17,7 +19,7 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
   }
 
   try {
-    return NextResponse.json(await updateReimbursementLink(session.user.id, id, parsed.data));
+    return NextResponse.json(await updateReimbursementLink(userId, id, parsed.data));
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
@@ -30,12 +32,14 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
 };
 
 export const DELETE = async (_request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const { id } = await params;
   try {
-    return NextResponse.json(await deleteReimbursementLink(session.user.id, id));
+    return NextResponse.json(await deleteReimbursementLink(userId, id));
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
+import { deleteJSON } from '@/lib/api-client';
 
 type DeleteStatus = 'idle' | 'submitting' | 'error';
 
@@ -57,29 +58,21 @@ export const DeleteAccountCard = ({
     setStatus('submitting');
     setError(null);
 
-    let res: Response;
-    try {
-      res = await fetch('/api/settings/account', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          confirmEmail: confirmEmailInput,
-          currentPassword: hasPassword ? password : undefined,
-        }),
-      });
-    } catch {
-      setConfirmOpen(false);
-      setStatus('error');
-      setError('Could not reach the server. Check your connection and try again.');
-      return;
-    }
+    const res = await deleteJSON('/api/settings/account', {
+      confirmEmail: confirmEmailInput,
+      currentPassword: hasPassword ? password : undefined,
+    });
 
     setConfirmOpen(false);
 
     if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      const message =
-        typeof body?.error === 'string' ? body.error : 'Could not delete your account. Try again.';
+      if (res.networkError) {
+        setStatus('error');
+        setError('Could not reach the server. Check your connection and try again.');
+        return;
+      }
+      const body = res.body as { requiresGoogleReauth?: boolean } | null;
+      const message = res.error ?? 'Could not delete your account. Try again.';
       if (message === 'Password is incorrect.') {
         setPassword('');
       }

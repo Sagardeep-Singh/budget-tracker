@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
 import { ReimbursementLinkPicker } from '@/components/transactions/reimbursement-link-picker';
 import { formatDate } from '@/lib/format';
+import { deleteJSON, getJSON, patchJSON } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import type { FrontendTransaction } from '@/lib/services/transactions';
 import type { FrontendExpenseReimbursement } from '@/lib/services/reimbursements';
@@ -72,12 +73,14 @@ export const ReimbursementPanel = ({
 
   const load = async (): Promise<void> => {
     setLoadError(null);
-    const res = await fetch(`/api/transactions/${transaction.id}/reimbursement`);
+    const res = await getJSON<FrontendExpenseReimbursement>(
+      `/api/transactions/${transaction.id}/reimbursement`,
+    );
     if (!res.ok) {
       setLoadError("Couldn't load reimbursement details.");
       return;
     }
-    setDetail(await res.json());
+    setDetail(res.data);
   };
 
   useEffect(() => {
@@ -95,11 +98,10 @@ export const ReimbursementPanel = ({
   const toggleComplete = async (completed: boolean): Promise<void> => {
     setActionError(null);
     setCompleteTogglePending(true);
-    const res = await fetch(`/api/transactions/${transaction.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildFullPatch(transaction, { reimbursementCompleted: completed })),
-    });
+    const res = await patchJSON(
+      `/api/transactions/${transaction.id}`,
+      buildFullPatch(transaction, { reimbursementCompleted: completed }),
+    );
     setCompleteTogglePending(false);
     if (!res.ok) {
       setActionError('Could not update this reimbursement. Try again.');
@@ -117,15 +119,10 @@ export const ReimbursementPanel = ({
   const saveEdit = async (linkId: string): Promise<void> => {
     setEditPending(true);
     setEditError(null);
-    const res = await fetch(`/api/reimbursement-links/${linkId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: editAmountValue }),
-    });
+    const res = await patchJSON(`/api/reimbursement-links/${linkId}`, { amount: editAmountValue });
     setEditPending(false);
     if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      setEditError(typeof body?.error === 'string' ? body.error : 'Could not update this link.');
+      setEditError(res.error ?? 'Could not update this link.');
       return;
     }
     setEditingLinkId(null);
@@ -134,7 +131,7 @@ export const ReimbursementPanel = ({
 
   const removeLink = async (linkId: string): Promise<void> => {
     setRemovePending(true);
-    await fetch(`/api/reimbursement-links/${linkId}`, { method: 'DELETE' });
+    await deleteJSON(`/api/reimbursement-links/${linkId}`);
     setRemovePending(false);
     setRemoveConfirmLinkId(null);
     await afterChange();

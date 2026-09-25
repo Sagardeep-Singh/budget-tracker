@@ -7,16 +7,12 @@ import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { patchJSON, postJSON, deleteJSON } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
+import { daysInMonth } from '@/lib/date';
 import type { FrontendBudget } from '@/lib/services/budgets';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { UncategorizedMonthSummary } from '@/lib/services/categorize';
-
-const daysInMonth = (month: number): number => {
-  const year = Math.floor(month / 100);
-  const monthIndex = (month % 100) - 1;
-  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-};
 
 const MONTH_LABEL = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
@@ -165,15 +161,13 @@ export const BudgetsView = ({
     // than the one being viewed — editing it starts a new value from this
     // month forward instead of rewriting history.
     const startsNewMonth = budget.month !== month;
-    const res = await fetch(startsNewMonth ? '/api/budgets' : `/api/budgets/${budget.id}`, {
-      method: startsNewMonth ? 'POST' : 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        startsNewMonth
-          ? { categoryId: budget.categoryId, month, limitAmount: editValue }
-          : { limitAmount: editValue },
-      ),
-    });
+    const res = startsNewMonth
+      ? await postJSON('/api/budgets', {
+          categoryId: budget.categoryId,
+          month,
+          limitAmount: editValue,
+        })
+      : await patchJSON(`/api/budgets/${budget.id}`, { limitAmount: editValue });
     setEditPending(false);
     if (!res.ok) {
       setEditError('Could not update that budget.');
@@ -187,10 +181,10 @@ export const BudgetsView = ({
     event.preventDefault();
     setPending(true);
     setError(null);
-    const res = await fetch('/api/budgets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryId: selectedCategoryId, limitAmount, month }),
+    const res = await postJSON('/api/budgets', {
+      categoryId: selectedCategoryId,
+      limitAmount,
+      month,
     });
     setPending(false);
     if (!res.ok) {
@@ -206,7 +200,7 @@ export const BudgetsView = ({
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
-    await fetch(`/api/budgets/${id}`, { method: 'DELETE' });
+    await deleteJSON(`/api/budgets/${id}`);
     setDeletePending(false);
     setConfirmDeleteId(null);
     router.refresh();

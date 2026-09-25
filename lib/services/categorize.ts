@@ -1,3 +1,4 @@
+import { monthRange } from '@/lib/date';
 import { prisma } from '@/lib/db/prisma';
 
 export type CategoryRuleMatcher = { categoryId: string; matchText: string; priority: number };
@@ -114,10 +115,7 @@ export const getUncategorizedMonthSummary = async (
   userId: string,
   month: number,
 ): Promise<UncategorizedMonthSummary> => {
-  const year = Math.floor(month / 100);
-  const monthIndex = (month % 100) - 1;
-  const start = new Date(Date.UTC(year, monthIndex, 1));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 1));
+  const { start, end } = monthRange(month);
 
   const rows = await prisma.transaction.findMany({
     where: {

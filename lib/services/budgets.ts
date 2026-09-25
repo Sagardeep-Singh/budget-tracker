@@ -1,3 +1,4 @@
+import { monthRange } from '@/lib/date';
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
 import { listReimbursedAmountsByExpenseDate } from '@/lib/services/reimbursements';
@@ -12,26 +13,39 @@ export type FrontendBudget = {
   spent: string;
 };
 
-const monthRange = (month: number): { start: Date; end: Date } => {
-  const year = Math.floor(month / 100);
-  const monthIndex = (month % 100) - 1;
-  const start = new Date(Date.UTC(year, monthIndex, 1));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 1));
-  return { start, end };
-};
-
 export const listBudgets = async (userId: string, month: number): Promise<FrontendBudget[]> => {
   const { start, end } = monthRange(month);
 
-  const [rows, spentByCategory, reimbursedExpenses] = await Promise.all([
-    // Budgets repeat month over month until changed: pull every row at or
-    // before the requested month and keep, per category, only the most
-    // recent one — that's the value in effect for this month.
-    prisma.budget.findMany({
+  // Budgets repeat month over month until changed: pull the rows at or before
+  // the requested month and keep, per category, only the most recent one —
+  // that's the value in effect for this month.
+  //
+  // Bounded at 12 months back (`month - 100` is the same month a year
+  // earlier on a YYYYMM int) so the common case can't grow into an unbounded
+  // scan of every budget a user has ever set. A category whose newest budget
+  // predates that window falls out of the bounded query, so if it comes back
+  // empty (a returning user who hasn't touched budgets in over a year) we
+  // fall back to the unbounded query rather than silently rendering "no
+  // budgets" — this makes the common case bounded without making the result
+  // ever lossy.
+  const budgetRows = async () => {
+    const bounded = await prisma.budget.findMany({
+      where: { userId, month: { gte: month - 100, lte: month } },
+      include: { category: { select: { name: true } } },
+      orderBy: [{ categoryId: 'asc' }, { month: 'desc' }],
+    });
+    if (bounded.length > 0) {
+      return bounded;
+    }
+    return prisma.budget.findMany({
       where: { userId, month: { lte: month } },
       include: { category: { select: { name: true } } },
       orderBy: [{ categoryId: 'asc' }, { month: 'desc' }],
-    }),
+    });
+  };
+
+  const [rows, spentByCategory, reimbursedExpenses] = await Promise.all([
+    budgetRows(),
     prisma.transaction.groupBy({
       by: ['categoryId'],
       // a transfer between the user's own accounts isn't spending, even when

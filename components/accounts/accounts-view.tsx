@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AccountForm } from '@/components/accounts/account-form';
 import { ReimbursementSummaryCard } from '@/components/accounts/reimbursement-summary-card';
+import { deleteJSON } from '@/lib/api-client';
 import { formatDate, ordinal } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import type { FrontendAccount } from '@/lib/services/accounts';
@@ -50,7 +51,7 @@ export const AccountsView = ({
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
-    await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+    await deleteJSON(`/api/accounts/${id}`);
     setDeletePending(false);
     setConfirmDeleteId(null);
     router.refresh();

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { aiErrorToResponse } from '@/lib/ai/errors';
 import { suggestWithAiSchema } from '@/lib/validators/categorize-ai';
 import { suggestCategoryWithAi } from '@/lib/services/aiCategorize';
@@ -17,9 +17,9 @@ export const runtime = 'nodejs';
  * server-enforced.
  */
 export const POST = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const parsed = suggestWithAiSchema.safeParse(await request.json().catch(() => null));
@@ -28,9 +28,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    return NextResponse.json(
-      await suggestCategoryWithAi(session.user.id, parsed.data.transactionId),
-    );
+    return NextResponse.json(await suggestCategoryWithAi(userId, parsed.data.transactionId));
   } catch (error) {
     const mapped = aiErrorToResponse(error);
     if (!mapped) {

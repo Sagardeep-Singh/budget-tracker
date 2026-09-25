@@ -9,7 +9,10 @@ const googleClientId = process.env.AUTH_GOOGLE_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
 
 export const authConfig: NextAuthConfig = {
-  session: { strategy: 'jwt' },
+  // Tightened from NextAuth's 30-day default: a finance app shouldn't keep a
+  // stolen or forgotten session alive for a month, so tokens expire after a
+  // week and refresh at most daily (rolling for anyone using it regularly).
+  session: { strategy: 'jwt', maxAge: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
   pages: { signIn: '/login' },
   providers: [
     ...(googleClientId && googleClientSecret
@@ -62,9 +65,9 @@ export const authConfig: NextAuthConfig = {
       }
       // Deleting an account must take effect everywhere immediately, not
       // just for the tab that did the deleting — this is the one callback
-      // upstream of every route's own `if (!session?.user)` guard and the
-      // protected layout's redirect, so a `null` here fires all of them
-      // with zero changes to ~20 existing route handlers. No `checkedAt`
+      // upstream of every route's `requireUserId()` guard and the protected
+      // layout's redirect, so a `null` here fires all of them with zero
+      // changes to the existing route handlers. No `checkedAt`
       // throttle: caching this for even a minute would let a deleted user's
       // other devices keep working past the atomic delete they're supposed
       // to be locked out of immediately.

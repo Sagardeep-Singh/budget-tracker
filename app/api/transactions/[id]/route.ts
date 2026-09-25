@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { updateTransactionSchema } from '@/lib/validators/transactions';
 import { deleteTransaction, updateTransaction } from '@/lib/services/transactions';
 import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
@@ -7,8 +7,10 @@ import { ReimbursementConflictError, ServiceValidationError } from '@/lib/servic
 type RouteParams = { params: Promise<{ id: string }> };
 
 export const PATCH = async (request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const { id } = await params;
   const parsed = updateTransactionSchema.safeParse(await request.json());
@@ -17,7 +19,7 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
   }
 
   try {
-    return NextResponse.json(await updateTransaction(session.user.id, id, parsed.data));
+    return NextResponse.json(await updateTransaction(userId, id, parsed.data));
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
@@ -30,12 +32,14 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
 };
 
 export const DELETE = async (_request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const { id } = await params;
   try {
-    await deleteTransaction(session.user.id, id);
+    await deleteTransaction(userId, id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {

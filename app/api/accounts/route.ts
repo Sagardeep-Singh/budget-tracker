@@ -1,23 +1,23 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { createAccountSchema } from '@/lib/validators/accounts';
 import { createAccount, listAccounts } from '@/lib/services/accounts';
 import { ServiceValidationError } from '@/lib/services/common';
 
 export const GET = async (): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
-  const accounts = await listAccounts(session.user.id);
+  const accounts = await listAccounts(userId);
   return NextResponse.json(accounts);
 };
 
 export const POST = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const parsed = createAccountSchema.safeParse(await request.json());
@@ -26,7 +26,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    const account = await createAccount(session.user.id, parsed.data);
+    const account = await createAccount(userId, parsed.data);
     return NextResponse.json(account, { status: 201 });
   } catch (error) {
     if (error instanceof ServiceValidationError) {

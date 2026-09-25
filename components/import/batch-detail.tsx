@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Money } from '@/components/ui/money';
 import { UndoBatchModal } from '@/components/import/undo-batch-modal';
+import { postJSON } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
 import type { FrontendImportBatch } from '@/lib/services/importBatches';
 import type { FrontendTransaction } from '@/lib/services/transactions';
@@ -23,7 +24,7 @@ export const BatchDetail = ({
   const [undoKey, setUndoKey] = useState(0);
 
   const handleUndo = async (): Promise<void> => {
-    const res = await fetch(`/api/import/batches/${batch.id}/undo`, { method: 'POST' });
+    const res = await postJSON(`/api/import/batches/${batch.id}/undo`);
     if (!res.ok) {
       throw new Error('Undo failed');
     }

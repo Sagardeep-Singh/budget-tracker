@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { undoImportBatch } from '@/lib/services/importBatches';
 import {
   BatchAlreadyUndoneError,
@@ -12,12 +12,14 @@ type RouteParams = { params: Promise<{ id: string }> };
 // POST, not DELETE: the batch survives undo (decision 4), only its transactions
 // are removed, so this is a state transition rather than a resource deletion.
 export const POST = async (_request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const { id } = await params;
   try {
-    return NextResponse.json(await undoImportBatch(session.user.id, id));
+    return NextResponse.json(await undoImportBatch(userId, id));
   } catch (error) {
     if (error instanceof BatchAlreadyUndoneError) {
       return NextResponse.json({ code: 'ALREADY_UNDONE', error: error.message }, { status: 409 });

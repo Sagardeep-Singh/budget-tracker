@@ -13,6 +13,7 @@
 'use client';
 
 import { useState } from 'react';
+import { deleteJSON, patchJSON, postJSON, putJSON } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
@@ -100,30 +101,22 @@ export const AiCategorizationSection = ({
     setNotice(null);
     setWarning(null);
     try {
-      const response = await fetch('/api/settings/ai', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey: apiKey.trim(), sendNote, sendAmount }),
-      });
-      const body = (await response.json()) as
-        | (FrontendAiSettings & { warning: string | null; models: AiModelSummary[] })
-        | { error: string };
+      const response = await putJSON<
+        FrontendAiSettings & { warning: string | null; models: AiModelSummary[] }
+      >('/api/settings/ai', { provider, apiKey: apiKey.trim(), sendNote, sendAmount });
 
       if (!response.ok) {
         // The 400 case is a rejected key. Nothing was persisted, so the form
         // keeps the typed key for a quick correction.
-        setNotice('error' in body ? body.error : 'Could not save your API key. Try again.');
+        setNotice(response.error ?? 'Could not save your API key. Try again.');
         return false;
       }
+      const body = response.data;
 
       // `models` is pulled out by name alongside `warning`: left in the rest
       // element it would be spread into the `settings` object, which is typed
       // as FrontendAiSettings and has no such field.
-      const {
-        warning: saveWarning,
-        models: savedModels,
-        ...saved
-      } = body as FrontendAiSettings & { warning: string | null; models: AiModelSummary[] };
+      const { warning: saveWarning, models: savedModels, ...saved } = body;
       setSettings(saved);
       setModelNotice(null);
       setModelState(
@@ -176,12 +169,12 @@ export const AiCategorizationSection = ({
     if (!saved) return; // modal stays open; doSave already surfaced the error
     setPending(true);
     try {
-      const response = await fetch('/api/settings/ai/disclosure', { method: 'POST' });
+      const response = await postJSON<FrontendAiSettings>('/api/settings/ai/disclosure');
       if (!response.ok) {
         setNotice('Key saved, but could not record your review. Click "Looks good" to retry.');
         return;
       }
-      setSettings((await response.json()) as FrontendAiSettings);
+      setSettings(response.data);
       setApiKey('');
       setDisclosureOpen(false);
     } catch {
@@ -196,7 +189,7 @@ export const AiCategorizationSection = ({
     setNotice(null);
     setWarning(null);
     try {
-      const response = await fetch('/api/settings/ai', { method: 'DELETE' });
+      const response = await deleteJSON('/api/settings/ai');
       if (!response.ok) {
         setNotice('Could not remove your API key. Try again.');
         return;
@@ -232,11 +225,7 @@ export const AiCategorizationSection = ({
   const handleToggle = async (next: { sendNote: boolean; sendAmount: boolean }): Promise<void> => {
     setPending(true);
     try {
-      const response = await fetch('/api/settings/ai/toggles', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      });
+      const response = await patchJSON<FrontendAiSettings>('/api/settings/ai/toggles', next);
       if (!response.ok) {
         // Roll the optimistic flip back rather than leaving the switch lying.
         setSendNote(settings.sendNote);
@@ -244,7 +233,7 @@ export const AiCategorizationSection = ({
         setNotice('Could not save that setting. Try again.');
         return;
       }
-      setSettings((await response.json()) as FrontendAiSettings);
+      setSettings(response.data);
     } catch {
       setSendNote(settings.sendNote);
       setSendAmount(settings.sendAmount);
@@ -264,17 +253,15 @@ export const AiCategorizationSection = ({
     setModelPending(true);
     setModelNotice(null);
     try {
-      const response = await fetch('/api/settings/ai/model', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId: nextModelId }),
+      const response = await patchJSON<FrontendAiSettings>('/api/settings/ai/model', {
+        modelId: nextModelId,
       });
       if (!response.ok) {
         setModelState(previous);
         setModelNotice('Could not save that model. Try again.');
         return;
       }
-      setSettings((await response.json()) as FrontendAiSettings);
+      setSettings(response.data);
     } catch {
       setModelState(previous);
       setModelNotice('Could not save that model. Try again.');

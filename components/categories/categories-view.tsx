@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { deleteJSON, patchJSON, postJSON } from '@/lib/api-client';
 import type { FrontendCategory } from '@/lib/services/categories';
 
 export const CategoriesView = ({
@@ -39,11 +40,7 @@ export const CategoriesView = ({
   const handleEditSave = async (id: string): Promise<void> => {
     setEditPending(true);
     setEditError(null);
-    const res = await fetch(`/api/categories/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editName }),
-    });
+    const res = await patchJSON(`/api/categories/${id}`, { name: editName });
     setEditPending(false);
     if (!res.ok) {
       setEditError('Could not rename that category.');
@@ -57,11 +54,7 @@ export const CategoriesView = ({
     event.preventDefault();
     setPending(true);
     setError(null);
-    const res = await fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    });
+    const res = await postJSON('/api/categories', { name });
     setPending(false);
     if (!res.ok) {
       setError('Could not add that category.');
@@ -73,7 +66,7 @@ export const CategoriesView = ({
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
-    await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+    await deleteJSON(`/api/categories/${id}`);
     setDeletePending(false);
     setConfirmDeleteId(null);
     router.refresh();

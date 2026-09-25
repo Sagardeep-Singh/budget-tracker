@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import {
   createTransactionSchema,
   listTransactionsQuerySchema,
@@ -8,8 +8,10 @@ import { createTransaction, listTransactions } from '@/lib/services/transactions
 import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
 
 export const GET = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const url = new URL(request.url);
   const parsed = listTransactionsQuerySchema.safeParse({
@@ -23,12 +25,14 @@ export const GET = async (request: Request): Promise<NextResponse> => {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  return NextResponse.json(await listTransactions(session.user.id, parsed.data));
+  return NextResponse.json(await listTransactions(userId, parsed.data));
 };
 
 export const POST = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const parsed = createTransactionSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -36,7 +40,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    const transaction = await createTransaction(session.user.id, parsed.data);
+    const transaction = await createTransaction(userId, parsed.data);
     return NextResponse.json(transaction, { status: 201 });
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {

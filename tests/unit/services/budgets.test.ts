@@ -96,6 +96,71 @@ describe('listBudgets', () => {
       },
     ]);
   });
+
+  // The carry-forward lookback is bounded so the query can't scan a user's
+  // entire budget history. `month - 100` is the same month a year earlier on a
+  // YYYYMM int; a category whose newest budget predates that window is
+  // knowingly not carried forward.
+  it('bounds the carry-forward lookback to 12 months back', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+
+    await listBudgets('user-1', 202603);
+
+    expect(prismaMock.budget.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user-1', month: { gte: 202503, lte: 202603 } },
+      }),
+    );
+  });
+
+  it('keeps the lookback inside the same year when crossing January', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+
+    await listBudgets('user-1', 202601);
+
+    expect(prismaMock.budget.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user-1', month: { gte: 202501, lte: 202601 } },
+      }),
+    );
+  });
+
+  it('falls back to an unbounded lookback when a budget predates the 12-month window', async () => {
+    const staleBudget = {
+      id: 'b-stale',
+      categoryId: 'cat-1',
+      month: 202401,
+      limitAmount: 150,
+      category: { name: 'Groceries' },
+    };
+    prismaMock.budget.findMany
+      .mockResolvedValueOnce([]) // bounded query: nothing in the last 12 months
+      .mockResolvedValueOnce([staleBudget]); // unbounded fallback finds the stale row
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+
+    const result = await listBudgets('user-1', 202603);
+
+    expect(result).toEqual([
+      {
+        id: 'b-stale',
+        categoryId: 'cat-1',
+        categoryName: 'Groceries',
+        month: 202401,
+        limitAmount: '150.00',
+        spent: '0.00',
+      },
+    ]);
+    expect(prismaMock.budget.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: { userId: 'user-1', month: { gte: 202503, lte: 202603 } } }),
+    );
+    expect(prismaMock.budget.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: { userId: 'user-1', month: { lte: 202603 } } }),
+    );
+  });
 });
 
 describe('listBudgets reimbursement net-out', () => {

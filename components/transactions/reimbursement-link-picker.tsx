@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/field';
 import { Money } from '@/components/ui/money';
 import { formatDate } from '@/lib/format';
+import { getJSON, postJSON } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import type { ReimbursementCandidate } from '@/lib/services/reimbursements';
 
@@ -36,14 +37,14 @@ export const ReimbursementLinkPicker = ({
     setLoadError(null);
     const params = new URLSearchParams();
     if (searchTerm) params.set('search', searchTerm);
-    const res = await fetch(
+    const res = await getJSON<ReimbursementCandidate[]>(
       `/api/transactions/${expenseTransactionId}/reimbursement/candidates?${params.toString()}`,
     );
     if (!res.ok) {
       setLoadError("Couldn't load candidates.");
       return;
     }
-    setCandidates(await res.json());
+    setCandidates(res.data);
   };
 
   useEffect(() => {
@@ -72,19 +73,14 @@ export const ReimbursementLinkPicker = ({
     if (!selectedId) return;
     setConfirmPending(true);
     setConfirmError(null);
-    const res = await fetch('/api/reimbursement-links', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        expenseTransactionId,
-        incomeTransactionId: selectedId,
-        amount,
-      }),
+    const res = await postJSON('/api/reimbursement-links', {
+      expenseTransactionId,
+      incomeTransactionId: selectedId,
+      amount,
     });
     setConfirmPending(false);
     if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      setConfirmError(typeof body?.error === 'string' ? body.error : 'Could not link this income.');
+      setConfirmError(res.error ?? 'Could not link this income.');
       return;
     }
     onLinked();

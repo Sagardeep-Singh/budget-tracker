@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { unsubscribePushSchema } from '@/lib/validators/push';
 import { deletePushSubscription } from '@/lib/services/pushSubscriptions';
 
@@ -8,9 +8,9 @@ import { deletePushSubscription } from '@/lib/services/pushSubscriptions';
  * matching the existing precedent of `transactions/[id]/skip`.
  */
 export const POST = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const parsed = unsubscribePushSchema.safeParse(await request.json().catch(() => null));
@@ -18,6 +18,6 @@ export const POST = async (request: Request): Promise<NextResponse> => {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
-  const result = await deletePushSubscription(session.user.id, parsed.data.endpoint);
+  const result = await deletePushSubscription(userId, parsed.data.endpoint);
   return NextResponse.json(result);
 };

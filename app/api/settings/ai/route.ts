@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { aiErrorToResponse } from '@/lib/ai/errors';
 import { saveAiSettingsSchema } from '@/lib/validators/ai-settings';
 import { getAiSettings, removeAiSettings, saveAiSettings } from '@/lib/services/aiSettings';
@@ -8,17 +8,17 @@ import { getAiSettings, removeAiSettings, saveAiSettings } from '@/lib/services/
 export const runtime = 'nodejs';
 
 export const GET = async (): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
-  return NextResponse.json(await getAiSettings(session.user.id));
+  return NextResponse.json(await getAiSettings(userId));
 };
 
 export const PUT = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const parsed = saveAiSettingsSchema.safeParse(await request.json().catch(() => null));
@@ -27,7 +27,7 @@ export const PUT = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    return NextResponse.json(await saveAiSettings(session.user.id, parsed.data));
+    return NextResponse.json(await saveAiSettings(userId, parsed.data));
   } catch (error) {
     const mapped = aiErrorToResponse(error);
     if (!mapped) {
@@ -38,9 +38,9 @@ export const PUT = async (request: Request): Promise<NextResponse> => {
 };
 
 export const DELETE = async (): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
-  return NextResponse.json(await removeAiSettings(session.user.id));
+  return NextResponse.json(await removeAiSettings(userId));
 };
