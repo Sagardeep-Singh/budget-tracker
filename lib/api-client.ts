@@ -42,11 +42,13 @@ const request = async <T>(
   url: string,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<ApiResult<T>> => {
   let response: Response;
   try {
     response = await fetch(url, {
       method,
+      signal,
       // A pre-serialized string is passed through untouched — the data-import
       // card streams the file's text straight to the route.
       ...(body === undefined
@@ -75,7 +77,11 @@ const request = async <T>(
   return { ok: true, status: response.status, data: parsed as T };
 };
 
-export const getJSON = async <T>(url: string): Promise<ApiResult<T>> => request<T>(url, 'GET');
+/** `signal` lets a caller abort a superseded read; an aborted request resolves as a `networkError`. */
+export const getJSON = async <T>(
+  url: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ApiResult<T>> => request<T>(url, 'GET', undefined, options.signal);
 
 export const postJSON = async <T>(url: string, body?: unknown): Promise<ApiResult<T>> =>
   request<T>(url, 'POST', body);

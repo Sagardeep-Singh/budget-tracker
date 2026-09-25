@@ -101,6 +101,74 @@ export const listTransactionsQuerySchema = z.object({
   to: z.coerce.date().optional(),
 });
 
+const csvIds = z
+  .string()
+  .optional()
+  .catch(undefined)
+  .transform((v) =>
+    v
+      ? v
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+  );
+
+const lenientFlag = z
+  .enum(['true', 'false'])
+  .catch('false')
+  .transform((v) => v === 'true');
+
+/**
+ * `GET /api/transactions?paginated=1` — the Transactions page's paginated read.
+ * Additive alongside {@link listTransactionsQuerySchema}, which is untouched.
+ *
+ * The desktop filter fields and the two mobile fields are LENIENT: each ends in
+ * `.catch(<default>)` so a hand-edited or stale bookmark degrades to "no
+ * filter" instead of a 400 — the same contract `parseTransactionFilters`
+ * documents for the URL. `limit` and `cursor` are STRICT: our own client
+ * generates them, so a malformed value is a bug worth surfacing as a 400.
+ * `periodStart`/`periodEnd` are client-computed from `lib/statement.ts` (never
+ * in a bookmarkable URL) and must arrive together, start before end.
+ */
+export const transactionsPageQuerySchema = z
+  .object({
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullish()
+      .catch(null),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullish()
+      .catch(null),
+    accountIds: csvIds,
+    categoryIds: csvIds,
+    payee: z.string().max(120).catch(''),
+    type: transactionTypeSchema.nullish().catch(null),
+    amountMin: z.string().nullish().catch(null),
+    amountMax: z.string().nullish().catch(null),
+    hideTransfers: lenientFlag,
+    hidePayments: lenientFlag,
+    uncategorizedOnly: lenientFlag,
+    periodStart: z.coerce.date().optional(),
+    periodEnd: z.coerce.date().optional(),
+    mobileSearch: z.string().max(120).catch(''),
+    quickFilter: z.enum(['all', 'uncategorized', 'spending', 'income']).catch('all'),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z.string().max(200).optional(),
+  })
+  .refine((v) => (v.periodStart === undefined) === (v.periodEnd === undefined), {
+    message: 'periodStart and periodEnd must be provided together',
+    path: ['periodStart'],
+  })
+  .refine((v) => !v.periodStart || !v.periodEnd || v.periodStart < v.periodEnd, {
+    message: 'periodStart must be before periodEnd',
+    path: ['periodEnd'],
+  });
+
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
 export type ListTransactionsQuery = z.infer<typeof listTransactionsQuerySchema>;
+export type TransactionsPageQuery = z.infer<typeof transactionsPageQuerySchema>;

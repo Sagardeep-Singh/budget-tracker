@@ -78,7 +78,11 @@ test('confirming undo removes the transactions and marks the batch undone', asyn
   const payee = `E2E Undo ${stamp}`;
   await importFile(page, filename, payee);
 
-  await page.goto('/transactions');
+  // The CSV row is dated 2026-03-01 and the list loads 50 rows at a time:
+  // scope to its payee so both this check and the "gone" check below look at
+  // the row itself, not whatever happens to be on page 1 of the dev history.
+  const scopedList = `/transactions?payee=${encodeURIComponent(payee)}`;
+  await page.goto(scopedList);
   // Desktop and mobile transaction rows both render (CSS-hidden, not
   // unmounted); this test runs at the default desktop viewport, so the
   // desktop copy (first in the DOM) is the visible one.
@@ -97,7 +101,7 @@ test('confirming undo removes the transactions and marks the batch undone', asyn
   await expect(row.getByRole('button', { name: 'Undo' })).toBeHidden();
 
   // the transactions are really gone, not just the batch flag flipped
-  await page.goto('/transactions');
+  await page.goto(scopedList);
   await expect(page.getByText(payee)).toBeHidden();
 
   // batch detail shows the explicit removed-by-undo panel, never a 404
