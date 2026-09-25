@@ -40,7 +40,8 @@ export type FrontendTransaction = {
   reimbursementIncomeLinkedTotal: string;
 };
 
-const toFrontend = (tx: {
+/** Exported for `lib/services/transactionsPage.ts` — one row shape for both read paths. */
+export const toFrontend = (tx: {
   id: string;
   accountId: string;
   categoryId: string | null;
@@ -104,7 +105,8 @@ const toFrontend = (tx: {
   };
 };
 
-const include = {
+/** Exported for `lib/services/transactionsPage.ts` — the relations `toFrontend` needs. */
+export const include = {
   account: { select: { name: true } },
   category: { select: { name: true } },
   importBatch: { select: { id: true, filename: true } },

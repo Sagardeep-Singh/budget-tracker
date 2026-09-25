@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createTransactionSchema, updateTransactionSchema } from '@/lib/validators/transactions';
+import {
+  createTransactionSchema,
+  transactionsPageQuerySchema,
+  updateTransactionSchema,
+} from '@/lib/validators/transactions';
 
 const base = { accountId: 'acc-1', amount: 10, type: 'EXPENSE' as const, date: '2026-01-01' };
 
@@ -144,5 +148,75 @@ describe('updateTransactionSchema stays fully partial', () => {
   it('allows isPayment alone, since the isReimbursable conflict needs the DB row', () => {
     const result = updateTransactionSchema.safeParse({ isPayment: true });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('transactionsPageQuerySchema', () => {
+  it('defaults every field for an empty query', () => {
+    const result = transactionsPageQuerySchema.parse({});
+    // nullish filters stay absent; `toTransactionsPageRequest` maps them to null
+    for (const key of ['from', 'to', 'type', 'amountMin', 'amountMax'] as const) {
+      expect(result[key] ?? null).toBeNull();
+    }
+    expect(result).toEqual({
+      accountIds: [],
+      categoryIds: [],
+      payee: '',
+      hideTransfers: false,
+      hidePayments: false,
+      uncategorizedOnly: false,
+      mobileSearch: '',
+      quickFilter: 'all',
+      limit: 50,
+    });
+  });
+
+  it('degrades malformed filter values to "no filter" instead of failing', () => {
+    const result = transactionsPageQuerySchema.parse({
+      from: 'garbage',
+      to: '2026/06/01',
+      type: 'BOTH',
+      hideTransfers: 'yes',
+      quickFilter: 'everything',
+      payee: 'x'.repeat(200),
+    });
+    expect(result).toMatchObject({
+      from: null,
+      to: null,
+      type: null,
+      hideTransfers: false,
+      quickFilter: 'all',
+      payee: '',
+    });
+  });
+
+  it('splits and trims comma-separated ids', () => {
+    const result = transactionsPageQuerySchema.parse({ accountIds: ' a, b ,,c ' });
+    expect(result.accountIds).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps amount bounds as strings so the service applies the finite-number rule', () => {
+    const result = transactionsPageQuerySchema.parse({ amountMin: 'abc', amountMax: '20' });
+    expect(result.amountMin).toBe('abc');
+    expect(result.amountMax).toBe('20');
+  });
+
+  it('is strict about limit', () => {
+    expect(transactionsPageQuerySchema.safeParse({ limit: '0' }).success).toBe(false);
+    expect(transactionsPageQuerySchema.safeParse({ limit: '101' }).success).toBe(false);
+    expect(transactionsPageQuerySchema.safeParse({ limit: 'ten' }).success).toBe(false);
+    expect(transactionsPageQuerySchema.parse({ limit: '25' }).limit).toBe(25);
+  });
+
+  it('requires periodStart and periodEnd together, start before end', () => {
+    const start = '2026-06-01T00:00:00.000Z';
+    const end = '2026-07-01T00:00:00.000Z';
+    expect(transactionsPageQuerySchema.safeParse({ periodStart: start }).success).toBe(false);
+    expect(
+      transactionsPageQuerySchema.safeParse({ periodStart: end, periodEnd: start }).success,
+    ).toBe(false);
+    const ok = transactionsPageQuerySchema.parse({ periodStart: start, periodEnd: end });
+    expect(ok.periodStart?.toISOString()).toBe(start);
+    expect(ok.periodEnd?.toISOString()).toBe(end);
   });
 });

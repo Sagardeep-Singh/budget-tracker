@@ -94,7 +94,12 @@ export const countActiveFilterGroups = (filters: TransactionFilters): number =>
 
 /** Every clause a transaction must pass to remain visible under the current
  * filters. Independent of the account-linked statement/month Period Picker,
- * which the view applies separately and ANDs with this. */
+ * which the view applies separately and ANDs with this.
+ *
+ * No longer on the render path: the Transactions page filters server-side via
+ * `buildTransactionWhere` in `lib/services/transactionsPage.ts`. Kept on
+ * purpose as the executable reference semantics that function must reproduce
+ * — `tests/unit/services/transactionsPage.parity.test.ts` diffs the two. */
 export const matchesTransactionFilters = (
   transaction: FrontendTransaction,
   filters: TransactionFilters,

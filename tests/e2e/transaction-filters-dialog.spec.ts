@@ -47,11 +47,21 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await expect(coffeeRow).toBeVisible();
   await expect(paycheckRow).toBeVisible();
 
-  // The payee search box filters as-you-type, with no "Apply" step.
+  // The payee search box needs no "Apply" step: once typing pauses (300ms
+  // debounce) the list is re-queried server-side. Wait for that request
+  // rather than asserting synchronously after the keystroke.
+  const searchSettled = (): Promise<unknown> =>
+    page.waitForResponse(
+      (r) => r.url().includes('/api/transactions?') && r.url().includes('paginated=1'),
+    );
+  let settled = searchSettled();
   await page.getByPlaceholder('Search payee', { exact: true }).fill(`Coffee ${stamp}`);
+  await settled;
   await expect(coffeeRow).toBeVisible();
   await expect(paycheckRow).toBeHidden();
+  settled = searchSettled();
   await page.getByPlaceholder('Search payee', { exact: true }).fill('');
+  await settled;
   await expect(paycheckRow).toBeVisible();
 
   // No filter group active yet: the "Filters" button shows no badge.
