@@ -4,9 +4,27 @@ import Google from 'next-auth/providers/google';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db/prisma';
 import { findOrCreateGoogleUser } from '@/lib/services/users';
+import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
+import { clientIpFromHeaders } from '@/lib/http/clientIp';
+import { AuthRateLimitedError } from '@/lib/auth/errors';
 
 const googleClientId = process.env.AUTH_GOOGLE_ID;
 const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
+
+// Credential-stuffing/brute-force guard for the one unauthenticated route
+// that checks a password. Two scopes so a single leaked-password list run
+// against many emails (IP-scoped) and repeated guesses against one account
+// (email-scoped) are both bounded, independently of each other.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_EMAIL_LIMIT = 10;
+const LOGIN_IP_LIMIT = 30;
+
+// The e2e suite logs in as the same dev user dozens of times per run across
+// many specs — a real user never does this, but a shared-account test suite
+// legitimately does, and this limit exists to stop the former, not the
+// latter. Server-only env var, read once at module load, never request
+// input — same shape as AI_ANTHROPIC_BASE_URL's test-only override.
+const rateLimitDisabled = process.env.E2E_DISABLE_RATE_LIMIT === '1';
 
 export const authConfig: NextAuthConfig = {
   // Tightened from NextAuth's 30-day default: a finance app shouldn't keep a
@@ -23,11 +41,31 @@ export const authConfig: NextAuthConfig = {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
       },
-      authorize: async (credentials) => {
+      authorize: async (credentials, request) => {
         const email = credentials?.email;
         const password = credentials?.password;
         if (typeof email !== 'string' || typeof password !== 'string') {
           return null;
+        }
+
+        // Checked before the user lookup so a guess against a nonexistent
+        // email still counts — otherwise account enumeration would be free.
+        if (!rateLimitDisabled) {
+          const ip = clientIpFromHeaders(request.headers);
+          try {
+            await checkRateLimit('login:ip', ip, LOGIN_IP_LIMIT, LOGIN_WINDOW_MS);
+            await checkRateLimit(
+              'login:email',
+              email.toLowerCase(),
+              LOGIN_EMAIL_LIMIT,
+              LOGIN_WINDOW_MS,
+            );
+          } catch (error) {
+            if (error instanceof RateLimitedError) {
+              throw new AuthRateLimitedError();
+            }
+            throw error;
+          }
         }
 
         const user = await prisma.user.findUnique({ where: { email } });

@@ -307,6 +307,23 @@ model PushSubscription {
   @@index([userId, disabledAt])
 }
 
+/// fixed-window counter backing lib/services/rateLimit.ts. Not tied to a
+/// user — `key` is whatever the caller is limiting by (a lowercased email,
+/// an IP address), so it also covers signup/login attempts against an email
+/// with no account yet. Rows are pruned opportunistically by the service on
+/// every check, not by a cron job, so this table never needs its own job.
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  /// what's being limited, e.g. "login:email", "login:ip", "signup:ip"
+  scope       String
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@unique([scope, key, windowStart])
+  @@index([windowStart])
+}
+
 /// ordered keyword rule for auto-categorization: lower priority value wins
 /// when a payee/note contains matchText (case-insensitive)
 model CategoryRule {
