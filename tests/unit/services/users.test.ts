@@ -5,6 +5,7 @@ const { prismaMock } = vi.hoisted(() => ({
     user: {
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     category: {
       createMany: vi.fn(),
@@ -67,17 +68,31 @@ describe('createUser', () => {
 });
 
 describe('findOrCreateGoogleUser', () => {
-  it('returns the existing user', async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1' });
+  it('returns an already-verified existing user without touching it', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', emailVerified: new Date() });
 
     const result = await findOrCreateGoogleUser('jane@example.com', 'Jane');
 
     expect(result).toEqual({ id: 'user-1' });
     expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
     expect(prismaMock.account.create).not.toHaveBeenCalled();
   });
 
-  it('creates a password-less user on first sign-in with no prepopulated data', async () => {
+  it('marks an existing unverified user verified — a live Google sign-in vouches for the address', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', emailVerified: null });
+
+    const result = await findOrCreateGoogleUser('jane@example.com', 'Jane');
+
+    expect(result).toEqual({ id: 'user-1' });
+    expect(prismaMock.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { emailVerified: expect.any(Date) },
+    });
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a verified, password-less user on first sign-in with no prepopulated data', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.create.mockResolvedValue({ id: 'user-2' });
 
@@ -85,7 +100,7 @@ describe('findOrCreateGoogleUser', () => {
 
     expect(result).toEqual({ id: 'user-2' });
     expect(prismaMock.user.create).toHaveBeenCalledWith({
-      data: { email: 'new@example.com', name: 'New Person' },
+      data: { email: 'new@example.com', name: 'New Person', emailVerified: expect.any(Date) },
     });
     expect(prismaMock.category.createMany).not.toHaveBeenCalled();
     expect(prismaMock.categoryRule.createMany).not.toHaveBeenCalled();

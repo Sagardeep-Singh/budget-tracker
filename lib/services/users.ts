@@ -37,9 +37,15 @@ export const findOrCreateGoogleUser = async (
 ): Promise<{ id: string }> => {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
+    // A live Google sign-in vouches for the address just as well as our own
+    // emailed link — if the account got here via credentials signup and
+    // never clicked its link, this Google sign-in satisfies it too.
+    if (!existing.emailVerified) {
+      await prisma.user.update({ where: { id: existing.id }, data: { emailVerified: new Date() } });
+    }
     return { id: existing.id };
   }
 
-  const user = await prisma.user.create({ data: { email, name } });
+  const user = await prisma.user.create({ data: { email, name, emailVerified: new Date() } });
   return { id: user.id };
 };

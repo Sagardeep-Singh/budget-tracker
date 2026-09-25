@@ -6,12 +6,22 @@ import { Ring } from '@/components/ui/ring';
 
 const googleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
 
+const VERIFY_MESSAGES: Record<string, { text: string; tone: 'success' | 'error' }> = {
+  verified: { text: 'Email verified. Thanks!', tone: 'success' },
+  invalid: { text: "That verification link isn't valid.", tone: 'error' },
+  expired: {
+    text: 'That verification link expired — request a new one from Settings.',
+    tone: 'error',
+  },
+};
+
 const LoginPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ passwordChanged?: string }>;
+  searchParams: Promise<{ passwordChanged?: string; verify?: string }>;
 }): Promise<React.ReactElement> => {
-  const { passwordChanged } = await searchParams;
+  const { passwordChanged, verify } = await searchParams;
+  const verifyMessage = verify ? VERIFY_MESSAGES[verify] : undefined;
 
   return (
     <>
@@ -43,6 +53,16 @@ const LoginPage = async ({
           {passwordChanged === '1' && (
             <p className="bg-sky-soft text-sky mb-4 rounded-lg px-3 py-2 text-sm" role="status">
               Password changed. Sign in with your new password.
+            </p>
+          )}
+          {verifyMessage && (
+            <p
+              className={`mb-4 rounded-lg px-3 py-2 text-sm ${
+                verifyMessage.tone === 'success' ? 'bg-sky-soft text-sky' : 'bg-rose-soft text-rose'
+              }`}
+              role="status"
+            >
+              {verifyMessage.text}
             </p>
           )}
           <LoginForm />
