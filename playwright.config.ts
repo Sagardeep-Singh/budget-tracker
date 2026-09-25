@@ -44,6 +44,11 @@ export default defineConfig({
         AI_ANTHROPIC_BASE_URL: AI_FIXTURE_URL,
         AI_OPENAI_BASE_URL: AI_FIXTURE_URL,
         SECRET_ENCRYPTION_KEY: E2E_SECRET_ENCRYPTION_KEY,
+        // The suite logs in as the same dev user across many specs — far more
+        // attempts per run than the login/signup rate limiter (lib/auth/) is
+        // meant to catch. Without this, a full run trips the limiter partway
+        // through and every later spec is stuck on a disabled login form.
+        E2E_DISABLE_RATE_LIMIT: '1',
       },
     },
   ],
