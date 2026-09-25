@@ -6,6 +6,7 @@ import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { postJSON } from '@/lib/api-client';
 import { MAX_IMPORT_BYTES } from '@/lib/validators/user-data';
 
 type ImportStatus = 'idle' | 'uploading' | 'error';
@@ -58,34 +59,24 @@ export const ImportDataCard = (): React.ReactElement => {
     if (!file) return;
     setStatus('uploading');
 
+    // The file's text is already JSON — posted through untouched rather than
+    // re-serialized.
     const text = await file.text();
-    let res: Response;
-    try {
-      res = await fetch('/api/settings/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: text,
-      });
-    } catch {
-      setConfirmOpen(false);
-      setStatus('error');
-      setMessage('Could not reach the server. Check your connection and try again.');
-      return;
-    }
+    const res = await postJSON<{ counts: ImportCounts }>('/api/settings/import', text);
 
     setConfirmOpen(false);
 
     if (!res.ok) {
       setStatus('error');
       setIsSuccess(false);
-      if (res.status === 413) {
+      if (res.networkError) {
+        setMessage('Could not reach the server. Check your connection and try again.');
+      } else if (res.status === 413) {
         setMessage(`That file is larger than the ${MAX_IMPORT_MB} MB import limit.`);
       } else if (res.status === 400) {
-        const body = await res.json().catch(() => null);
         setMessage(
-          typeof body?.error === 'string'
-            ? body.error
-            : "That file couldn't be imported. Check that it's an unedited Ledger export and try again.",
+          res.error ??
+            "That file couldn't be imported. Check that it's an unedited Ledger export and try again.",
         );
       } else {
         setMessage('Something went wrong on our end. Try again.');
@@ -93,10 +84,9 @@ export const ImportDataCard = (): React.ReactElement => {
       return;
     }
 
-    const body: { counts: ImportCounts } = await res.json();
     setStatus('idle');
     setIsSuccess(true);
-    setMessage(summarize(body.counts));
+    setMessage(summarize(res.data.counts));
     if (inputRef.current) inputRef.current.value = '';
     setFile(null);
     // Full-replace invalidates every other server-rendered surface

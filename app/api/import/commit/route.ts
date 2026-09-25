@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { commitImportSchema } from '@/lib/validators/csv-import';
 import { commitImport } from '@/lib/services/csvImport';
 import { DuplicateFilenameError, ServiceValidationError } from '@/lib/services/common';
 
 export const POST = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
+  }
 
   const parsed = commitImportSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -14,7 +16,7 @@ export const POST = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    const result = await commitImport(session.user.id, parsed.data);
+    const result = await commitImport(userId, parsed.data);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof DuplicateFilenameError) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { aiErrorToResponse } from '@/lib/ai/errors';
 import { updateAiModelSchema } from '@/lib/validators/ai-settings';
 import { updateAiModel } from '@/lib/services/aiSettings';
@@ -10,9 +10,9 @@ export const runtime = 'nodejs';
  * picking a model can never overwrite or re-submit the stored API key, and the
  * service makes no provider call: changing the model is not a re-verification. */
 export const PATCH = async (request: Request): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const parsed = updateAiModelSchema.safeParse(await request.json().catch(() => null));
@@ -21,7 +21,7 @@ export const PATCH = async (request: Request): Promise<NextResponse> => {
   }
 
   try {
-    return NextResponse.json(await updateAiModel(session.user.id, parsed.data));
+    return NextResponse.json(await updateAiModel(userId, parsed.data));
   } catch (error) {
     const mapped = aiErrorToResponse(error);
     if (!mapped) {

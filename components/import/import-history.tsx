@@ -7,6 +7,7 @@ import { ChevronRight, Trash2, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { UndoBatchModal } from '@/components/import/undo-batch-modal';
+import { getJSON, postJSON } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
 import type { FrontendImportBatch } from '@/lib/services/importBatches';
 
@@ -43,14 +44,16 @@ export const ImportHistory = ({
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     setLoadError(null);
-    const res = await fetch(`/api/import/batches?cursor=${nextCursor}&limit=${PAGE_SIZE}`);
+    const res = await getJSON<{ batches: FrontendImportBatch[]; nextCursor: string | null }>(
+      `/api/import/batches?cursor=${nextCursor}&limit=${PAGE_SIZE}`,
+    );
     setLoadingMore(false);
     if (!res.ok) {
       // retry in place: the button stays mounted and clickable
       setLoadError('Could not load more imports. Try again.');
       return;
     }
-    const data: { batches: FrontendImportBatch[]; nextCursor: string | null } = await res.json();
+    const data = res.data;
     setBatches((current) => [...current, ...data.batches]);
     setNextCursor(data.nextCursor);
     // the "Load more" button unmounts on the last page, which would drop focus;
@@ -67,7 +70,7 @@ export const ImportHistory = ({
   };
 
   const handleUndo = async (batchId: string): Promise<void> => {
-    const res = await fetch(`/api/import/batches/${batchId}/undo`, { method: 'POST' });
+    const res = await postJSON(`/api/import/batches/${batchId}/undo`);
     if (!res.ok) {
       throw new Error('Undo failed');
     }

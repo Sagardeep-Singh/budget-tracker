@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
+import { getJSON } from '@/lib/api-client';
 import type { AiDisclosurePreview } from '@/lib/services/aiCategorize';
 
 const PROVIDER_LABELS = { ANTHROPIC: 'Anthropic', OPENAI: 'OpenAI' } as const;
@@ -37,20 +38,16 @@ export const AiDisclosureModal = ({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    void fetch('/api/settings/ai/disclosure')
-      .then(async (response) => {
-        if (cancelled) return;
-        if (!response.ok) {
-          setLoadError(true);
-          return;
-        }
-        // Showing a blank or stale preview would be worse than showing a retry
-        // state: the whole point of this panel is that it is accurate.
-        setPreview((await response.json()) as AiDisclosurePreview);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
-      });
+    void getJSON<AiDisclosurePreview>('/api/settings/ai/disclosure').then((response) => {
+      if (cancelled) return;
+      if (!response.ok) {
+        setLoadError(true);
+        return;
+      }
+      // Showing a blank or stale preview would be worse than showing a retry
+      // state: the whole point of this panel is that it is accurate.
+      setPreview(response.data);
+    });
     return () => {
       cancelled = true;
     };

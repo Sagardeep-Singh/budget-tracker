@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Label, Select } from '@/components/ui/field';
+import { patchJSON, postJSON } from '@/lib/api-client';
 import type { FrontendAccount } from '@/lib/services/accounts';
 
 const ACCOUNT_TYPES = [
@@ -39,11 +40,9 @@ export const AccountForm = ({
       statementDay: type === 'CREDIT_CARD' ? form.get('statementDay') || null : null,
     };
 
-    const res = await fetch(account ? `/api/accounts/${account.id}` : '/api/accounts', {
-      method: account ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const res = account
+      ? await patchJSON(`/api/accounts/${account.id}`, body)
+      : await postJSON('/api/accounts', body);
 
     setPending(false);
     if (!res.ok) {

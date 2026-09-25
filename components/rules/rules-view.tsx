@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Modal } from '@/components/ui/modal';
+import { deleteJSON, patchJSON, postJSON } from '@/lib/api-client';
 import type { FrontendCategoryRule } from '@/lib/services/categoryRules';
 import type { FrontendCategory } from '@/lib/services/categories';
 
@@ -72,11 +73,7 @@ export const RulesView = ({
     event.preventDefault();
     setPending(true);
     setError(null);
-    const res = await fetch('/api/rules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matchText, categoryId, priority }),
-    });
+    const res = await postJSON('/api/rules', { matchText, categoryId, priority });
     setPending(false);
     if (!res.ok) {
       setError('Could not add that rule.');
@@ -89,7 +86,7 @@ export const RulesView = ({
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
-    await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+    await deleteJSON(`/api/rules/${id}`);
     setDeletePending(false);
     setConfirmDeleteId(null);
     router.refresh();
@@ -117,11 +114,7 @@ export const RulesView = ({
     }
     setEditPending(true);
     setEditError(null);
-    const res = await fetch(`/api/rules/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ priority: editPriority }),
-    });
+    const res = await patchJSON(`/api/rules/${id}`, { priority: editPriority });
     setEditPending(false);
     if (!res.ok) {
       setEditError('Could not update priority.');
@@ -141,16 +134,12 @@ export const RulesView = ({
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const res = await fetch('/api/rules/import/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(parsed),
-      });
+      const res = await postJSON<{ rows: PreviewRow[] }>('/api/rules/import/preview', parsed);
       if (!res.ok) {
         setImportError('Could not read that file. Check it was exported from Rules.');
         return;
       }
-      const { rows }: { rows: PreviewRow[] } = await res.json();
+      const { rows } = res.data;
       setPreviewRows(rows);
       setIncluded(new Set(rows.flatMap((r, i) => (r.status === 'ready' ? [i] : []))));
     } catch {
@@ -186,17 +175,13 @@ export const RulesView = ({
       .filter((_, i) => included.has(i))
       .map(({ matchText, categoryName, priority }) => ({ matchText, categoryName, priority }));
 
-    const res = await fetch('/api/rules/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rules }),
-    });
+    const res = await postJSON<ImportResult>('/api/rules/import', { rules });
     setConfirming(false);
     if (!res.ok) {
       setImportError('Could not import the selected rules.');
       return;
     }
-    setImportResult(await res.json());
+    setImportResult(res.data);
     setPreviewRows(null);
     setIncluded(new Set());
     router.refresh();

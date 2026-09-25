@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { patchJSON } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/format';
 import { pillGroup, pillOption } from '@/components/settings/pills';
@@ -62,11 +63,7 @@ export const RemindersSection = ({
     enabled: boolean;
     cadence: ReminderCadence;
   }): Promise<boolean> => {
-    const response = await fetch('/api/settings/reminders', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(next),
-    });
+    const response = await patchJSON('/api/settings/reminders', next);
     if (!response.ok) {
       setNotice('Could not save your reminder settings. Try again.');
       return false;

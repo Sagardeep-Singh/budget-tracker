@@ -1,3 +1,4 @@
+import { monthRange } from '@/lib/date';
 import { prisma } from '@/lib/db/prisma';
 import { listReimbursedAmountsByExpenseDate } from '@/lib/services/reimbursements';
 
@@ -62,8 +63,8 @@ const shiftMonth = (month: number, delta: number): number => {
   return date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 };
 
-const monthStart = (month: number): Date =>
-  new Date(Date.UTC(Math.floor(month / 100), (month % 100) - 1, 1));
+/** A month's first UTC day — also the label anchor for `MONTH_LABEL`. */
+const monthStart = (month: number): Date => monthRange(month).start;
 
 /** Ascending list of `count` months ending at (and including) `endMonth`. */
 const monthsEnding = (endMonth: number, count: number): number[] =>
@@ -80,8 +81,8 @@ export const getSpendingTrends = async (
   const allMonths = [...priorMonths, ...currentMonths];
 
   const rangeStart = monthStart(allMonths[0]);
-  const rangeEnd = shiftMonth(allMonths[allMonths.length - 1], 1);
-  const rangeEndDate = monthStart(rangeEnd);
+  // the last month's exclusive upper bound is the next month's first day
+  const rangeEndDate = monthRange(allMonths[allMonths.length - 1]).end;
 
   const [transactions, reimbursedExpenses] = await Promise.all([
     prisma.transaction.findMany({

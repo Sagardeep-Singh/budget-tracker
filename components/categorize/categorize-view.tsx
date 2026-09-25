@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, CheckCheck, SkipForward } from 'lucide-react';
+import { patchJSON, postJSON, type ApiResult } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
@@ -23,15 +24,11 @@ type PayeeGroup = {
   why: string | null;
 };
 
-const patchCategory = (id: string, categoryId: string | null): Promise<Response> =>
-  fetch(`/api/transactions/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ categoryId }),
-  });
+const patchCategory = (id: string, categoryId: string | null): Promise<ApiResult<unknown>> =>
+  patchJSON(`/api/transactions/${id}`, { categoryId });
 
-const skipTransaction = (id: string): Promise<Response> =>
-  fetch(`/api/transactions/${id}/skip`, { method: 'POST' });
+const skipTransaction = (id: string): Promise<ApiResult<unknown>> =>
+  postJSON(`/api/transactions/${id}/skip`);
 
 /** Result of a suggest call, shown inline next to the triggering row/card —
  * matching the `matchResult` precedent in transactions-view.tsx rather than a
@@ -86,16 +83,12 @@ export const CategorizeView = ({
       return next;
     });
     try {
-      const response = await fetch('/api/categorize/suggest-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactionId }),
+      const response = await postJSON<AiSuggestion>('/api/categorize/suggest-ai', {
+        transactionId,
       });
-      const body = (await response.json()) as AiSuggestion | { error: string };
 
       if (!response.ok) {
-        const message =
-          'error' in body ? body.error : 'Could not get a suggestion. Try again in a moment.';
+        const message = response.error ?? 'Could not get a suggestion. Try again in a moment.';
         setAiResults((r) => ({ ...r, [transactionId]: { message, tone: 'alert' } }));
         // The daily cap is the one failure that stays true for the rest of the
         // day, so it disables every other Suggest button too.
@@ -105,7 +98,8 @@ export const CategorizeView = ({
         return;
       }
 
-      if ('outcome' in body && body.outcome === 'match') {
+      const body = response.data;
+      if (body.outcome === 'match') {
         setAiSuggestions((s) => ({ ...s, [transactionId]: body.categoryId }));
         return;
       }
@@ -114,14 +108,6 @@ export const CategorizeView = ({
         [transactionId]: {
           message: 'No confident match — pick a category yourself.',
           tone: 'status',
-        },
-      }));
-    } catch {
-      setAiResults((r) => ({
-        ...r,
-        [transactionId]: {
-          message: 'Could not get a suggestion. Try again in a moment.',
-          tone: 'alert',
         },
       }));
     } finally {

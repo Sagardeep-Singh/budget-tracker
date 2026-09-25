@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthSession } from '@/lib/auth/session';
+import { requireUserId } from '@/lib/auth/session';
 import { updateAccountSchema } from '@/lib/validators/accounts';
 import { deleteAccount, updateAccount } from '@/lib/services/accounts';
 import { ReimbursementConflictError, ServiceValidationError } from '@/lib/services/common';
@@ -7,9 +7,9 @@ import { ReimbursementConflictError, ServiceValidationError } from '@/lib/servic
 type RouteParams = { params: Promise<{ id: string }> };
 
 export const PATCH = async (request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const { id } = await params;
@@ -19,7 +19,7 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
   }
 
   try {
-    const account = await updateAccount(session.user.id, id, parsed.data);
+    const account = await updateAccount(userId, id, parsed.data);
     return NextResponse.json(account);
   } catch (error) {
     if (error instanceof ServiceValidationError) {
@@ -30,14 +30,14 @@ export const PATCH = async (request: Request, { params }: RouteParams): Promise<
 };
 
 export const DELETE = async (_request: Request, { params }: RouteParams): Promise<NextResponse> => {
-  const session = await getServerAuthSession();
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = await requireUserId();
+  if (userId instanceof NextResponse) {
+    return userId;
   }
 
   const { id } = await params;
   try {
-    await deleteAccount(session.user.id, id);
+    await deleteAccount(userId, id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (error instanceof ReimbursementConflictError) {
