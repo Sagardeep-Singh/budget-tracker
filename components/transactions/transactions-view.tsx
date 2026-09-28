@@ -30,6 +30,8 @@ import {
 } from '@/lib/statement';
 import {
   countActiveFilterGroups,
+  DEFAULT_TRANSACTION_FILTERS,
+  getCurrentMonthRange,
   matchesTransactionFilters,
   parseTransactionFilters,
   transactionFiltersToSearchParams,
@@ -126,6 +128,14 @@ export const TransactionsView = ({
     },
     [pathname, router],
   );
+
+  // Landing on a bare /transactions defaults to the current month. Runs on
+  // mount only, so clearing the dates afterwards still shows everything.
+  useEffect(() => {
+    if (searchParams.toString() !== '') return;
+    pushFilters({ ...DEFAULT_TRANSACTION_FILTERS, ...getCurrentMonthRange() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only default
+  }, []);
 
   useEffect(() => {
     if (payeeDraft === filters.payee) return;

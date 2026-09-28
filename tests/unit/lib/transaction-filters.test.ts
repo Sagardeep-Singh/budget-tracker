@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_TRANSACTION_FILTERS,
   countActiveFilterGroups,
+  getCurrentMonthRange,
   matchesTransactionFilters,
   parseTransactionFilters,
   transactionFiltersToSearchParams,
@@ -207,5 +208,22 @@ describe('matchesTransactionFilters', () => {
         filters,
       ),
     ).toBe(false);
+  });
+});
+
+describe('getCurrentMonthRange', () => {
+  it('returns first and last day of the month', () => {
+    expect(getCurrentMonthRange(new Date(2026, 8, 28))).toEqual({
+      from: '2026-09-01',
+      to: '2026-09-30',
+    });
+  });
+
+  it('handles February in a leap year and December', () => {
+    expect(getCurrentMonthRange(new Date(2028, 1, 10)).to).toBe('2028-02-29');
+    expect(getCurrentMonthRange(new Date(2026, 11, 31))).toEqual({
+      from: '2026-12-01',
+      to: '2026-12-31',
+    });
   });
 });
