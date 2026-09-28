@@ -202,6 +202,15 @@ export const TransactionFiltersDialog = ({
             />
             Uncategorized only
           </label>
+          <label className={checkboxRow}>
+            <input
+              type="checkbox"
+              className={checkboxInput}
+              checked={draft.pendingReimbursementsOnly}
+              onChange={(e) => setDraft({ ...draft, pendingReimbursementsOnly: e.target.checked })}
+            />
+            Pending reimbursements only
+          </label>
         </div>
 
         <div className="mt-1 flex items-center justify-between gap-3">
