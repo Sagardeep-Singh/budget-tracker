@@ -103,6 +103,7 @@ export const ReimbursementLinkPicker = ({
             <div className="truncate text-sm font-medium">{candidate.payee || 'Transaction'}</div>
             <div className="text-ink-muted text-xs">
               {formatDate(candidate.date)} · {candidate.accountName}
+              {candidate.categoryName ? ` · ${candidate.categoryName}` : ''}
             </div>
             <div className="mt-1 flex flex-wrap gap-1">
               {candidate.reasons.map((reason) => (
@@ -162,7 +163,7 @@ export const ReimbursementLinkPicker = ({
       <Input
         id="reimbursement-candidate-search"
         autoFocus
-        placeholder="Search by payee or account…"
+        placeholder="Search payee, note, account, category or amount…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
@@ -188,9 +189,15 @@ export const ReimbursementLinkPicker = ({
         )}
         {!loadError && candidates !== null && candidates.length === 0 && (
           <p className="text-ink-muted py-4 text-center text-sm">
-            No income transactions to link yet.
-            <br />
-            Add or import the income first, then come back to link it here.
+            {search.trim() ? (
+              'No income matches that search.'
+            ) : (
+              <>
+                No income transactions to link yet.
+                <br />
+                Add or import the income first, then come back to link it here.
+              </>
+            )}
           </p>
         )}
         {!loadError && suggested.length > 0 && (
