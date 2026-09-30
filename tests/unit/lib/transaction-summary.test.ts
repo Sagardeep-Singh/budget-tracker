@@ -54,4 +54,51 @@ describe('summarizeTransactions', () => {
       reimbursementIncome: 15,
     });
   });
+
+  it('nets linked reimbursements out of debit, clamped at 0', () => {
+    const summary = summarizeTransactions([
+      tx({
+        amount: '100',
+        isReimbursable: true,
+        reimbursementExpectedAmount: '100.00',
+        reimbursementLinkedTotal: '60.00',
+        reimbursementCompletedManually: false,
+      }),
+      tx({
+        amount: '20',
+        isReimbursable: true,
+        reimbursementExpectedAmount: '20.00',
+        reimbursementLinkedTotal: '25.00',
+        reimbursementCompletedManually: false,
+      }),
+    ]);
+    expect(summary.debit).toBeCloseTo(40);
+    expect(summary.net).toBeCloseTo(-40);
+  });
+
+  it('treats a manually completed reimbursement as its full expected amount', () => {
+    const summary = summarizeTransactions([
+      tx({
+        amount: '100',
+        isReimbursable: true,
+        reimbursementExpectedAmount: '80.00',
+        reimbursementLinkedTotal: '10.00',
+        reimbursementCompletedManually: true,
+      }),
+    ]);
+    expect(summary.debit).toBeCloseTo(20);
+  });
+
+  it('keeps pending reimbursable expenses at their full amount', () => {
+    const summary = summarizeTransactions([
+      tx({
+        amount: '50',
+        isReimbursable: true,
+        reimbursementExpectedAmount: '50.00',
+        reimbursementLinkedTotal: '0.00',
+        reimbursementCompletedManually: false,
+      }),
+    ]);
+    expect(summary.debit).toBeCloseTo(50);
+  });
 });

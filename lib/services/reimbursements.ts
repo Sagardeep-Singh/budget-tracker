@@ -537,27 +537,63 @@ export type ReimbursedExpenseRow = {
   amount: string;
 };
 
-/** links whose EXPENSE falls in [start, end) — the net-out source for budgets/overview/trends */
+/** reimbursed amounts for EXPENSES falling in [start, end) — the net-out source for
+ * budgets/overview/trends. One row per link, plus a top-up row for an expense the user
+ * manually marked fully reimbursed, covering whatever of its expected amount isn't linked. */
 export const listReimbursedAmountsByExpenseDate = async (
   userId: string,
   start: Date,
   end: Date,
 ): Promise<ReimbursedExpenseRow[]> => {
-  const rows = await prisma.reimbursementLink.findMany({
-    where: {
-      userId,
-      expense: { type: 'EXPENSE', isTransfer: false, date: { gte: start, lt: end } },
-    },
-    select: {
-      amount: true,
-      expenseTransactionId: true,
-      expense: { select: { categoryId: true, date: true } },
-    },
-  });
-  return rows.map((r) => ({
+  const [rows, manuallyCompleted] = await Promise.all([
+    prisma.reimbursementLink.findMany({
+      where: {
+        userId,
+        expense: { type: 'EXPENSE', isTransfer: false, date: { gte: start, lt: end } },
+      },
+      select: {
+        amount: true,
+        expenseTransactionId: true,
+        expense: { select: { categoryId: true, date: true } },
+      },
+    }),
+    prisma.transaction.findMany({
+      where: {
+        userId,
+        type: 'EXPENSE',
+        isTransfer: false,
+        isReimbursable: true,
+        reimbursementCompletedAt: { not: null },
+        date: { gte: start, lt: end },
+      },
+      select: {
+        id: true,
+        categoryId: true,
+        date: true,
+        reimbursementExpectedAmount: true,
+        reimbursementExpenseLinks: { select: { amount: true } },
+      },
+    }),
+  ]);
+  const linkRows = rows.map((r) => ({
     expenseTransactionId: r.expenseTransactionId,
     categoryId: r.expense.categoryId,
     expenseDate: r.expense.date.toISOString(),
     amount: fromCents(toCents(r.amount)),
   }));
+  const topUpRows = manuallyCompleted.flatMap((t) => {
+    const linkedCents = t.reimbursementExpenseLinks.reduce((sum, l) => sum + toCents(l.amount), 0);
+    const remainingCents = toCents(t.reimbursementExpectedAmount) - linkedCents;
+    return remainingCents > 0
+      ? [
+          {
+            expenseTransactionId: t.id,
+            categoryId: t.categoryId,
+            expenseDate: t.date.toISOString(),
+            amount: fromCents(remainingCents),
+          },
+        ]
+      : [];
+  });
+  return [...linkRows, ...topUpRows];
 };

@@ -780,6 +780,7 @@ describe('listReimbursedAmountsByExpenseDate', () => {
         expense: { categoryId: 'cat-1', date: new Date('2026-01-15') },
       },
     ]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
 
     const result = await listReimbursedAmountsByExpenseDate(
       'user-1',
@@ -793,6 +794,76 @@ describe('listReimbursedAmountsByExpenseDate', () => {
         categoryId: 'cat-1',
         expenseDate: new Date('2026-01-15').toISOString(),
         amount: '25.00',
+      },
+    ]);
+  });
+
+  it('adds the unlinked expected amount of a manually completed expense', async () => {
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 10,
+        expenseTransactionId: 'exp-1',
+        expense: { categoryId: 'cat-1', date: new Date('2026-01-15') },
+      },
+    ]);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'exp-1',
+        categoryId: 'cat-1',
+        date: new Date('2026-01-15'),
+        reimbursementExpectedAmount: 80,
+        reimbursementExpenseLinks: [{ amount: 10 }],
+      },
+      {
+        id: 'exp-2',
+        categoryId: null,
+        date: new Date('2026-01-20'),
+        reimbursementExpectedAmount: 30,
+        reimbursementExpenseLinks: [],
+      },
+      {
+        // already linked in full: no top-up row
+        id: 'exp-3',
+        categoryId: 'cat-2',
+        date: new Date('2026-01-21'),
+        reimbursementExpectedAmount: 5,
+        reimbursementExpenseLinks: [{ amount: 5 }],
+      },
+    ]);
+
+    const result = await listReimbursedAmountsByExpenseDate(
+      'user-1',
+      new Date('2026-01-01'),
+      new Date('2026-02-01'),
+    );
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'user-1',
+          isReimbursable: true,
+          reimbursementCompletedAt: { not: null },
+        }),
+      }),
+    );
+    expect(result).toEqual([
+      {
+        expenseTransactionId: 'exp-1',
+        categoryId: 'cat-1',
+        expenseDate: new Date('2026-01-15').toISOString(),
+        amount: '10.00',
+      },
+      {
+        expenseTransactionId: 'exp-1',
+        categoryId: 'cat-1',
+        expenseDate: new Date('2026-01-15').toISOString(),
+        amount: '70.00',
+      },
+      {
+        expenseTransactionId: 'exp-2',
+        categoryId: null,
+        expenseDate: new Date('2026-01-20').toISOString(),
+        amount: '30.00',
       },
     ]);
   });
