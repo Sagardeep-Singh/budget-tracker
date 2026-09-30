@@ -95,6 +95,7 @@ describe('URL param round-trip', () => {
       hideTransfers: true,
       hidePayments: true,
       uncategorizedOnly: true,
+      pendingReimbursementsOnly: true,
     };
 
     const params = transactionFiltersToSearchParams(filters);
@@ -207,5 +208,26 @@ describe('matchesTransactionFilters', () => {
         filters,
       ),
     ).toBe(false);
+  });
+});
+
+describe('pendingReimbursementsOnly', () => {
+  const on: TransactionFilters = {
+    ...DEFAULT_TRANSACTION_FILTERS,
+    pendingReimbursementsOnly: true,
+  };
+
+  it('keeps PENDING and PARTIAL reimbursable expenses only', () => {
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: 'PENDING' }), on)).toBe(true);
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: 'PARTIAL' }), on)).toBe(true);
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: 'COMPLETE' }), on)).toBe(false);
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: null }), on)).toBe(false);
+  });
+
+  it('round-trips through the URL and counts as one active group', () => {
+    const params = transactionFiltersToSearchParams(on);
+    expect(params.toString()).toBe('pendingReimbursementsOnly=true');
+    expect(parseTransactionFilters(params)).toEqual(on);
+    expect(countActiveFilterGroups(on)).toBe(1);
   });
 });
