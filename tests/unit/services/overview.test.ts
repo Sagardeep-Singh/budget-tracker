@@ -56,7 +56,7 @@ describe('getOverviewData', () => {
         amount: 150,
         date: new Date(Date.UTC(2026, 2, 5)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         payee: 'Store',
         category: { name: 'Groceries' },
       },
@@ -66,7 +66,7 @@ describe('getOverviewData', () => {
         amount: 500,
         date: new Date(Date.UTC(2026, 2, 5)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         payee: 'Payroll',
         category: null,
       },
@@ -121,7 +121,7 @@ describe('getOverviewData', () => {
           amount: 100,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Store',
           categoryId: 'cat-1',
@@ -133,7 +133,7 @@ describe('getOverviewData', () => {
           amount: 40,
           date: new Date(Date.UTC(2026, 2, 6)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Unknown',
           categoryId: null,
@@ -145,7 +145,7 @@ describe('getOverviewData', () => {
           amount: 500,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Payroll',
           categoryId: null,
@@ -159,7 +159,7 @@ describe('getOverviewData', () => {
           amount: 250,
           date: new Date(Date.UTC(2026, 2, 7)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: true,
           payee: 'Payment to Visa',
           categoryId: 'cat-1',
@@ -212,7 +212,7 @@ describe('getOverviewData', () => {
           amount: 60,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Store',
           category: { name: 'Groceries' },
@@ -223,7 +223,7 @@ describe('getOverviewData', () => {
           amount: 400,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: true,
           payee: 'Payment to Visa',
           category: null,
@@ -237,7 +237,7 @@ describe('getOverviewData', () => {
           amount: 400,
           date: new Date(Date.UTC(2026, 2, 6)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: true,
           payee: 'Transfer in',
           category: null,
@@ -271,7 +271,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 1 },
+          reimbursementIncomeLinks: [{ amount: 100 }],
           payee: 'Reimbursement',
           category: null,
         },
@@ -283,6 +283,33 @@ describe('getOverviewData', () => {
 
     expect(result.hero.income).toBe('0.00');
     expect(result.dayBars.find((d) => d.day === 5)?.income).toBe(0);
+  });
+
+  it('only excludes the linked part of an income used as a reimbursement', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+    prismaMock.account.findFirst.mockResolvedValue(null);
+    prismaMock.transaction.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 't1',
+          type: 'INCOME',
+          amount: 100,
+          date: new Date(Date.UTC(2026, 2, 5)),
+          isPayment: false,
+          isTransfer: false,
+          reimbursementIncomeLinks: [{ amount: 25 }, { amount: 15 }],
+          payee: 'Paycheck',
+          category: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+
+    const result = await getOverviewData('user-1', { month: 202603, day: 5 });
+
+    expect(result.hero.income).toBe('60.00');
+    expect(result.dayBars.find((d) => d.day === 5)?.income).toBe(60);
   });
 
   it('counts an otherwise-identical income row once it has no active links', async () => {
@@ -298,7 +325,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           payee: 'Payroll',
           category: null,
         },
@@ -324,7 +351,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           payee: 'Office supplies',
           categoryId: 'cat-1',
           category: { name: 'Work' },
@@ -428,7 +455,7 @@ describe('getOverviewData', () => {
       date: new Date(Date.UTC(2026, 2, 5)),
       isPayment: false,
       isTransfer: false,
-      _count: { reimbursementIncomeLinks: 0 },
+      reimbursementIncomeLinks: [],
       payee: 'Store',
       categoryId: `cat-${i + 1}`,
       category: { name: `Cat ${i + 1}` },
@@ -443,7 +470,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           payee: 'Unknown',
           categoryId: null,
           category: null,

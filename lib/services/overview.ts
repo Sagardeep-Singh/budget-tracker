@@ -112,7 +112,7 @@ export const getOverviewData = async (
       where: { userId, date: { gte: start, lt: end } },
       include: {
         category: { select: { name: true } },
-        _count: { select: { reimbursementIncomeLinks: true } },
+        reimbursementIncomeLinks: { select: { amount: true } },
       },
       orderBy: { date: 'asc' },
     }),
@@ -135,6 +135,13 @@ export const getOverviewData = async (
   }
   const netExpenseAmount = (t: (typeof transactions)[number]): number =>
     Math.max(0, Number(t.amount) - (reimbursedByTransaction.get(t.id) ?? 0));
+  // Only the part of an income linked as a reimbursement is excluded; any
+  // unlinked remainder is still ordinary income.
+  const netIncomeAmount = (t: (typeof transactions)[number]): number =>
+    Math.max(
+      0,
+      Number(t.amount) - t.reimbursementIncomeLinks.reduce((sum, l) => sum + Number(l.amount), 0),
+    );
 
   const limit = budgets.reduce((sum, b) => sum + Number(b.limitAmount), 0);
   const spent = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
@@ -145,17 +152,11 @@ export const getOverviewData = async (
   // every income/spending aggregate — the money never left the ledger. Balance
   // math further down deliberately still counts them. Income linked as a
   // reimbursement is excluded the same way (it's the user's own money coming
-  // back, not new income) — the gate reads live link existence via `_count`,
-  // not a static flag, so it starts/stops applying as links are made/removed.
+  // back, not new income), but only up to the linked amount — it reads live
+  // links, not a static flag, so it starts/stops applying as links change.
   const income = transactions
-    .filter(
-      (t) =>
-        t.type === 'INCOME' &&
-        !t.isPayment &&
-        !t.isTransfer &&
-        t._count.reimbursementIncomeLinks === 0,
-    )
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter((t) => t.type === 'INCOME' && !t.isPayment && !t.isTransfer)
+    .reduce((sum, t) => sum + netIncomeAmount(t), 0);
   const expense = transactions
     .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
     .reduce((sum, t) => sum + netExpenseAmount(t), 0);
@@ -226,13 +227,7 @@ export const getOverviewData = async (
   for (const t of transactions) {
     const d = t.date.getUTCDate();
     const bucket = dayMap.get(d)!;
-    if (
-      t.type === 'INCOME' &&
-      !t.isPayment &&
-      !t.isTransfer &&
-      t._count.reimbursementIncomeLinks === 0
-    )
-      bucket.income += Number(t.amount);
+    if (t.type === 'INCOME' && !t.isPayment && !t.isTransfer) bucket.income += netIncomeAmount(t);
     if (t.type === 'EXPENSE' && !t.isTransfer) bucket.expense += netExpenseAmount(t);
   }
   const dayBars: OverviewDayBar[] = Array.from(dayMap.entries()).map(([day, v]) => ({

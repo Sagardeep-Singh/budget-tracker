@@ -92,7 +92,7 @@ export const getSpendingTrends = async (
       where: { userId, date: { gte: rangeStart, lt: rangeEndDate } },
       include: {
         category: { select: { id: true, name: true } },
-        _count: { select: { reimbursementIncomeLinks: true } },
+        reimbursementIncomeLinks: { select: { amount: true } },
       },
     }),
     listReimbursedAmountsByExpenseDate(userId, rangeStart, rangeEndDate),
@@ -110,15 +110,21 @@ export const getSpendingTrends = async (
   }
   const netExpenseAmount = (t: (typeof transactions)[number]): number =>
     Math.max(0, Number(t.amount) - (reimbursedByTransaction.get(t.id) ?? 0));
+  // Only the linked part of a reimbursement income is excluded.
+  const netIncomeAmount = (t: (typeof transactions)[number]): number =>
+    Math.max(
+      0,
+      Number(t.amount) - t.reimbursementIncomeLinks.reduce((sum, l) => sum + Number(l.amount), 0),
+    );
 
   const monthOf = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
 
   // Same income/expense filters as getOverviewData: both legs of an
-  // inter-account transfer never count as spending or income, and income
-  // linked as a reimbursement is excluded the same way (live link count, not
-  // a static flag).
+  // inter-account transfer never count as spending or income, and the linked
+  // part of an income used as a reimbursement is excluded (live links, not a
+  // static flag).
   const isIncome = (t: (typeof transactions)[number]): boolean =>
-    t.type === 'INCOME' && !t.isPayment && !t.isTransfer && t._count.reimbursementIncomeLinks === 0;
+    t.type === 'INCOME' && !t.isPayment && !t.isTransfer;
   const isExpense = (t: (typeof transactions)[number]): boolean =>
     t.type === 'EXPENSE' && !t.isTransfer;
 
@@ -133,7 +139,7 @@ export const getSpendingTrends = async (
     const m = monthOf(t.date);
     const bucket = monthTotals.get(m);
     if (!bucket) continue;
-    if (isIncome(t)) bucket.income += Number(t.amount);
+    if (isIncome(t)) bucket.income += netIncomeAmount(t);
     if (isExpense(t)) {
       const amount = netExpenseAmount(t);
       bucket.expense += amount;
