@@ -37,7 +37,9 @@ master key, excluded from data export, and never returned to the client. Left un
 is invisible. See `.env.example` for the optional `AI_ANTHROPIC_BASE_URL` / `AI_OPENAI_BASE_URL`
 test overrides and `docs/runbooks/rotate-secret-encryption-key.md` for rotation.
 
-For a production deploy: run `npm run prisma:deploy` to apply migrations. `npm run
+For a production deploy: run `npm run prisma:deploy` to apply migrations. On serverless hosts,
+set `DATABASE_PRISMA_DATABASE_URL` to a pooled connection URL (see `.env.example`), otherwise concurrent
+function instances can hit "too many connections" on the direct `DATABASE_URL`. `npm run
 prisma:bootstrap-admin` is optional — it seeds/updates one known account by email, useful for an
 admin or demo login.
 
