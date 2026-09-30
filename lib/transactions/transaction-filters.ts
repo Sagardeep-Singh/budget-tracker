@@ -12,6 +12,7 @@ export type TransactionFilters = {
   hideTransfers: boolean;
   hidePayments: boolean;
   uncategorizedOnly: boolean;
+  pendingReimbursementsOnly: boolean; // reimbursable expenses still awaiting money (PENDING/PARTIAL)
 };
 
 export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
@@ -26,6 +27,7 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
   hideTransfers: false,
   hidePayments: false,
   uncategorizedOnly: false,
+  pendingReimbursementsOnly: false,
 };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -67,6 +69,7 @@ export const parseTransactionFilters = (params: URLSearchParams): TransactionFil
     hideTransfers: params.get('hideTransfers') === 'true',
     hidePayments: params.get('hidePayments') === 'true',
     uncategorizedOnly: params.get('uncategorizedOnly') === 'true',
+    pendingReimbursementsOnly: params.get('pendingReimbursementsOnly') === 'true',
   };
 };
 
@@ -86,6 +89,7 @@ export const transactionFiltersToSearchParams = (filters: TransactionFilters): U
   if (filters.hideTransfers) params.set('hideTransfers', 'true');
   if (filters.hidePayments) params.set('hidePayments', 'true');
   if (filters.uncategorizedOnly) params.set('uncategorizedOnly', 'true');
+  if (filters.pendingReimbursementsOnly) params.set('pendingReimbursementsOnly', 'true');
   return params;
 };
 
@@ -103,6 +107,7 @@ export const countActiveFilterGroups = (filters: TransactionFilters): number =>
     filters.hideTransfers,
     filters.hidePayments,
     filters.uncategorizedOnly,
+    filters.pendingReimbursementsOnly,
   ].filter(Boolean).length;
 
 /** Every clause a transaction must pass to remain visible under the current
@@ -140,6 +145,13 @@ export const matchesTransactionFilters = (
   if (filters.hideTransfers && transaction.isTransfer) return false;
   if (filters.hidePayments && transaction.isPayment) return false;
   if (filters.uncategorizedOnly && transaction.categoryId) return false;
+  if (
+    filters.pendingReimbursementsOnly &&
+    transaction.reimbursementStatus !== 'PENDING' &&
+    transaction.reimbursementStatus !== 'PARTIAL'
+  ) {
+    return false;
+  }
 
   return true;
 };
