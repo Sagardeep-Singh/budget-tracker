@@ -52,32 +52,14 @@ export const TransactionFiltersDialog = ({
     onClose();
   };
 
+  // The period lives in the page's selector, not here, so Reset leaves it be.
   const handleReset = (): void => {
-    setDraft(DEFAULT_TRANSACTION_FILTERS);
+    setDraft({ ...DEFAULT_TRANSACTION_FILTERS, from: filters.from, to: filters.to });
   };
 
   return (
     <Modal open={open} onClose={handleClose} title="Filters" className="max-w-lg">
       <div className="flex flex-col gap-5">
-        <div>
-          <Label htmlFor="filter-from">Date range</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              id="filter-from"
-              type="date"
-              value={draft.from ?? ''}
-              onChange={(e) => setDraft({ ...draft, from: e.target.value || null })}
-            />
-            <span className="text-ink-muted text-xs">to</span>
-            <Input
-              id="filter-to"
-              type="date"
-              value={draft.to ?? ''}
-              onChange={(e) => setDraft({ ...draft, to: e.target.value || null })}
-            />
-          </div>
-        </div>
-
         {accounts.length > 0 && (
           <div>
             <Label htmlFor="filter-accounts">Accounts</Label>
@@ -128,9 +110,9 @@ export const TransactionFiltersDialog = ({
           <div id="filter-type" className="flex gap-2">
             {(
               [
-                [null, 'Any'],
+                [null, 'All'],
+                ['EXPENSE', 'Spending'],
                 ['INCOME', 'Income'],
-                ['EXPENSE', 'Expense'],
               ] as [TransactionFilters['type'], string][]
             ).map(([value, label]) => (
               <button
@@ -201,6 +183,15 @@ export const TransactionFiltersDialog = ({
               onChange={(e) => setDraft({ ...draft, uncategorizedOnly: e.target.checked })}
             />
             Uncategorized only
+          </label>
+          <label className={checkboxRow}>
+            <input
+              type="checkbox"
+              className={checkboxInput}
+              checked={draft.pendingReimbursementsOnly}
+              onChange={(e) => setDraft({ ...draft, pendingReimbursementsOnly: e.target.checked })}
+            />
+            Pending reimbursements only
           </label>
         </div>
 

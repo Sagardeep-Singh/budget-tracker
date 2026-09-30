@@ -73,3 +73,26 @@ test('the mobile Filters button opens the same filter dialog as desktop and narr
   // dialog state the desktop button reads.
   await expect(filtersButton.locator('span')).toHaveText('1');
 });
+
+test('the Spending / Income pills write the same type filter the dialog shows', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto('/transactions');
+
+  const pills = page.getByTestId('transaction-filters');
+  await pills.getByRole('button', { name: 'Spending', exact: true }).click();
+  await expect(page).toHaveURL(/type=EXPENSE/);
+
+  await page.getByTestId('mobile-filters-button').click();
+  const dialog = page.getByRole('dialog');
+  // The dialog's Spending option is the selected one.
+  await expect(dialog.getByRole('button', { name: 'Spending', exact: true })).toHaveClass(/bg-ink/);
+  await dialog.getByRole('button', { name: 'Income', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  await expect(page).toHaveURL(/type=INCOME/);
+  await expect(pills.getByRole('button', { name: 'Income', exact: true })).toHaveClass(/bg-ink/);
+
+  await pills.getByRole('button', { name: 'All', exact: true }).click();
+  await expect(page).not.toHaveURL(/type=/);
+});

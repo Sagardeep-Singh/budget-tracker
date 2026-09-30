@@ -10,6 +10,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { patchJSON, postJSON, deleteJSON } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { daysInMonth } from '@/lib/date';
+import { monthToRange } from '@/lib/period-selection';
+import { transactionsHref } from '@/lib/transactions/transaction-filters';
 import type { FrontendBudget } from '@/lib/services/budgets';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { UncategorizedMonthSummary } from '@/lib/services/categorize';
@@ -300,13 +302,25 @@ export const BudgetsView = ({
                 return (
                   <div
                     key={budget.id}
-                    className="border-line bg-paper-raised flex items-center gap-5.5 rounded-2xl border p-5.5"
+                    className="border-line bg-paper-raised hover:border-iris relative flex items-center gap-5.5 rounded-2xl border p-5.5 transition-colors"
                   >
                     <BudgetRing fraction={fraction} />
                     <div className="min-w-0 flex-1">
-                      <div className="font-display text-base font-semibold">
+                      {/* Stretched link: its ::after covers the whole card, so a
+                          click anywhere opens the matching transactions. The
+                          edit/remove controls sit above it (relative z-10). Spending
+                          + hide transfers mirrors how `spent` is computed. */}
+                      <Link
+                        href={transactionsHref({
+                          ...monthToRange(month),
+                          categoryIds: [budget.categoryId],
+                          type: 'EXPENSE',
+                          hideTransfers: true,
+                        })}
+                        className="font-display block text-base font-semibold after:absolute after:inset-0 after:rounded-2xl"
+                      >
                         {budget.categoryName}
-                      </div>
+                      </Link>
                       <div className={cn('font-display mt-1 text-lg font-semibold', toneClass)}>
                         {over
                           ? `Over by $${(spent - limit).toFixed(2)}`
@@ -316,7 +330,7 @@ export const BudgetsView = ({
                         ${spent.toFixed(2)} of ${limit.toFixed(2)}
                       </div>
                       {editingId === budget.id ? (
-                        <div className="mt-2.5">
+                        <div className="relative z-10 mt-2.5">
                           <div className="flex items-center gap-1.5">
                             <Input
                               className="rounded-[9px] font-mono"
@@ -353,7 +367,7 @@ export const BudgetsView = ({
                             <span className="text-ink-muted text-xs">
                               {paceText(limit, spent, month)}
                             </span>
-                            <span className="flex items-center gap-3">
+                            <span className="relative z-10 flex items-center gap-3">
                               <button
                                 type="button"
                                 onClick={() => startEdit(budget)}

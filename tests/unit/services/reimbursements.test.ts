@@ -632,7 +632,73 @@ describe('listReimbursementCandidates', () => {
 
     const where = prismaMock.transaction.findMany.mock.calls[0][0].where;
     expect(where.date).toBeUndefined();
-    expect(where.payee).toEqual({ contains: 'refund', mode: 'insensitive' });
+    expect(where.AND).toHaveLength(1);
+    expect(prismaMock.transaction.findMany.mock.calls[0][0].orderBy).toEqual({ date: 'desc' });
+  });
+
+  it('requires every search word to match payee, note, account or category', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await listReimbursementCandidates('user-1', 'exp-1', { search: 'acme 42.50' });
+
+    const and = prismaMock.transaction.findMany.mock.calls[0][0].where.AND;
+    expect(and).toHaveLength(2);
+    const contains = { contains: 'acme', mode: 'insensitive' };
+    expect(and[0].OR).toEqual([
+      { payee: contains },
+      { note: contains },
+      { account: { name: contains } },
+      { category: { name: contains } },
+    ]);
+    expect(and[1].OR).toContainEqual({ amount: 42.5 });
+  });
+
+  it('boosts and labels income in the same category as the expense', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail({ categoryId: 'cat-1' }));
+    const income = (id: string, categoryId: string | null) => ({
+      id,
+      date: new Date('2026-03-20'),
+      amount: 80,
+      payee: 'Someone',
+      accountId: 'acc-1',
+      account: { name: 'Checking' },
+      categoryId,
+      category: categoryId ? { name: categoryId === 'cat-1' ? 'Work' : 'Other' } : null,
+      reimbursementIncomeLinks: [],
+    });
+    prismaMock.transaction.findMany.mockResolvedValue([
+      income('inc-other', 'cat-2'),
+      income('inc-same', 'cat-1'),
+    ]);
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(result[0].transactionId).toBe('inc-same');
+    expect(result[0].categoryName).toBe('Work');
+    expect(result[0].reasons).toContain('Same category (Work)');
+    expect(result[1].reasons).not.toContain('Same category (Other)');
+  });
+
+  it('never treats two uncategorized transactions as a category match', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail({ categoryId: null }));
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'inc-1',
+        date: new Date('2026-03-20'),
+        amount: 80,
+        payee: 'Someone',
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        categoryId: null,
+        category: null,
+        reimbursementIncomeLinks: [],
+      },
+    ]);
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(result[0].reasons.some((r) => r.startsWith('Same category'))).toBe(false);
   });
 });
 
