@@ -9,7 +9,8 @@ import { SpendingLineChart } from '@/components/trends/spending-line-chart';
 import { CategoryBreakdownBar } from '@/components/trends/category-breakdown-bar';
 import { SpendingMovers } from '@/components/trends/spending-movers';
 import { currentMonthNumber, daysElapsedInMonth } from '@/lib/format';
-import { monthToRange } from '@/lib/period-selection';
+import { monthToRange, selectionMonth } from '@/lib/period-selection';
+import { getStoredPeriod } from '@/lib/period-cookie';
 
 const VALID_RANGES: TrendsRange[] = [3, 6, 12];
 
@@ -47,7 +48,10 @@ const TrendsPage = async ({
   const { month: monthParam, range: rangeParam } = await searchParams;
   const session = await getServerAuthSession();
   const userId = session!.user.id;
-  const month = monthParam ? Number(monthParam) : currentMonth();
+  // No month in the URL: open on the period last picked on any screen.
+  const month = monthParam
+    ? Number(monthParam)
+    : selectionMonth(await getStoredPeriod(), currentMonth());
   const range = parseRange(rangeParam);
   const data = await getSpendingTrends(userId, { month, range });
   const rangeLabel = `${range} months`;

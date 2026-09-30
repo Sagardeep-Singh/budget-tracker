@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -23,8 +23,6 @@ import { StatementPicker } from '@/components/transactions/period-picker';
 import { cn } from '@/lib/cn';
 import {
   countActiveFilterGroups,
-  DEFAULT_TRANSACTION_FILTERS,
-  getCurrentMonthRange,
   matchesTransactionFilters,
   parseTransactionFilters,
   transactionFiltersToSearchParams,
@@ -126,21 +124,19 @@ export const TransactionsView = ({
     }
   }
 
+  // The native History API, not `router.replace`: every filter here runs on
+  // the client against `initialTransactions`, so a server round trip per
+  // change only re-sent the whole ledger. With router.replace each debounced
+  // search keystroke refetched the page, and the re-render when it landed
+  // froze the search box mid-typing on a slow connection. Next keeps
+  // `useSearchParams` in sync with replaceState.
   const pushFilters = useCallback(
     (next: TransactionFilters): void => {
       const query = transactionFiltersToSearchParams(next).toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
     },
-    [pathname, router],
+    [pathname],
   );
-
-  // Landing on a bare /transactions defaults to the current month. Runs on
-  // mount only, so clearing the dates afterwards still shows everything.
-  useEffect(() => {
-    if (searchParams.toString() !== '') return;
-    pushFilters({ ...DEFAULT_TRANSACTION_FILTERS, ...getCurrentMonthRange() });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only default
-  }, []);
 
   useEffect(() => {
     if (payeeDraft === filters.payee) return;
@@ -156,6 +152,10 @@ export const TransactionsView = ({
     () => ({ ...filters, payee: payeeDraft }),
     [filters, payeeDraft],
   );
+  // The inputs render from the live values; the (possibly long) list filters
+  // on deferred copies, so a keystroke never waits on re-rendering every row.
+  const listFilters = useDeferredValue(effectiveFilters);
+  const deferredMobileSearch = useDeferredValue(mobileSearch);
 
   const selectedAccountId = filters.accountIds.length === 1 ? filters.accountIds[0] : null;
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
@@ -214,9 +214,7 @@ export const TransactionsView = ({
     router.refresh();
   };
 
-  const filtered = initialTransactions.filter((t) =>
-    matchesTransactionFilters(t, effectiveFilters),
-  );
+  const filtered = initialTransactions.filter((t) => matchesTransactionFilters(t, listFilters));
 
   // Payments toward a credit card's balance settle the *previous* statement,
   // and both legs of a transfer between the user's own accounts are money that
@@ -263,10 +261,9 @@ export const TransactionsView = ({
   // Counted without the pill-controlled filters, so the badge doesn't drop
   // to its own subset (or to zero) when Spending/Income is selected.
   const uncategorizedCount = initialTransactions.filter(
-    (t) =>
-      !t.categoryId && matchesTransactionFilters(t, { ...effectiveFilters, ...QUICK_FILTERS.all }),
+    (t) => !t.categoryId && matchesTransactionFilters(t, { ...listFilters, ...QUICK_FILTERS.all }),
   ).length;
-  const searchLower = mobileSearch.trim().toLowerCase();
+  const searchLower = deferredMobileSearch.trim().toLowerCase();
   const mobileFiltered = filtered.filter((t) => {
     if (!searchLower) return true;
     return (

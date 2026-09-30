@@ -49,3 +49,26 @@ a pre-filtered Transactions view.
 - [x] Unit tests: period-selection, statement, transaction-filters, categorize queue, trends movers
 - [x] Update e2e specs for the dialog and badge changes
 - [x] `npm run format:fix && npm run lint`, `npm run test`
+
+## Follow-up: shared selection and search responsiveness
+
+- The last picked period is stored in a `period` cookie (`all` | `m:YYYYMM` |
+  `r:from:to`) and every screen opens on it when its URL has no period of its
+  own. An explicit URL period (a link, a drill-down) always wins and becomes
+  the stored one. Month-only screens show a stored range as the month it ends
+  in, and a stored "All time" as the current month.
+- Bare `/transactions` is redirected to the stored period in `proxy.ts`,
+  before rendering. A client effect or an in-page `redirect()` (inside
+  `loading.tsx`'s Suspense) both caused a late second navigation that could
+  cancel a nav-link click.
+- Transactions filter changes (search, pills, dialog, period) update the URL
+  with `window.history.replaceState` instead of `router.replace`. Filtering is
+  client-side, so the old server round trip per debounced keystroke only
+  re-sent the whole ledger and froze typing when it landed. The list also
+  filters on deferred values so typing never waits on re-rendering rows.
+
+- [x] `period` cookie helpers + `lib/period-cookie.ts` server read
+- [x] Selector writes the cookie; month-only pages and Categorize read it
+- [x] `proxy.ts` default for bare `/transactions`
+- [x] Shallow URL updates + `useDeferredValue` on Transactions
+- [x] Unit tests (cookie round-trip, `selectionMonth`), e2e `period-persistence.spec.ts`

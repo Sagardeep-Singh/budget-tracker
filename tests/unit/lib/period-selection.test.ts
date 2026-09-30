@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  decodePeriodCookie,
+  encodePeriodCookie,
   monthToRange,
   parseDateParam,
   periodSelectionLabel,
@@ -7,6 +9,7 @@ import {
   rangeFromSelection,
   rangeToDates,
   selectionFromRange,
+  selectionMonth,
 } from '@/lib/period-selection';
 
 describe('parseDateParam', () => {
@@ -101,5 +104,40 @@ describe('periodSelectionLabel', () => {
     expect(periodSelectionLabel({ kind: 'custom', from: null, to: '2026-09-20' })).toBe(
       'Until Sep 20, 2026',
     );
+  });
+});
+
+describe('period cookie', () => {
+  it('round-trips every kind of selection', () => {
+    for (const selection of [
+      { kind: 'all' as const },
+      { kind: 'month' as const, month: 202609 },
+      { kind: 'custom' as const, from: '2026-09-03', to: '2026-09-20' },
+      { kind: 'custom' as const, from: null, to: '2026-09-20' },
+    ]) {
+      expect(decodePeriodCookie(encodePeriodCookie(selection))).toEqual(selection);
+    }
+  });
+
+  it('reads a stored range that is exactly one month as that month', () => {
+    expect(decodePeriodCookie('r:2026-09-01:2026-09-30')).toEqual({ kind: 'month', month: 202609 });
+  });
+
+  it('ignores a missing or tampered value rather than throwing', () => {
+    for (const value of [undefined, '', 'm:202613', 'm:abc', 'r::', 'r:2026-02-30:', 'garbage']) {
+      expect(decodePeriodCookie(value)).toBeNull();
+    }
+  });
+});
+
+describe('selectionMonth', () => {
+  it('uses the month, the month a range ends in, or the fallback', () => {
+    expect(selectionMonth({ kind: 'month', month: 202601 }, 202609)).toBe(202601);
+    expect(selectionMonth({ kind: 'custom', from: '2026-03-10', to: '2026-04-05' }, 202609)).toBe(
+      202604,
+    );
+    expect(selectionMonth({ kind: 'custom', from: '2026-03-10', to: null }, 202609)).toBe(202603);
+    expect(selectionMonth({ kind: 'all' }, 202609)).toBe(202609);
+    expect(selectionMonth(null, 202609)).toBe(202609);
   });
 });

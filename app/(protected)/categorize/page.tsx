@@ -6,20 +6,29 @@ import { getAiSettings } from '@/lib/services/aiSettings';
 import { CategorizeView } from '@/components/categorize/categorize-view';
 import { ScreenHeader } from '@/components/nav/screen-header';
 import { DateRangePopover } from '@/components/dashboard/period-popover';
-import { parseDateParam } from '@/lib/period-selection';
+import { parseDateParam, rangeFromSelection } from '@/lib/period-selection';
+import { getStoredPeriod } from '@/lib/period-cookie';
 
 const CategorizePage = async ({
   searchParams,
 }: {
   searchParams: Promise<{ from?: string; to?: string }>;
 }): Promise<React.ReactElement> => {
-  const { from, to } = await searchParams;
+  const params = await searchParams;
+  const urlRange = { from: parseDateParam(params.from), to: parseDateParam(params.to) };
+  // No range in the URL: use the period last picked on any screen, else all
+  // time (it's a queue, so older rows stay reachable by default).
+  const storedPeriod = await getStoredPeriod();
+  const range =
+    urlRange.from || urlRange.to
+      ? urlRange
+      : storedPeriod
+        ? rangeFromSelection(storedPeriod)
+        : { from: null, to: null };
   const session = await getServerAuthSession();
   const userId = session!.user.id;
   const [queue, categories, progress, aiSettings] = await Promise.all([
-    // No period in the URL means all time: it's a queue, so older rows must
-    // stay reachable by default.
-    getCategorizeQueue(userId, { from: parseDateParam(from), to: parseDateParam(to) }),
+    getCategorizeQueue(userId, range),
     listCategories(userId),
     getCategorizeProgress(userId),
     // Read on the server so a deployment without SECRET_ENCRYPTION_KEY renders
@@ -31,7 +40,7 @@ const CategorizePage = async ({
     <div className="animate-[fade-up_0.3s_ease-out]">
       <ScreenHeader
         title="Categorize"
-        periodSlot={<DateRangePopover />}
+        periodSlot={<DateRangePopover fallback={range} />}
         description={`${queue.length} left. Grouped by payee so you can clear them in batches.`}
         actions={
           <Link
@@ -45,7 +54,7 @@ const CategorizePage = async ({
       {/* Keyed on the period: the view seeds its queue state from
           `initialQueue` once, so a new period must remount it. */}
       <CategorizeView
-        key={`${from ?? ''}_${to ?? ''}`}
+        key={`${range.from ?? ''}_${range.to ?? ''}`}
         initialQueue={queue}
         categories={categories}
         progress={progress}

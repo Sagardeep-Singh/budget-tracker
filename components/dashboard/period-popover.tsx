@@ -12,6 +12,8 @@ import {
   periodSelectionLabel,
   rangeFromSelection,
   selectionFromRange,
+  writePeriodCookie,
+  type DateRange,
   type PeriodSelection,
 } from '@/lib/period-selection';
 
@@ -271,7 +273,9 @@ export const PeriodSelector = ({
 /**
  * Month-only selector backed by `?month=` (Overview, Budgets, Trends). Other
  * params survive a month change (Trends' `range`), except Overview's `day`,
- * which belongs to the month being left.
+ * which belongs to the month being left. The pick is also stored in the
+ * shared period cookie, so the other screens open on it; a `month` arriving
+ * in the URL (a link, back/forward) is stored the same way.
  */
 export const PeriodPopover = ({
   month,
@@ -282,15 +286,23 @@ export const PeriodPopover = ({
 }): React.ReactElement => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const urlMonth = searchParams.get('month');
+
+  useEffect(() => {
+    // Only an explicit URL month is stored: a month derived from a stored
+    // custom range must not overwrite that range.
+    if (urlMonth) writePeriodCookie({ kind: 'month', month });
+  }, [urlMonth, month]);
 
   const onSelect = (next: PeriodSelection): void => {
     if (next.kind !== 'month') return;
+    writePeriodCookie(next);
     const params = new URLSearchParams(searchParams.toString());
     params.delete('day');
-    if (next.month === currentMonth()) params.delete('month');
-    else params.set('month', String(next.month));
-    const query = params.toString();
-    router.push(query ? `${basePath}?${query}` : basePath);
+    // Always explicit, even for the current month: a bare URL now means
+    // "whatever was picked last", not "this month".
+    params.set('month', String(next.month));
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   return <PeriodSelector selection={{ kind: 'month', month }} onSelect={onSelect} />;
@@ -300,17 +312,36 @@ export const PeriodPopover = ({
  * Month, all-time or custom-range selector backed by `?from=&to=` on the
  * current path (Transactions, Categorize). Every other param is kept, so it
  * composes with the Transactions filters rather than resetting them.
+ *
+ * `shallow` updates the URL without a server round trip, for a screen that
+ * filters on the client (Transactions). `fallback` is what the screen is
+ * showing when the URL has no range (the stored selection, on Categorize).
  */
-export const DateRangePopover = (): React.ReactElement => {
+export const DateRangePopover = ({
+  shallow = false,
+  fallback,
+}: {
+  shallow?: boolean;
+  fallback?: DateRange;
+}): React.ReactElement => {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const selection = selectionFromRange({
-    from: parseDateParam(searchParams.get('from')),
-    to: parseDateParam(searchParams.get('to')),
-  });
+  const urlFrom = parseDateParam(searchParams.get('from'));
+  const urlTo = parseDateParam(searchParams.get('to'));
+  const hasUrlRange = !!(urlFrom || urlTo);
+  const selection = selectionFromRange(
+    hasUrlRange ? { from: urlFrom, to: urlTo } : (fallback ?? { from: null, to: null }),
+  );
+
+  useEffect(() => {
+    // A range that arrives in the URL (a budget or trends drill-down, the
+    // statement picker) becomes the shared selection too.
+    if (hasUrlRange) writePeriodCookie(selectionFromRange({ from: urlFrom, to: urlTo }));
+  }, [hasUrlRange, urlFrom, urlTo]);
 
   const onSelect = (next: PeriodSelection): void => {
+    writePeriodCookie(next);
     const { from, to } = rangeFromSelection(next);
     const params = new URLSearchParams(searchParams.toString());
     if (from) params.set('from', from);
@@ -318,7 +349,12 @@ export const DateRangePopover = (): React.ReactElement => {
     if (to) params.set('to', to);
     else params.delete('to');
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const href = query ? `${pathname}?${query}` : pathname;
+    if (shallow) window.history.replaceState(null, '', href);
+    // Picking "All time" over a stored range leaves the URL unchanged (both
+    // are bare), so only the cookie moved: re-render to pick it up.
+    else if (href === `${pathname}${searchParams.size ? `?${searchParams}` : ''}`) router.refresh();
+    else router.replace(href, { scroll: false });
   };
 
   return <PeriodSelector selection={selection} onSelect={onSelect} allowCustom />;

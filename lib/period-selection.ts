@@ -102,3 +102,50 @@ export const periodSelectionLabel = (selection: PeriodSelection): string => {
   if (from) return `From ${DAY_YEAR_LABEL.format(toDate(from))}`;
   return `Until ${DAY_YEAR_LABEL.format(toDate(to!))}`;
 };
+
+/**
+ * The last period the user picked, shared by every screen so the selector
+ * holds its value when moving between pages. A cookie rather than
+ * localStorage because the month-only screens are server-rendered and must
+ * read it before rendering. An explicit URL param always wins over it.
+ */
+export const PERIOD_COOKIE = 'period';
+
+/** 'all' | 'm:202609' | 'r:2026-09-03:2026-09-20' (either range side may be empty). */
+export const encodePeriodCookie = (selection: PeriodSelection): string => {
+  if (selection.kind === 'all') return 'all';
+  if (selection.kind === 'month') return `m:${selection.month}`;
+  return `r:${selection.from ?? ''}:${selection.to ?? ''}`;
+};
+
+export const decodePeriodCookie = (value: string | null | undefined): PeriodSelection | null => {
+  if (!value) return null;
+  if (value === 'all') return { kind: 'all' };
+  const month = /^m:(\d{6})$/.exec(value);
+  if (month) {
+    const m = Number(month[1]);
+    return m % 100 >= 1 && m % 100 <= 12 ? { kind: 'month', month: m } : null;
+  }
+  const range = /^r:([^:]*):([^:]*)$/.exec(value);
+  if (range) {
+    const from = parseDateParam(range[1]);
+    const to = parseDateParam(range[2]);
+    return from || to ? selectionFromRange({ from, to }) : null;
+  }
+  return null;
+};
+
+/** The month a month-only screen shows for a stored selection: a range maps
+ * to the month it ends in (its most recent data), all time to `fallback`. */
+export const selectionMonth = (selection: PeriodSelection | null, fallback: number): number => {
+  if (!selection || selection.kind === 'all') return fallback;
+  if (selection.kind === 'month') return selection.month;
+  const day = selection.to ?? selection.from!;
+  return Number(day.slice(0, 4)) * 100 + Number(day.slice(5, 7));
+};
+
+/** Client-side write; a year is long enough to feel sticky, short enough to expire. */
+export const writePeriodCookie = (selection: PeriodSelection): void => {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${PERIOD_COOKIE}=${encodePeriodCookie(selection)}; path=/; max-age=31536000; samesite=lax`;
+};
