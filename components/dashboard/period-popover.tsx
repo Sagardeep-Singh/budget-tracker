@@ -145,21 +145,30 @@ const PeriodPickerBody = ({
           }}
         >
           <Label htmlFor={`${idPrefix}-from`}>Custom range</Label>
-          <div className="flex items-center gap-2">
+          {/* stacked: two native date inputs don't fit side by side in the
+              280px popover */}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+            <span aria-hidden className="text-ink-muted text-xs">
+              From
+            </span>
             <Input
               id={`${idPrefix}-from`}
               aria-label="From"
               type="date"
               value={customDraft.from}
               onChange={(e) => onCustomDraftChange({ ...customDraft, from: e.target.value })}
+              className="w-full min-w-0"
             />
-            <span className="text-ink-muted text-xs">to</span>
+            <span aria-hidden className="text-ink-muted text-xs">
+              To
+            </span>
             <Input
               id={`${idPrefix}-to`}
               aria-label="To"
               type="date"
               value={customDraft.to}
               onChange={(e) => onCustomDraftChange({ ...customDraft, to: e.target.value })}
+              className="w-full min-w-0"
             />
           </div>
           <Button type="submit" disabled={customInvalid} className="mt-3 w-full py-2">
