@@ -1,10 +1,15 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { prisma } from '@/lib/db/prisma';
 import { isEmailConfigured, sendEmail } from '@/lib/email/brevo';
+import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
 
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
+// The cooldown alone still allowed ~1,440 sends a day per user; this caps the
+// Brevo quota one account can burn.
+const RESEND_HOURLY_LIMIT = 5;
+const RESEND_WINDOW_MS = 60 * 60 * 1000;
 
 const hashToken = (rawToken: string): string => createHash('sha256').update(rawToken).digest('hex');
 
@@ -56,9 +61,12 @@ export const issueAndSendVerificationEmail = async (
 export type ResendResult = { ok: true } | { ok: false; retryAfterMs: number };
 
 /**
- * Resend is a common, expected outcome, not an exception — a cooldown hit
- * returns a discriminated result instead of throwing, same shape as the AI
- * suggestion path's provider-outage handling.
+ * Resend is a common, expected outcome, not an exception — a cooldown or
+ * hourly-limit hit returns a discriminated result instead of throwing, same
+ * shape as the AI suggestion path's provider-outage handling.
+ *
+ * The 60s cooldown is checked first so a click inside it doesn't use up one
+ * of the hour's {@link RESEND_HOURLY_LIMIT} sends.
  */
 export const resendVerificationEmail = async (
   userId: string,
@@ -70,6 +78,15 @@ export const resendVerificationEmail = async (
     if (elapsed < RESEND_COOLDOWN_MS) {
       return { ok: false, retryAfterMs: RESEND_COOLDOWN_MS - elapsed };
     }
+  }
+
+  try {
+    await checkRateLimit('verify-resend:user', userId, RESEND_HOURLY_LIMIT, RESEND_WINDOW_MS);
+  } catch (error) {
+    if (error instanceof RateLimitedError) {
+      return { ok: false, retryAfterMs: error.retryAfterMs };
+    }
+    throw error;
   }
 
   await issueAndSendVerificationEmail(userId, email);
