@@ -30,6 +30,19 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
   pendingReimbursementsOnly: false,
 };
 
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** First and last day (yyyy-mm-dd) of the month containing `now`, in local time. */
+export const getCurrentMonthRange = (now: Date = new Date()): { from: string; to: string } => {
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return {
+    from: `${year}-${pad2(month + 1)}-01`,
+    to: `${year}-${pad2(month + 1)}-${pad2(lastDay)}`,
+  };
+};
+
 const splitIds = (value: string | null): string[] =>
   value
     ? value
