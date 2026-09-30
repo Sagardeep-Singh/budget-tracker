@@ -47,6 +47,7 @@ export const SidebarNav = ({
             </span>
             {item.badge !== undefined && (
               <span
+                data-testid={`nav-badge-${item.label.toLowerCase()}`}
                 className={cn(
                   'rounded-full px-1.5 py-0.5 font-mono text-[11px] tabular-nums',
                   active

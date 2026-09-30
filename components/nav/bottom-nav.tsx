@@ -41,7 +41,7 @@ export const BottomNav = ({ counts }: { counts: NavCounts }): React.ReactElement
       href: '/transactions',
       label: 'Transactions',
       icon: <Receipt size={20} />,
-      showDot: counts.transactions > 0,
+      showDot: false,
       alert: false,
     },
     {
@@ -55,7 +55,7 @@ export const BottomNav = ({ counts }: { counts: NavCounts }): React.ReactElement
       href: '/budgets',
       label: 'Budgets',
       icon: <PiggyBank size={20} />,
-      showDot: counts.budgets > 0,
+      showDot: false,
       alert: false,
     },
   ];
@@ -104,7 +104,7 @@ export const BottomNav = ({ counts }: { counts: NavCounts }): React.ReactElement
       </nav>
 
       <Modal key={`more-${dialogKey}`} open={moreOpen} onClose={closeMore} title="More">
-        <SidebarNav items={buildMoreItems(counts)} onNavigate={closeMore} />
+        <SidebarNav items={buildMoreItems()} onNavigate={closeMore} />
         <form action={signOutAction} className="border-line mt-4 border-t pt-4">
           <button
             type="submit"
