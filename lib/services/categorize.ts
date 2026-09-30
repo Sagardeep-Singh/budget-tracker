@@ -1,5 +1,6 @@
 import { monthRange } from '@/lib/date';
 import { prisma } from '@/lib/db/prisma';
+import { rangeToDates, type DateRange } from '@/lib/period-selection';
 
 export type CategoryRuleMatcher = { categoryId: string; matchText: string; priority: number };
 
@@ -51,7 +52,13 @@ export type CategorizeQueueRow = {
   why: string | null;
 };
 
-export const getCategorizeQueue = async (userId: string): Promise<CategorizeQueueRow[]> => {
+/** `range` narrows the queue to the page's selected period; omitted (or both
+ * sides null) is all time, the default for a triage queue. */
+export const getCategorizeQueue = async (
+  userId: string,
+  range: DateRange = { from: null, to: null },
+): Promise<CategorizeQueueRow[]> => {
+  const date = rangeToDates(range);
   const rules = await prisma.categoryRule.findMany({
     where: { userId },
     include: { category: { select: { name: true } } },
@@ -60,7 +67,14 @@ export const getCategorizeQueue = async (userId: string): Promise<CategorizeQueu
   const transactions = await prisma.transaction.findMany({
     // a transfer leg or a card payment isn't spending or income — it never
     // needs a category, so keep it out of the triage queue entirely
-    where: { userId, categoryId: null, skippedAt: null, isTransfer: false, isPayment: false },
+    where: {
+      userId,
+      categoryId: null,
+      skippedAt: null,
+      isTransfer: false,
+      isPayment: false,
+      ...(date.gte || date.lt ? { date } : {}),
+    },
     include: { account: { select: { name: true } } },
     orderBy: { date: 'desc' },
   });

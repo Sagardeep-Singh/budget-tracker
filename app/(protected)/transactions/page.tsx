@@ -4,6 +4,7 @@ import { listAccounts } from '@/lib/services/accounts';
 import { listCategories } from '@/lib/services/categories';
 import { TransactionsView } from '@/components/transactions/transactions-view';
 import { ScreenHeader } from '@/components/nav/screen-header';
+import { DateRangePopover } from '@/components/dashboard/period-popover';
 
 const TransactionsPage = async (): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
@@ -16,7 +17,11 @@ const TransactionsPage = async (): Promise<React.ReactElement> => {
 
   return (
     <div className="animate-[fade-up_0.3s_ease-out]">
-      <ScreenHeader title="Transactions" description="Every dollar in and out, in one ledger." />
+      <ScreenHeader
+        title="Transactions"
+        description="Every dollar in and out, in one ledger."
+        periodSlot={<DateRangePopover />}
+      />
       <TransactionsView
         initialTransactions={transactions}
         accounts={accounts}

@@ -9,6 +9,7 @@ import { SpendingLineChart } from '@/components/trends/spending-line-chart';
 import { CategoryBreakdownBar } from '@/components/trends/category-breakdown-bar';
 import { SpendingMovers } from '@/components/trends/spending-movers';
 import { currentMonthNumber, daysElapsedInMonth } from '@/lib/format';
+import { monthToRange } from '@/lib/period-selection';
 
 const VALID_RANGES: TrendsRange[] = [3, 6, 12];
 
@@ -143,7 +144,11 @@ const TrendsPage = async ({
                 <h2 className="font-display text-base font-semibold">Notable movers</h2>
                 <span className="text-ink-muted text-xs">vs prior {rangeLabel}</span>
               </div>
-              <SpendingMovers movers={data.movers} />
+              <SpendingMovers
+                movers={data.movers}
+                from={monthToRange(firstMonth).from}
+                to={monthToRange(lastMonth).to}
+              />
             </div>
           </div>
         </div>

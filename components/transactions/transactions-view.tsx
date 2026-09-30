@@ -19,15 +19,8 @@ import { Money } from '@/components/ui/money';
 import { TransactionForm } from '@/components/transactions/transaction-form';
 import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
 import { MatchTransfersDialog } from '@/components/transactions/match-transfers-dialog';
-import { PeriodPicker, type PeriodMode } from '@/components/transactions/period-picker';
+import { StatementPicker } from '@/components/transactions/period-picker';
 import { cn } from '@/lib/cn';
-import {
-  getCalendarMonthPeriod,
-  getNextStatementPeriod,
-  getPreviousStatementPeriod,
-  getStatementPeriod,
-  type Period,
-} from '@/lib/statement';
 import {
   countActiveFilterGroups,
   DEFAULT_TRANSACTION_FILTERS,
@@ -43,9 +36,24 @@ import type { FrontendTransaction } from '@/lib/services/transactions';
 import { formatDate } from '@/lib/format';
 import { categoryColorVar } from '@/lib/ui/category-color';
 
-const toYyyymm = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
-
 type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
+
+/** The quick pills are shortcuts into the same `type` / `uncategorizedOnly`
+ * filters the dialog edits, so the two can never disagree. A combination the
+ * pills can't express (set from the dialog) leaves no pill highlighted. */
+const QUICK_FILTERS: Record<QuickFilter, Pick<TransactionFilters, 'type' | 'uncategorizedOnly'>> = {
+  all: { type: null, uncategorizedOnly: false },
+  uncategorized: { type: null, uncategorizedOnly: true },
+  spending: { type: 'EXPENSE', uncategorizedOnly: false },
+  income: { type: 'INCOME', uncategorizedOnly: false },
+};
+
+const activeQuickFilter = (filters: TransactionFilters): QuickFilter | null =>
+  (Object.keys(QUICK_FILTERS) as QuickFilter[]).find(
+    (key) =>
+      QUICK_FILTERS[key].type === filters.type &&
+      QUICK_FILTERS[key].uncategorizedOnly === filters.uncategorizedOnly,
+  ) ?? null;
 
 const groupByDay = (list: FrontendTransaction[]): [string, FrontendTransaction[]][] => {
   const sorted = [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -78,10 +86,7 @@ export const TransactionsView = ({
   const [deletePending, setDeletePending] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
   const [matchResult, setMatchResult] = useState<string | null>(null);
-  const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
-  const [periodAnchor, setPeriodAnchor] = useState(() => new Date());
   const [mobileSearch, setMobileSearch] = useState('');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
   const [filtersDialogKey, setFiltersDialogKey] = useState(0);
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
@@ -154,50 +159,12 @@ export const TransactionsView = ({
 
   const selectedAccountId = filters.accountIds.length === 1 ? filters.accountIds[0] : null;
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
-  const canUseStatementView =
-    selectedAccount?.type === 'CREDIT_CARD' && !!selectedAccount.statementDay;
+  const isCreditCard = selectedAccount?.type === 'CREDIT_CARD';
+  const quickFilter = activeQuickFilter(filters);
 
   const openFiltersDialog = (): void => {
     setFiltersDialogKey((k) => k + 1);
     setFiltersDialogOpen(true);
-  };
-
-  const handleApplyFilters = (next: TransactionFilters): void => {
-    // Switching away from (or into) exactly one selected account changes
-    // whether the statement/month Period Picker is even shown, so its state
-    // resets the same way the old single-select dropdown's onChange did.
-    const nextSingleAccountId = next.accountIds.length === 1 ? next.accountIds[0] : null;
-    if (nextSingleAccountId !== selectedAccountId) {
-      setPeriodMode('ALL');
-      setPeriodAnchor(new Date());
-    }
-    pushFilters(next);
-  };
-
-  const period: Period | null = useMemo(() => {
-    if (periodMode === 'ALL') return null;
-    if (periodMode === 'STATEMENT' && selectedAccount?.statementDay) {
-      return getStatementPeriod(selectedAccount.statementDay, periodAnchor);
-    }
-    if (periodMode === 'MONTH') {
-      return getCalendarMonthPeriod(toYyyymm(periodAnchor));
-    }
-    return null;
-  }, [periodMode, periodAnchor, selectedAccount]);
-
-  const shiftPeriod = (direction: 'prev' | 'next'): void => {
-    if (!period) return;
-    if (periodMode === 'STATEMENT' && selectedAccount?.statementDay) {
-      const next =
-        direction === 'prev'
-          ? getPreviousStatementPeriod(selectedAccount.statementDay, period)
-          : getNextStatementPeriod(selectedAccount.statementDay, period);
-      setPeriodAnchor(next.start);
-      return;
-    }
-    const anchor = new Date(periodAnchor);
-    anchor.setUTCMonth(anchor.getUTCMonth() + (direction === 'prev' ? -1 : 1));
-    setPeriodAnchor(anchor);
   };
 
   const openCreate = (): void => {
@@ -247,14 +214,9 @@ export const TransactionsView = ({
     router.refresh();
   };
 
-  const filtered = initialTransactions.filter((t) => {
-    if (!matchesTransactionFilters(t, effectiveFilters)) return false;
-    if (period) {
-      const date = new Date(t.date);
-      if (date < period.start || date >= period.end) return false;
-    }
-    return true;
-  });
+  const filtered = initialTransactions.filter((t) =>
+    matchesTransactionFilters(t, effectiveFilters),
+  );
 
   // Payments toward a credit card's balance settle the *previous* statement,
   // and both legs of a transfer between the user's own accounts are money that
@@ -298,12 +260,14 @@ export const TransactionsView = ({
 
   const days = groupByDay(filtered);
 
-  const uncategorizedCount = filtered.filter((t) => !t.categoryId).length;
+  // Counted without the pill-controlled filters, so the badge doesn't drop
+  // to its own subset (or to zero) when Spending/Income is selected.
+  const uncategorizedCount = initialTransactions.filter(
+    (t) =>
+      !t.categoryId && matchesTransactionFilters(t, { ...effectiveFilters, ...QUICK_FILTERS.all }),
+  ).length;
   const searchLower = mobileSearch.trim().toLowerCase();
   const mobileFiltered = filtered.filter((t) => {
-    if (quickFilter === 'uncategorized' && t.categoryId) return false;
-    if (quickFilter === 'spending' && t.type !== 'EXPENSE') return false;
-    if (quickFilter === 'income' && t.type !== 'INCOME') return false;
     if (!searchLower) return true;
     return (
       (t.payee ?? '').toLowerCase().includes(searchLower) ||
@@ -380,21 +344,16 @@ export const TransactionsView = ({
         </p>
       )}
 
-      {selectedAccountId && (
-        <div className="mt-3 hidden lg:block">
-          <PeriodPicker
-            mode={periodMode}
-            onModeChange={(m) => {
-              setPeriodMode(m);
-              setPeriodAnchor(new Date());
-            }}
-            period={period}
-            onPrev={() => shiftPeriod('prev')}
-            onNext={() => shiftPeriod('next')}
-            allowStatement={canUseStatementView}
-          />
-          {selectedAccount?.type === 'CREDIT_CARD' && !selectedAccount.statementDay && (
-            <p className="text-ink-muted mt-1 text-xs">
+      {isCreditCard && (
+        <div className="mt-3">
+          {selectedAccount.statementDay ? (
+            <StatementPicker
+              statementDay={selectedAccount.statementDay}
+              range={{ from: filters.from, to: filters.to }}
+              onSelect={(range) => pushFilters({ ...filters, ...range })}
+            />
+          ) : (
+            <p className="text-ink-muted text-xs">
               Set a statement day on this account to view by statement.
             </p>
           )}
@@ -404,7 +363,6 @@ export const TransactionsView = ({
       <div className="border-line bg-paper-raised mt-3.5 hidden items-start gap-3 rounded-[14px] border px-6 py-3.5 lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-6">
         <span className="text-ink-muted text-[12.5px] font-medium whitespace-nowrap">
           {filtered.length} transaction{filtered.length === 1 ? '' : 's'}
-          {period ? ' in this period' : ''}
         </span>
         {/* Wraps rather than scrolls below lg: a scroll container would hide Net
             off-screen with no affordance. */}
@@ -590,7 +548,7 @@ export const TransactionsView = ({
             <button
               key={key}
               type="button"
-              onClick={() => setQuickFilter(key)}
+              onClick={() => pushFilters({ ...filters, ...QUICK_FILTERS[key] })}
               className={cn(
                 'shrink-0 rounded-full px-3.5 py-2 text-[12.5px] font-medium',
                 quickFilter === key
@@ -741,7 +699,7 @@ export const TransactionsView = ({
         open={filtersDialogOpen}
         onClose={() => setFiltersDialogOpen(false)}
         filters={filters}
-        onApply={handleApplyFilters}
+        onApply={pushFilters}
         accounts={accounts}
         categories={categories}
       />

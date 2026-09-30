@@ -4,6 +4,7 @@ import {
   getNextStatementPeriod,
   getPreviousStatementPeriod,
   getStatementPeriod,
+  isStatementPeriod,
 } from '@/lib/statement';
 
 const iso = (date: Date): string => date.toISOString();
@@ -56,5 +57,20 @@ describe('getCalendarMonthPeriod', () => {
     const period = getCalendarMonthPeriod(202512);
     expect(iso(period.start)).toBe('2025-12-01T00:00:00.000Z');
     expect(iso(period.end)).toBe('2026-01-01T00:00:00.000Z');
+  });
+});
+
+describe('isStatementPeriod', () => {
+  it('is true for exactly one statement period', () => {
+    expect(isStatementPeriod(15, getStatementPeriod(15, new Date('2026-03-10T00:00:00Z')))).toBe(
+      true,
+    );
+  });
+
+  it('is false for a calendar month or a period for a different close day', () => {
+    expect(isStatementPeriod(15, getCalendarMonthPeriod(202603))).toBe(false);
+    expect(isStatementPeriod(15, getStatementPeriod(20, new Date('2026-03-10T00:00:00Z')))).toBe(
+      false,
+    );
   });
 });

@@ -170,8 +170,15 @@ describe('getSpendingTrends', () => {
 
     const result = await getSpendingTrends('user-1', { month: 202602, range: 3 });
 
-    expect(result.movers[0]).toMatchObject({ categoryName: 'Dining', amount: 120, tone: 'rose' });
+    // categoryId lets the Trends page link each mover to its transactions
+    expect(result.movers[0]).toMatchObject({
+      categoryId: 'cat-dining',
+      categoryName: 'Dining',
+      amount: 120,
+      tone: 'rose',
+    });
     expect(result.movers[1]).toMatchObject({
+      categoryId: 'cat-groceries',
       categoryName: 'Groceries',
       amount: -40,
       tone: 'sky',

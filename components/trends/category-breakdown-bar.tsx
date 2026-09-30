@@ -28,6 +28,7 @@ export const CategoryBreakdownBar = ({
   );
   const maxTotal = Math.max(1, ...totalByMonth.values());
   const isEmpty = categories.length === 0;
+  const inProgress = months.find((m) => m.month === currentMonthNumber());
 
   return (
     <div>
@@ -59,7 +60,7 @@ export const CategoryBreakdownBar = ({
       {isEmpty ? (
         <p className="text-ink-muted py-10 text-center text-sm">No expenses in this range.</p>
       ) : (
-        <div className="flex h-[160px] items-end gap-3">
+        <div className="flex h-[160px] items-end gap-1.5 sm:gap-3">
           {breakdown.map((monthBreakdown) => {
             const monthLabel = months.find((m) => m.month === monthBreakdown.month)?.label ?? '';
             const total = totalByMonth.get(monthBreakdown.month) ?? 0;
@@ -67,7 +68,12 @@ export const CategoryBreakdownBar = ({
             const isInProgress = monthBreakdown.month === currentMonthNumber();
             const elapsedDays = isInProgress ? daysElapsedInMonth(monthBreakdown.month) : null;
             return (
-              <div key={monthBreakdown.month} className="flex h-full flex-1 flex-col justify-end">
+              // min-w-0: without it a column can't shrink below its label, so
+              // a long label pushed the last bar out of the card at 12 months.
+              <div
+                key={monthBreakdown.month}
+                className="flex h-full min-w-0 flex-1 flex-col justify-end"
+              >
                 <div
                   className={cn(
                     'flex flex-col justify-end gap-[2px] overflow-hidden rounded-t-[4px]',
@@ -93,13 +99,25 @@ export const CategoryBreakdownBar = ({
                       );
                     })}
                 </div>
-                <div className="text-ink-muted mt-2 truncate text-center font-mono text-[11px] whitespace-nowrap">
-                  {isInProgress ? `${monthLabel} · ${elapsedDays} days` : monthLabel}
+                {/* "*" like the line chart above, with the day count in the
+                    footnote below: "Sep · 30 days" doesn't fit a 12-month column. */}
+                {/* flex-centered, not truncated: a label a bit wider than a
+                    12-month column spills evenly into the gaps on both sides. */}
+                <div
+                  className="text-ink-muted mt-2 flex justify-center font-mono text-[11px] whitespace-nowrap"
+                  title={isInProgress ? `${monthLabel}: ${elapsedDays} days so far` : undefined}
+                >
+                  {isInProgress ? `${monthLabel}*` : monthLabel}
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+      {!isEmpty && inProgress && (
+        <p className="text-ink-muted mt-3 text-[11.5px]">
+          * {inProgress.label} in progress, {daysElapsedInMonth(inProgress.month)} days so far
+        </p>
       )}
     </div>
   );
