@@ -174,12 +174,16 @@ describe('getSpendingTrends', () => {
     expect(result.movers[0]).toMatchObject({
       categoryId: 'cat-dining',
       categoryName: 'Dining',
+      current: 170,
+      prior: 50,
       amount: 120,
       tone: 'rose',
     });
     expect(result.movers[1]).toMatchObject({
       categoryId: 'cat-groceries',
       categoryName: 'Groceries',
+      current: 0,
+      prior: 40,
       amount: -40,
       tone: 'sky',
     });

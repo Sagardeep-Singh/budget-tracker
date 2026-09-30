@@ -10,8 +10,9 @@ const money = (value: number): string =>
 /**
  * Ranked list, not a chart — a handful of headline $ changes is a KPI
  * list per the dataviz skill, not a worse-to-read bar chart of deltas.
- * Each row opens that category's spending for the selected range (not the
- * prior one it's compared against), filtered the same way trends counts it.
+ * Each row shows prior → current spend so the delta has context, and opens
+ * that category's spending for the selected range (not the prior one it's
+ * compared against), filtered the same way trends counts it.
  */
 export const SpendingMovers = ({
   movers,
@@ -39,22 +40,28 @@ export const SpendingMovers = ({
             })}
             className="hover:bg-paper flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm"
           >
-            <span className="text-ink truncate">{m.categoryName}</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="text-ink truncate">{m.categoryName}</span>
+              <span className="text-ink-muted font-mono text-xs tabular-nums">
+                {money(m.prior)} → {money(m.current)}
+              </span>
+            </span>
             <span className="flex shrink-0 items-center gap-1.5">
-              <span
-                className={cn(
-                  'font-mono text-[13.5px] tabular-nums',
-                  m.tone === 'rose' ? 'text-rose' : 'text-sky',
-                )}
-              >
-                {m.amount >= 0 ? '+' : '−'}
-                {money(m.amount)}
-                {m.pctChange !== null && (
-                  <span className="text-ink-muted ml-1.5">
-                    ({m.pctChange >= 0 ? '+' : ''}
-                    {Math.round(m.pctChange)}%)
-                  </span>
-                )}
+              <span className="flex flex-col items-end">
+                <span
+                  className={cn(
+                    'font-mono text-[13.5px] tabular-nums',
+                    m.tone === 'rose' ? 'text-rose' : 'text-sky',
+                  )}
+                >
+                  {m.amount >= 0 ? '+' : '−'}
+                  {money(m.amount)}
+                </span>
+                <span className="text-ink-muted font-mono text-xs tabular-nums">
+                  {m.pctChange === null
+                    ? 'new'
+                    : `${m.pctChange >= 0 ? '+' : '−'}${Math.abs(Math.round(m.pctChange))}%`}
+                </span>
               </span>
               <ChevronRight size={14} className="text-ink-muted" />
             </span>

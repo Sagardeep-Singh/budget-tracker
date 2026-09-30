@@ -16,6 +16,8 @@ export type TrendsCategoryMonth = {
 export type TrendsMover = {
   categoryId: string;
   categoryName: string;
+  current: number;
+  prior: number;
   amount: number;
   pctChange: number | null;
   tone: 'rose' | 'sky';
@@ -245,6 +247,8 @@ export const getSpendingTrends = async (
       return {
         categoryId,
         categoryName: categoryNames.get(categoryId) ?? 'Uncategorized',
+        current,
+        prior,
         amount,
         pctChange: prior > 0 ? (amount / prior) * 100 : null,
         tone: (amount >= 0 ? 'rose' : 'sky') as 'rose' | 'sky',
