@@ -54,9 +54,10 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await page.getByPlaceholder('Search payee', { exact: true }).fill('');
   await expect(paycheckRow).toBeVisible();
 
-  // Only the default current-month date range is active: the badge reads "1".
+  // The default current-month range lives in the period selector, not the
+  // dialog, so the badge starts empty.
   const filtersButton = page.getByRole('button', { name: /^Filters/ });
-  await expect(filtersButton.locator('span')).toHaveText('1');
+  await expect(filtersButton.locator('span')).toHaveCount(0);
 
   await filtersButton.click();
   const dialog = page.getByRole('dialog');
@@ -67,8 +68,8 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await dialog.getByRole('button', { name: 'Apply' }).click();
   await expect(dialog).toBeHidden();
 
-  // Three active filter groups (month range + type + amount range) -> badge reads "3".
-  await expect(filtersButton.locator('span')).toHaveText('3');
+  // Two active filter groups (type + amount range) -> badge reads "2".
+  await expect(filtersButton.locator('span')).toHaveText('2');
   await expect(paycheckRow).toBeVisible();
   await expect(coffeeRow).toBeHidden();
 
@@ -76,12 +77,12 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await expect(page).toHaveURL(/type=INCOME/);
   await expect(page).toHaveURL(/amountMin=100/);
   await page.reload();
-  await expect(page.getByRole('button', { name: /^Filters/ }).locator('span')).toHaveText('3');
+  await expect(page.getByRole('button', { name: /^Filters/ }).locator('span')).toHaveText('2');
   await expect(page.locator('.ledger-row').filter({ hasText: paycheckPayee })).toBeVisible();
   await expect(page.locator('.ledger-row').filter({ hasText: coffeePayee })).toBeHidden();
 
-  // "Reset" inside the dialog clears every group (including the default month
-  // range) and the badge disappears.
+  // "Reset" inside the dialog clears every group and the badge disappears. The
+  // period selector's month stays put.
   await page.getByRole('button', { name: /^Filters/ }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Reset' }).click();
@@ -89,4 +90,38 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await expect(page.getByRole('button', { name: /^Filters/ }).locator('span')).toHaveCount(0);
   await expect(page.locator('.ledger-row').filter({ hasText: coffeePayee })).toBeVisible();
   await expect(page.locator('.ledger-row').filter({ hasText: paycheckPayee })).toBeVisible();
+});
+
+test('the period selector, quick filters and dialog share one URL state', async ({ page }) => {
+  await login(page);
+  await page.goto('/transactions');
+  await expect(page).toHaveURL(/from=\d{4}-\d{2}-01&to=/);
+
+  const now = new Date();
+  const monthName = now.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  const period = page.getByRole('button', { name: `${monthName} ${now.getUTCFullYear()}` });
+  await expect(period).toBeVisible();
+
+  // Custom range from the selector writes from/to and relabels the pill.
+  await period.click();
+  // The picker body also sits in the (hidden) mobile sheet, so scope to the visible one.
+  await page
+    .getByLabel('From', { exact: true })
+    .filter({ visible: true })
+    .fill(`${now.getUTCFullYear()}-01-03`);
+  await page
+    .getByLabel('To', { exact: true })
+    .filter({ visible: true })
+    .fill(`${now.getUTCFullYear()}-01-20`);
+  await page.getByRole('button', { name: 'Apply range' }).click();
+  await expect(page).toHaveURL(new RegExp(`from=${now.getUTCFullYear()}-01-03`));
+  await expect(page.getByRole('button', { name: /^Jan 3 – Jan 20, \d{4}$/ })).toBeVisible();
+
+  // "Spending" in the dialog is the same filter the mobile pill writes.
+  await page.getByRole('button', { name: /^Filters/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Spending', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page).toHaveURL(/type=EXPENSE/);
+  // Applying dialog filters keeps the custom range.
+  await expect(page).toHaveURL(new RegExp(`from=${now.getUTCFullYear()}-01-03`));
 });

@@ -5,6 +5,8 @@ import { getUncategorizedMonthSummary } from '@/lib/services/categorize';
 import { BudgetsView } from '@/components/budgets/budgets-view';
 import { ScreenHeader } from '@/components/nav/screen-header';
 import { PeriodPopover } from '@/components/dashboard/period-popover';
+import { getStoredPeriod } from '@/lib/period-cookie';
+import { selectionMonth } from '@/lib/period-selection';
 
 const currentMonth = (): number => {
   const now = new Date();
@@ -19,7 +21,10 @@ const BudgetsPage = async ({
   const { month: monthParam } = await searchParams;
   const session = await getServerAuthSession();
   const userId = session!.user.id;
-  const month = monthParam ? Number(monthParam) : currentMonth();
+  // No month in the URL: open on the period last picked on any screen.
+  const month = monthParam
+    ? Number(monthParam)
+    : selectionMonth(await getStoredPeriod(), currentMonth());
   const [budgets, categories, uncategorized] = await Promise.all([
     listBudgets(userId, month),
     listCategories(userId),

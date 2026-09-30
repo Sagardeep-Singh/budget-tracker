@@ -6,6 +6,7 @@ import {
   matchesTransactionFilters,
   parseTransactionFilters,
   transactionFiltersToSearchParams,
+  transactionsHref,
   type TransactionFilters,
 } from '@/lib/transactions/transaction-filters';
 import type { FrontendTransaction } from '@/lib/services/transactions';
@@ -62,15 +63,25 @@ describe('countActiveFilterGroups', () => {
     ).toBe(3);
   });
 
-  it('counts a date range, amount range, and type as one group each', () => {
+  it('counts an amount range and type as one group each', () => {
+    expect(
+      countActiveFilterGroups({
+        ...DEFAULT_TRANSACTION_FILTERS,
+        amountMin: '10',
+        amountMax: '20',
+        type: 'INCOME',
+      }),
+    ).toBe(2);
+  });
+
+  it('excludes the date range, which belongs to the period selector, not the dialog', () => {
     expect(
       countActiveFilterGroups({
         ...DEFAULT_TRANSACTION_FILTERS,
         from: '2026-01-01',
-        amountMin: '10',
-        type: 'INCOME',
+        to: '2026-01-31',
       }),
-    ).toBe(3);
+    ).toBe(0);
   });
 
   it('excludes the payee search box from the count', () => {
@@ -247,5 +258,32 @@ describe('pendingReimbursementsOnly', () => {
     expect(params.toString()).toBe('pendingReimbursementsOnly=true');
     expect(parseTransactionFilters(params)).toEqual(on);
     expect(countActiveFilterGroups(on)).toBe(1);
+  });
+});
+
+describe('transactionsHref', () => {
+  it('is the bare path when nothing is filtered', () => {
+    expect(transactionsHref({})).toBe('/transactions');
+  });
+
+  it('serializes only the given fields, in the same shape the page parses', () => {
+    const href = transactionsHref({
+      from: '2026-09-01',
+      to: '2026-09-30',
+      categoryIds: ['cat-1'],
+      type: 'EXPENSE',
+      hideTransfers: true,
+    });
+    expect(href).toBe(
+      '/transactions?from=2026-09-01&to=2026-09-30&categoryIds=cat-1&type=EXPENSE&hideTransfers=true',
+    );
+    expect(parseTransactionFilters(new URLSearchParams(href.split('?')[1]))).toEqual({
+      ...DEFAULT_TRANSACTION_FILTERS,
+      from: '2026-09-01',
+      to: '2026-09-30',
+      categoryIds: ['cat-1'],
+      type: 'EXPENSE',
+      hideTransfers: true,
+    });
   });
 });

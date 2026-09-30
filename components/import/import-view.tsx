@@ -12,7 +12,12 @@ import { postJSON } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { categoryColorVar } from '@/lib/ui/category-color';
-import { resolveImportedTransactionType } from '@/lib/import';
+import {
+  guessSplitColumns,
+  parseCsvAmount,
+  resolveImportedTransactionType,
+  resolveSplitColumnAmount,
+} from '@/lib/import';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendImportBatch } from '@/lib/services/importBatches';
@@ -41,6 +46,9 @@ type PreviewRow = {
 
 const NONE = '__none__';
 
+/** One signed amount column, or separate credit (money in) / debit (money out) columns. */
+type AmountLayout = 'single' | 'split';
+
 export const ImportView = ({
   accounts,
   categories,
@@ -55,7 +63,10 @@ export const ImportView = ({
   const [fileName, setFileName] = useState('');
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [dateCol, setDateCol] = useState('');
+  const [amountLayout, setAmountLayout] = useState<AmountLayout>('single');
   const [amountCol, setAmountCol] = useState('');
+  const [creditCol, setCreditCol] = useState('');
+  const [debitCol, setDebitCol] = useState('');
   const [payeeCol, setPayeeCol] = useState('');
   const [noteCol, setNoteCol] = useState('');
   const [flipSigns, setFlipSigns] = useState(false);
@@ -90,7 +101,14 @@ export const ImportView = ({
         const guess = (needle: string): string =>
           cols.find((c) => c.toLowerCase().includes(needle)) ?? '';
         setDateCol(guess('date'));
-        setAmountCol(guess('amount'));
+        const amount = guess('amount');
+        const split = guessSplitColumns(cols);
+        setAmountCol(amount);
+        setCreditCol(split.credit);
+        setDebitCol(split.debit);
+        // Default to the split layout only when there's no amount column to
+        // fall back on and both split columns were found.
+        setAmountLayout(!amount && split.credit && split.debit ? 'split' : 'single');
         setPayeeCol(guess('payee') || guess('description') || guess('merchant'));
         setNoteCol(guess('note') || guess('memo'));
       },
@@ -104,24 +122,44 @@ export const ImportView = ({
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const isCreditAccount = selectedAccount?.type === 'CREDIT_CARD';
 
+  const amountMapped =
+    amountLayout === 'single' ? !!amountCol : !!creditCol && !!debitCol && creditCol !== debitCol;
+
   const handlePreview = async (): Promise<void> => {
-    if (!dateCol || !amountCol || !accountId) return;
-    setLoading(true);
+    if (!dateCol || !amountMapped || !accountId) return;
     setError(null);
     setFilenameWarning(null);
     setDuplicateBatch(null);
 
-    const rows = rawRows.map((row) => {
-      const amount = Number(row[amountCol]) * (flipSigns ? -1 : 1);
-      return {
-        accountId,
-        date: row[dateCol],
-        amount: Math.abs(amount),
-        type: resolveImportedTransactionType(amount, selectedAccount?.type ?? ''),
-        payee: payeeCol ? row[payeeCol] : undefined,
-        note: noteCol ? row[noteCol] : undefined,
-      };
+    const rows = rawRows.flatMap((row) => {
+      let resolved: { amount: number; type: 'INCOME' | 'EXPENSE' } | null;
+      if (amountLayout === 'split') {
+        // Blank in both columns (a balance or pending line) is dropped.
+        resolved = resolveSplitColumnAmount(row[creditCol], row[debitCol]);
+      } else {
+        const amount = (parseCsvAmount(row[amountCol]) ?? NaN) * (flipSigns ? -1 : 1);
+        resolved = {
+          amount: Math.abs(amount),
+          type: resolveImportedTransactionType(amount, selectedAccount?.type ?? ''),
+        };
+      }
+      if (!resolved) return [];
+      return [
+        {
+          accountId,
+          date: row[dateCol],
+          amount: resolved.amount,
+          type: resolved.type,
+          payee: payeeCol ? row[payeeCol] : undefined,
+          note: noteCol ? row[noteCol] : undefined,
+        },
+      ];
     });
+    if (rows.length === 0) {
+      setError('No rows have an amount in the credit or debit column.');
+      return;
+    }
+    setLoading(true);
 
     const res = await postJSON<{ rows: PreviewRow[]; filenameWarning: FilenameWarning | null }>(
       '/api/import/preview',
@@ -198,7 +236,10 @@ export const ImportView = ({
     setFileName('');
     setPreview(null);
     setDateCol('');
+    setAmountLayout('single');
     setAmountCol('');
+    setCreditCol('');
+    setDebitCol('');
     setPayeeCol('');
     setNoteCol('');
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -248,20 +289,66 @@ export const ImportView = ({
               </Select>
             </div>
             <div>
-              <Label htmlFor="amountCol">Amount column</Label>
+              <Label htmlFor="amountLayout">Amounts</Label>
               <Select
-                id="amountCol"
-                value={amountCol}
-                onChange={(e) => setAmountCol(e.target.value)}
+                id="amountLayout"
+                value={amountLayout}
+                onChange={(e) => setAmountLayout(e.target.value as AmountLayout)}
               >
-                <option value="">Select…</option>
-                {headers.map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
-                ))}
+                <option value="single">One amount column</option>
+                <option value="split">Separate credit and debit columns</option>
               </Select>
             </div>
+            {amountLayout === 'single' ? (
+              <div>
+                <Label htmlFor="amountCol">Amount column</Label>
+                <Select
+                  id="amountCol"
+                  value={amountCol}
+                  onChange={(e) => setAmountCol(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {headers.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor="creditCol">Credit column (money in)</Label>
+                  <Select
+                    id="creditCol"
+                    value={creditCol}
+                    onChange={(e) => setCreditCol(e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {headers.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="debitCol">Debit column (spending)</Label>
+                  <Select
+                    id="debitCol"
+                    value={debitCol}
+                    onChange={(e) => setDebitCol(e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {headers.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </>
+            )}
             <div>
               <Label htmlFor="payeeCol">Payee column (optional)</Label>
               <Select id="payeeCol" value={payeeCol} onChange={(e) => setPayeeCol(e.target.value)}>
@@ -285,29 +372,42 @@ export const ImportView = ({
               </Select>
             </div>
             <div className="flex items-end">
-              <Button type="button" onClick={handlePreview} icon={Eye} loading={loading}>
+              <Button
+                type="button"
+                onClick={handlePreview}
+                icon={Eye}
+                loading={loading}
+                disabled={!dateCol || !amountMapped}
+              >
                 Preview
               </Button>
             </div>
           </div>
         )}
-        <div className="bg-paper mt-3 flex items-center justify-between gap-3 rounded-xl px-3.5 py-3">
-          <p className="text-ink-muted text-xs leading-snug">
-            {isCreditAccount
-              ? 'Positive amounts are treated as charges (expenses), negative as payments or refunds (income).'
-              : 'Negative amounts are treated as expenses, positive as income.'}
+        {amountLayout === 'split' ? (
+          <p className="bg-paper text-ink-muted mt-3 rounded-xl px-3.5 py-3 text-xs leading-snug">
+            Credit amounts are imported as income (a payment or refund on a card), debit amounts as
+            spending. Rows with neither are skipped.
           </p>
-          <button
-            type="button"
-            onClick={() => setFlipSigns((v) => !v)}
-            className={cn(
-              'shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium',
-              flipSigns ? 'border-iris bg-iris-soft text-iris' : 'border-line text-ink',
-            )}
-          >
-            {flipSigns ? 'Signs flipped' : 'Flip signs'}
-          </button>
-        </div>
+        ) : (
+          <div className="bg-paper mt-3 flex items-center justify-between gap-3 rounded-xl px-3.5 py-3">
+            <p className="text-ink-muted text-xs leading-snug">
+              {isCreditAccount
+                ? 'Positive amounts are treated as charges (expenses), negative as payments or refunds (income).'
+                : 'Negative amounts are treated as expenses, positive as income.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setFlipSigns((v) => !v)}
+              className={cn(
+                'shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium',
+                flipSigns ? 'border-iris bg-iris-soft text-iris' : 'border-line text-ink',
+              )}
+            >
+              {flipSigns ? 'Signs flipped' : 'Flip signs'}
+            </button>
+          </div>
+        )}
       </Card>
 
       {error && <p className="text-rose text-sm">{error}</p>}

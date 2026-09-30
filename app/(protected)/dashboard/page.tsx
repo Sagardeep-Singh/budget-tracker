@@ -9,6 +9,8 @@ import { ExpensePie } from '@/components/dashboard/expense-pie';
 import { DayPanel } from '@/components/dashboard/day-panel';
 import { getByDayBars } from '@/lib/dashboard/day-bars';
 import { cn } from '@/lib/cn';
+import { getStoredPeriod } from '@/lib/period-cookie';
+import { selectionMonth } from '@/lib/period-selection';
 
 const money = (value: string): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
@@ -36,9 +38,13 @@ const DashboardPage = async ({
   const { day, month } = await searchParams;
   const session = await getServerAuthSession();
   const userId = session!.user.id;
+  // No month in the URL: open on the period last picked on any screen.
+  const storedMonth = month
+    ? undefined
+    : selectionMonth(await getStoredPeriod(), currentMonthNum());
   const data = await getOverviewData(userId, {
     day: day ? Number(day) : undefined,
-    month: month ? Number(month) : undefined,
+    month: month ? Number(month) : storedMonth,
   });
   const {
     hero,

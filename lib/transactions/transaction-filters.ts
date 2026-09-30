@@ -95,11 +95,11 @@ export const transactionFiltersToSearchParams = (filters: TransactionFilters): U
 
 /** Counts active filter *groups*, not selected values — three selected
  * accounts is one active group, matching the "Filters (1)" badge, not a
- * count of every individual checkbox. The payee search box is excluded: it
- * lives outside the filter dialog this badge is for. */
+ * count of every individual checkbox. The payee search box and the date
+ * range are excluded: both live outside the filter dialog this badge is for
+ * (the date range is the page's period selector). */
 export const countActiveFilterGroups = (filters: TransactionFilters): number =>
   [
-    !!(filters.from || filters.to),
     filters.accountIds.length > 0,
     filters.categoryIds.length > 0,
     !!filters.type,
@@ -110,9 +110,19 @@ export const countActiveFilterGroups = (filters: TransactionFilters): number =>
     filters.pendingReimbursementsOnly,
   ].filter(Boolean).length;
 
+/** A `/transactions` link pre-filtered to `filters` — used by drill-downs
+ * from Budgets and Trends. Unset fields stay at their defaults. */
+export const transactionsHref = (filters: Partial<TransactionFilters>): string => {
+  const query = transactionFiltersToSearchParams({
+    ...DEFAULT_TRANSACTION_FILTERS,
+    ...filters,
+  }).toString();
+  return query ? `/transactions?${query}` : '/transactions';
+};
+
 /** Every clause a transaction must pass to remain visible under the current
- * filters. Independent of the account-linked statement/month Period Picker,
- * which the view applies separately and ANDs with this. */
+ * filters, including the period selector's `from`/`to` (the credit card
+ * statement view writes into the same pair). */
 export const matchesTransactionFilters = (
   transaction: FrontendTransaction,
   filters: TransactionFilters,
