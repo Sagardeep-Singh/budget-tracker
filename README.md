@@ -38,7 +38,7 @@ is invisible. See `.env.example` for the optional `AI_ANTHROPIC_BASE_URL` / `AI_
 test overrides and `docs/runbooks/rotate-secret-encryption-key.md` for rotation.
 
 For a production deploy: run `npm run prisma:deploy` to apply migrations. On serverless hosts,
-set `PRISMA_DATABASE_URL` to a pooled connection URL (see `.env.example`), otherwise concurrent
+set `DATABASE_PRISMA_DATABASE_URL` to a pooled connection URL (see `.env.example`), otherwise concurrent
 function instances can hit "too many connections" on the direct `DATABASE_URL`. `npm run
 prisma:bootstrap-admin` is optional — it seeds/updates one known account by email, useful for an
 admin or demo login.
