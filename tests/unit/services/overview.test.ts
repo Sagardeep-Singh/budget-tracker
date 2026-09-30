@@ -158,8 +158,20 @@ describe('getOverviewData', () => {
     const result = await getOverviewData('user-1', { month: 202603 });
 
     expect(result.expenseBreakdown).toEqual([
-      { categoryId: 'cat-1', categoryName: 'Groceries', amount: '100.00', fraction: 100 / 140 },
-      { categoryId: null, categoryName: 'Uncategorized', amount: '40.00', fraction: 40 / 140 },
+      {
+        categoryId: 'cat-1',
+        categoryName: 'Groceries',
+        categoryIds: ['cat-1'],
+        amount: '100.00',
+        fraction: 100 / 140,
+      },
+      {
+        categoryId: null,
+        categoryName: 'Uncategorized',
+        categoryIds: [],
+        amount: '40.00',
+        fraction: 40 / 140,
+      },
     ]);
   });
 
@@ -318,7 +330,13 @@ describe('getOverviewData', () => {
 
     expect(result.hero.expense).toBe('60.00');
     expect(result.expenseBreakdown).toEqual([
-      { categoryId: 'cat-1', categoryName: 'Work', amount: '60.00', fraction: 1 },
+      {
+        categoryId: 'cat-1',
+        categoryName: 'Work',
+        categoryIds: ['cat-1'],
+        amount: '60.00',
+        fraction: 1,
+      },
     ]);
     expect(result.dayBars.find((d) => d.day === 5)?.expense).toBe(60);
     expect(result.selectedDay.spent).toBe('60.00');
@@ -373,5 +391,68 @@ describe('getOverviewData', () => {
 
     expect(result.cycleCard?.cycleSpend).toBe('100.00');
     expect(result.cycleCard?.balance).toBe('-100.00');
+  });
+
+  it('exposes the category ids behind each budget ring and expense slice for drill-downs', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        categoryId: 'cat-1',
+        month: 202603,
+        limitAmount: 500,
+        category: { name: 'Cat 1' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+    prismaMock.account.findFirst.mockResolvedValue(null);
+    // Eight named categories (80 down to 10) plus a small uncategorized spend:
+    // the top six get their own slice, the rest fold into "Other".
+    const expenses = Array.from({ length: 8 }, (_, i) => ({
+      id: `t${i + 1}`,
+      type: 'EXPENSE',
+      amount: 80 - i * 10,
+      date: new Date(Date.UTC(2026, 2, 5)),
+      isPayment: false,
+      isTransfer: false,
+      _count: { reimbursementIncomeLinks: 0 },
+      payee: 'Store',
+      categoryId: `cat-${i + 1}`,
+      category: { name: `Cat ${i + 1}` },
+    }));
+    prismaMock.transaction.findMany
+      .mockResolvedValueOnce([
+        ...expenses,
+        {
+          id: 't-uncat',
+          type: 'EXPENSE',
+          amount: 5,
+          date: new Date(Date.UTC(2026, 2, 5)),
+          isPayment: false,
+          isTransfer: false,
+          _count: { reimbursementIncomeLinks: 0 },
+          payee: 'Unknown',
+          categoryId: null,
+          category: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+
+    const result = await getOverviewData('user-1', { month: 202603 });
+
+    expect(result.budgetRings[0].categoryId).toBe('cat-1');
+    expect(result.expenseBreakdown.slice(0, 6).map((s) => s.categoryIds)).toEqual([
+      ['cat-1'],
+      ['cat-2'],
+      ['cat-3'],
+      ['cat-4'],
+      ['cat-5'],
+      ['cat-6'],
+    ]);
+    const other = result.expenseBreakdown[6];
+    expect(other.categoryName).toBe('Other');
+    expect(other.amount).toBe('35.00');
+    // Uncategorized spend folded into Other can't be expressed as an id.
+    expect(other.categoryIds).toEqual(['cat-7', 'cat-8']);
   });
 });
