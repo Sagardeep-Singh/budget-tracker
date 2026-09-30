@@ -54,7 +54,6 @@ const TrendsPage = async ({
     : selectionMonth(await getStoredPeriod(), currentMonth());
   const range = parseRange(rangeParam);
   const data = await getSpendingTrends(userId, { month, range });
-  const rangeLabel = `${range} months`;
 
   const isEmpty = data.months.every((m) => m.income === 0 && m.expense === 0);
 
@@ -146,7 +145,9 @@ const TrendsPage = async ({
             <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">
               <div className="mb-4 flex items-baseline justify-between">
                 <h2 className="font-display text-base font-semibold">Notable movers</h2>
-                <span className="text-ink-muted text-xs">vs prior {rangeLabel}</span>
+                <span className="text-ink-muted text-xs">
+                  {data.headline.priorRangeLabel} → {data.headline.currentRangeLabel}
+                </span>
               </div>
               <SpendingMovers
                 movers={data.movers}
