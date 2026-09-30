@@ -28,7 +28,31 @@ describe('appBaseUrl', () => {
     ).toBe('https://ledger.example');
   });
 
-  it('uses the deployment URL on a preview', () => {
+  it('prefers the stable branch URL on a preview', () => {
+    expect(
+      appBaseUrl(
+        env({
+          VERCEL_ENV: 'preview',
+          VERCEL_BRANCH_URL: 'ledger-git-fix-email.vercel.app',
+          VERCEL_URL: 'ledger-abc123.vercel.app',
+        }),
+      ),
+    ).toBe('https://ledger-git-fix-email.vercel.app');
+  });
+
+  it('ignores the branch URL in production', () => {
+    expect(
+      appBaseUrl(
+        env({
+          VERCEL_ENV: 'production',
+          VERCEL_BRANCH_URL: 'ledger-git-main.vercel.app',
+          VERCEL_URL: 'ledger-abc123.vercel.app',
+        }),
+      ),
+    ).toBe('https://ledger-abc123.vercel.app');
+  });
+
+  it('falls back to the deployment URL on a preview with no branch URL', () => {
     expect(
       appBaseUrl(
         env({
