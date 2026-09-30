@@ -16,6 +16,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
+import { TransactionTotals } from '@/components/transactions/transaction-totals';
 import { TransactionForm } from '@/components/transactions/transaction-form';
 import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
 import { MatchTransfersDialog } from '@/components/transactions/match-transfers-dialog';
@@ -28,6 +29,7 @@ import {
   transactionFiltersToSearchParams,
   type TransactionFilters,
 } from '@/lib/transactions/transaction-filters';
+import { summarizeTransactions } from '@/lib/transactions/transaction-summary';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
@@ -216,31 +218,7 @@ export const TransactionsView = ({
 
   const filtered = initialTransactions.filter((t) => matchesTransactionFilters(t, listFilters));
 
-  // Payments toward a credit card's balance settle the *previous* statement,
-  // and both legs of a transfer between the user's own accounts are money that
-  // never left the ledger — so neither counts toward this period's
-  // credit/debit/net; they're shown separately instead.
-  const summary = filtered.reduce(
-    (acc, t) => {
-      const amount = Number(t.amount);
-      // isPayment is checked first so a card payment keeps its existing
-      // "Payments (excluded)" treatment once transfer matching also flags it
-      if (t.isPayment) {
-        acc.payments += amount;
-      } else if (t.isTransfer) {
-        acc.transfers += amount;
-      } else if (t.isReimbursementIncome) {
-        acc.reimbursementIncome += amount;
-      } else if (t.type === 'INCOME') {
-        acc.credit += amount;
-      } else {
-        acc.debit += amount;
-      }
-      return acc;
-    },
-    { credit: 0, debit: 0, payments: 0, transfers: 0, reimbursementIncome: 0 },
-  );
-  const net = summary.credit - summary.debit;
+  const summary = summarizeTransactions(filtered);
 
   // Sorted oldest-first so a running balance across the filtered set reads
   // naturally top-to-bottom; the day groups below reverse this for display
@@ -357,51 +335,8 @@ export const TransactionsView = ({
         </div>
       )}
 
-      <div className="border-line bg-paper-raised mt-3.5 hidden items-start gap-3 rounded-[14px] border px-6 py-3.5 lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-6">
-        <span className="text-ink-muted text-[12.5px] font-medium whitespace-nowrap">
-          {filtered.length} transaction{filtered.length === 1 ? '' : 's'}
-        </span>
-        {/* Wraps rather than scrolls below lg: a scroll container would hide Net
-            off-screen with no affordance. */}
-        <div className="flex flex-wrap items-center gap-x-6.5 gap-y-2.5 text-[13.5px] lg:flex-nowrap">
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-ink-muted text-xs">Credit</span>
-            <span className="text-sky font-mono tabular-nums">
-              +{Number(summary.credit).toFixed(2)}
-            </span>
-          </span>
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-ink-muted text-xs">Debit</span>
-            <span className="text-rose font-mono tabular-nums">
-              −{Number(summary.debit).toFixed(2)}
-            </span>
-          </span>
-          <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-            <span className="text-ink-muted text-xs">Net</span>
-            <span className={cn('font-mono tabular-nums', net >= 0 ? 'text-sky' : 'text-rose')}>
-              {net >= 0 ? '+' : '−'}
-              {Math.abs(net).toFixed(2)}
-            </span>
-          </span>
-          {summary.payments > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-              <span className="text-ink-muted text-xs">Payments (excluded)</span>
-              <Money value={summary.payments} tone="neutral" />
-            </span>
-          )}
-          {summary.transfers > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-              <span className="text-ink-muted text-xs">Transfers (excluded)</span>
-              <Money value={summary.transfers} tone="neutral" />
-            </span>
-          )}
-          {summary.reimbursementIncome > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-              <span className="text-ink-muted text-xs">Reimbursement income (excluded)</span>
-              <Money value={summary.reimbursementIncome} tone="neutral" />
-            </span>
-          )}
-        </div>
+      <div className="mt-3.5 hidden lg:block">
+        <TransactionTotals summary={summary} />
       </div>
 
       <div className="hidden lg:block">
@@ -558,10 +493,7 @@ export const TransactionsView = ({
           ))}
         </div>
 
-        <p className="text-ink-muted mt-3.5 text-[12.5px]">
-          {mobileFiltered.length} transaction{mobileFiltered.length === 1 ? '' : 's'} · transfers
-          excluded
-        </p>
+        <TransactionTotals summary={summarizeTransactions(mobileFiltered)} className="mt-3.5" />
 
         {mobileFiltered.length === 0 ? (
           <p className="text-ink-muted mt-6 text-sm">
