@@ -21,6 +21,7 @@ type SummaryInput = Pick<
       | 'reimbursementExpectedAmount'
       | 'reimbursementLinkedTotal'
       | 'reimbursementCompletedManually'
+      | 'reimbursementIncomeLinkedTotal'
     >
   >;
 
@@ -35,11 +36,18 @@ const reimbursedAmount = (t: SummaryInput): number => {
     : linked;
 };
 
+/** The part of an income linked as reimbursement. Only that part is the
+ * user's own money coming back; the rest is still ordinary income. Falls
+ * back to the whole amount when the linked total isn't provided. */
+const reimbursementIncomeAmount = (t: SummaryInput, amount: number): number =>
+  Math.min(amount, Number(t.reimbursementIncomeLinkedTotal ?? amount));
+
 /** Payments toward a credit card's balance settle the *previous* statement,
  * and both legs of a transfer between the user's own accounts are money that
  * never left the ledger, so neither counts toward this period's
  * credit/debit/net; they're reported separately instead. Expenses count net
- * of what's been reimbursed, clamped at 0. */
+ * of what's been reimbursed, clamped at 0, and income linked as a
+ * reimbursement only has its linked part moved out of credit. */
 export const summarizeTransactions = (list: SummaryInput[]): TransactionSummary => {
   const summary = list.reduce(
     (acc, t) => {
@@ -51,7 +59,9 @@ export const summarizeTransactions = (list: SummaryInput[]): TransactionSummary 
       } else if (t.isTransfer) {
         acc.transfers += amount;
       } else if (t.isReimbursementIncome) {
-        acc.reimbursementIncome += amount;
+        const reimbursed = reimbursementIncomeAmount(t, amount);
+        acc.reimbursementIncome += reimbursed;
+        acc.credit += amount - reimbursed;
       } else if (t.type === 'INCOME') {
         acc.credit += amount;
       } else {

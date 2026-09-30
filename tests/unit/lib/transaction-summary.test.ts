@@ -55,6 +55,18 @@ describe('summarizeTransactions', () => {
     });
   });
 
+  it('only moves the linked part of a reimbursement income out of credit', () => {
+    const summary = summarizeTransactions([
+      tx({
+        type: 'INCOME',
+        amount: '100',
+        isReimbursementIncome: true,
+        reimbursementIncomeLinkedTotal: '30.00',
+      }),
+    ]);
+    expect(summary).toMatchObject({ credit: 70, reimbursementIncome: 30, net: 70 });
+  });
+
   it('nets linked reimbursements out of debit, clamped at 0', () => {
     const summary = summarizeTransactions([
       tx({
