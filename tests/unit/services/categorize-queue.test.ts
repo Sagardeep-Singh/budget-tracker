@@ -92,6 +92,37 @@ describe('getCategorizeQueue', () => {
     );
   });
 
+  it('narrows to the selected period, with an inclusive end date', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await getCategorizeQueue('user-1', { from: '2026-09-01', to: '2026-09-30' });
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          date: {
+            gte: new Date('2026-09-01T00:00:00Z'),
+            lt: new Date('2026-10-01T00:00:00Z'),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('leaves one side open when only one bound is set', async () => {
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await getCategorizeQueue('user-1', { from: '2026-09-01', to: null });
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ date: { gte: new Date('2026-09-01T00:00:00Z') } }),
+      }),
+    );
+  });
+
   it('scopes the queue query to the requesting user', async () => {
     prismaMock.categoryRule.findMany.mockResolvedValue([]);
     prismaMock.transaction.findMany.mockResolvedValue([]);

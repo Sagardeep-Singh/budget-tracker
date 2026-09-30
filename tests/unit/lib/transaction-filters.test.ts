@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_TRANSACTION_FILTERS,
   countActiveFilterGroups,
+  getCurrentMonthRange,
   matchesTransactionFilters,
   parseTransactionFilters,
   transactionFiltersToSearchParams,
+  transactionsHref,
   type TransactionFilters,
 } from '@/lib/transactions/transaction-filters';
 import type { FrontendTransaction } from '@/lib/services/transactions';
@@ -61,15 +63,25 @@ describe('countActiveFilterGroups', () => {
     ).toBe(3);
   });
 
-  it('counts a date range, amount range, and type as one group each', () => {
+  it('counts an amount range and type as one group each', () => {
+    expect(
+      countActiveFilterGroups({
+        ...DEFAULT_TRANSACTION_FILTERS,
+        amountMin: '10',
+        amountMax: '20',
+        type: 'INCOME',
+      }),
+    ).toBe(2);
+  });
+
+  it('excludes the date range, which belongs to the period selector, not the dialog', () => {
     expect(
       countActiveFilterGroups({
         ...DEFAULT_TRANSACTION_FILTERS,
         from: '2026-01-01',
-        amountMin: '10',
-        type: 'INCOME',
+        to: '2026-01-31',
       }),
-    ).toBe(3);
+    ).toBe(0);
   });
 
   it('excludes the payee search box from the count', () => {
@@ -95,6 +107,7 @@ describe('URL param round-trip', () => {
       hideTransfers: true,
       hidePayments: true,
       uncategorizedOnly: true,
+      pendingReimbursementsOnly: true,
     };
 
     const params = transactionFiltersToSearchParams(filters);
@@ -207,5 +220,70 @@ describe('matchesTransactionFilters', () => {
         filters,
       ),
     ).toBe(false);
+  });
+});
+
+describe('getCurrentMonthRange', () => {
+  it('returns first and last day of the month', () => {
+    expect(getCurrentMonthRange(new Date(2026, 8, 28))).toEqual({
+      from: '2026-09-01',
+      to: '2026-09-30',
+    });
+  });
+
+  it('handles February in a leap year and December', () => {
+    expect(getCurrentMonthRange(new Date(2028, 1, 10)).to).toBe('2028-02-29');
+    expect(getCurrentMonthRange(new Date(2026, 11, 31))).toEqual({
+      from: '2026-12-01',
+      to: '2026-12-31',
+    });
+  });
+});
+
+describe('pendingReimbursementsOnly', () => {
+  const on: TransactionFilters = {
+    ...DEFAULT_TRANSACTION_FILTERS,
+    pendingReimbursementsOnly: true,
+  };
+
+  it('keeps PENDING and PARTIAL reimbursable expenses only', () => {
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: 'PENDING' }), on)).toBe(true);
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: 'PARTIAL' }), on)).toBe(true);
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: 'COMPLETE' }), on)).toBe(false);
+    expect(matchesTransactionFilters(tx({ reimbursementStatus: null }), on)).toBe(false);
+  });
+
+  it('round-trips through the URL and counts as one active group', () => {
+    const params = transactionFiltersToSearchParams(on);
+    expect(params.toString()).toBe('pendingReimbursementsOnly=true');
+    expect(parseTransactionFilters(params)).toEqual(on);
+    expect(countActiveFilterGroups(on)).toBe(1);
+  });
+});
+
+describe('transactionsHref', () => {
+  it('is the bare path when nothing is filtered', () => {
+    expect(transactionsHref({})).toBe('/transactions');
+  });
+
+  it('serializes only the given fields, in the same shape the page parses', () => {
+    const href = transactionsHref({
+      from: '2026-09-01',
+      to: '2026-09-30',
+      categoryIds: ['cat-1'],
+      type: 'EXPENSE',
+      hideTransfers: true,
+    });
+    expect(href).toBe(
+      '/transactions?from=2026-09-01&to=2026-09-30&categoryIds=cat-1&type=EXPENSE&hideTransfers=true',
+    );
+    expect(parseTransactionFilters(new URLSearchParams(href.split('?')[1]))).toEqual({
+      ...DEFAULT_TRANSACTION_FILTERS,
+      from: '2026-09-01',
+      to: '2026-09-30',
+      categoryIds: ['cat-1'],
+      type: 'EXPENSE',
+      hideTransfers: true,
+    });
   });
 });

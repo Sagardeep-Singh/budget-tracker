@@ -12,6 +12,7 @@ export type TransactionFilters = {
   hideTransfers: boolean;
   hidePayments: boolean;
   uncategorizedOnly: boolean;
+  pendingReimbursementsOnly: boolean; // reimbursable expenses still awaiting money (PENDING/PARTIAL)
 };
 
 export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
@@ -26,6 +27,20 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
   hideTransfers: false,
   hidePayments: false,
   uncategorizedOnly: false,
+  pendingReimbursementsOnly: false,
+};
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** First and last day (yyyy-mm-dd) of the month containing `now`, in local time. */
+export const getCurrentMonthRange = (now: Date = new Date()): { from: string; to: string } => {
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return {
+    from: `${year}-${pad2(month + 1)}-01`,
+    to: `${year}-${pad2(month + 1)}-${pad2(lastDay)}`,
+  };
 };
 
 const splitIds = (value: string | null): string[] =>
@@ -54,6 +69,7 @@ export const parseTransactionFilters = (params: URLSearchParams): TransactionFil
     hideTransfers: params.get('hideTransfers') === 'true',
     hidePayments: params.get('hidePayments') === 'true',
     uncategorizedOnly: params.get('uncategorizedOnly') === 'true',
+    pendingReimbursementsOnly: params.get('pendingReimbursementsOnly') === 'true',
   };
 };
 
@@ -73,16 +89,17 @@ export const transactionFiltersToSearchParams = (filters: TransactionFilters): U
   if (filters.hideTransfers) params.set('hideTransfers', 'true');
   if (filters.hidePayments) params.set('hidePayments', 'true');
   if (filters.uncategorizedOnly) params.set('uncategorizedOnly', 'true');
+  if (filters.pendingReimbursementsOnly) params.set('pendingReimbursementsOnly', 'true');
   return params;
 };
 
 /** Counts active filter *groups*, not selected values — three selected
  * accounts is one active group, matching the "Filters (1)" badge, not a
- * count of every individual checkbox. The payee search box is excluded: it
- * lives outside the filter dialog this badge is for. */
+ * count of every individual checkbox. The payee search box and the date
+ * range are excluded: both live outside the filter dialog this badge is for
+ * (the date range is the page's period selector). */
 export const countActiveFilterGroups = (filters: TransactionFilters): number =>
   [
-    !!(filters.from || filters.to),
     filters.accountIds.length > 0,
     filters.categoryIds.length > 0,
     !!filters.type,
@@ -90,11 +107,22 @@ export const countActiveFilterGroups = (filters: TransactionFilters): number =>
     filters.hideTransfers,
     filters.hidePayments,
     filters.uncategorizedOnly,
+    filters.pendingReimbursementsOnly,
   ].filter(Boolean).length;
 
+/** A `/transactions` link pre-filtered to `filters` — used by drill-downs
+ * from Budgets and Trends. Unset fields stay at their defaults. */
+export const transactionsHref = (filters: Partial<TransactionFilters>): string => {
+  const query = transactionFiltersToSearchParams({
+    ...DEFAULT_TRANSACTION_FILTERS,
+    ...filters,
+  }).toString();
+  return query ? `/transactions?${query}` : '/transactions';
+};
+
 /** Every clause a transaction must pass to remain visible under the current
- * filters. Independent of the account-linked statement/month Period Picker,
- * which the view applies separately and ANDs with this. */
+ * filters, including the period selector's `from`/`to` (the credit card
+ * statement view writes into the same pair). */
 export const matchesTransactionFilters = (
   transaction: FrontendTransaction,
   filters: TransactionFilters,
@@ -127,6 +155,13 @@ export const matchesTransactionFilters = (
   if (filters.hideTransfers && transaction.isTransfer) return false;
   if (filters.hidePayments && transaction.isPayment) return false;
   if (filters.uncategorizedOnly && transaction.categoryId) return false;
+  if (
+    filters.pendingReimbursementsOnly &&
+    transaction.reimbursementStatus !== 'PENDING' &&
+    transaction.reimbursementStatus !== 'PARTIAL'
+  ) {
+    return false;
+  }
 
   return true;
 };

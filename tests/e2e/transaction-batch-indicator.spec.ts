@@ -36,13 +36,15 @@ test('an imported row shows a non-interactive filename chip and links to history
   const payee = `E2E Chip ${stamp}`;
   await importFile(page, filename, payee);
 
-  await page.goto('/transactions');
+  // the imported row is dated March 2026; bare /transactions opens on the current month
+  await page.goto('/transactions?from=2026-03-01&to=2026-03-31');
   const row = page.locator('.ledger-row').filter({ hasText: payee });
   await expect(row).toContainText(filename);
 
   // clicking the chip opens the detail drawer, it does not navigate
   await row.getByText(filename).click();
-  await expect(page).toHaveURL(/\/transactions$/);
+  // still on Transactions (the URL carries the default period's from/to)
+  await expect(page).toHaveURL(/\/transactions(\?|$)/);
   const drawer = page.getByRole('dialog', { name: 'Transaction' });
   await expect(drawer).toBeVisible();
 
