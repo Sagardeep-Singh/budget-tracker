@@ -54,9 +54,9 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await page.getByPlaceholder('Search payee', { exact: true }).fill('');
   await expect(paycheckRow).toBeVisible();
 
-  // No filter group active yet: the "Filters" button shows no badge.
+  // Only the default current-month date range is active: the badge reads "1".
   const filtersButton = page.getByRole('button', { name: /^Filters/ });
-  await expect(filtersButton.locator('span')).toHaveCount(0);
+  await expect(filtersButton.locator('span')).toHaveText('1');
 
   await filtersButton.click();
   const dialog = page.getByRole('dialog');
@@ -67,8 +67,8 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await dialog.getByRole('button', { name: 'Apply' }).click();
   await expect(dialog).toBeHidden();
 
-  // Two active filter groups (type + amount range) -> badge reads "2".
-  await expect(filtersButton.locator('span')).toHaveText('2');
+  // Three active filter groups (month range + type + amount range) -> badge reads "3".
+  await expect(filtersButton.locator('span')).toHaveText('3');
   await expect(paycheckRow).toBeVisible();
   await expect(coffeeRow).toBeHidden();
 
@@ -76,11 +76,12 @@ test('payee search filters immediately and the filters dialog applies type + amo
   await expect(page).toHaveURL(/type=INCOME/);
   await expect(page).toHaveURL(/amountMin=100/);
   await page.reload();
-  await expect(page.getByRole('button', { name: /^Filters/ }).locator('span')).toHaveText('2');
+  await expect(page.getByRole('button', { name: /^Filters/ }).locator('span')).toHaveText('3');
   await expect(page.locator('.ledger-row').filter({ hasText: paycheckPayee })).toBeVisible();
   await expect(page.locator('.ledger-row').filter({ hasText: coffeePayee })).toBeHidden();
 
-  // "Reset" inside the dialog clears every group and the badge disappears.
+  // "Reset" inside the dialog clears every group (including the default month
+  // range) and the badge disappears.
   await page.getByRole('button', { name: /^Filters/ }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Reset' }).click();
