@@ -27,6 +27,7 @@ const {
   deleteReimbursementLink,
   listReimbursementCandidates,
   getPendingReimbursementSummary,
+  listPendingReimbursementExpenseIds,
   assertNoActiveLinks,
   listReimbursedAmountsByExpenseDate,
 } = await import('@/lib/services/reimbursements');
@@ -632,7 +633,107 @@ describe('listReimbursementCandidates', () => {
 
     const where = prismaMock.transaction.findMany.mock.calls[0][0].where;
     expect(where.date).toBeUndefined();
-    expect(where.payee).toEqual({ contains: 'refund', mode: 'insensitive' });
+    expect(where.AND).toHaveLength(1);
+    expect(prismaMock.transaction.findMany.mock.calls[0][0].orderBy).toEqual({ date: 'desc' });
+  });
+
+  it('requires every search word to match payee, note, account or category', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail());
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    await listReimbursementCandidates('user-1', 'exp-1', { search: 'acme 42.50' });
+
+    const and = prismaMock.transaction.findMany.mock.calls[0][0].where.AND;
+    expect(and).toHaveLength(2);
+    const contains = { contains: 'acme', mode: 'insensitive' };
+    expect(and[0].OR).toEqual([
+      { payee: contains },
+      { note: contains },
+      { account: { name: contains } },
+      { category: { name: contains } },
+    ]);
+    expect(and[1].OR).toContainEqual({ amount: 42.5 });
+  });
+
+  it('boosts and labels income in the same category as the expense', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail({ categoryId: 'cat-1' }));
+    const income = (id: string, categoryId: string | null) => ({
+      id,
+      date: new Date('2026-03-20'),
+      amount: 80,
+      payee: 'Someone',
+      accountId: 'acc-1',
+      account: { name: 'Checking' },
+      categoryId,
+      category: categoryId ? { name: categoryId === 'cat-1' ? 'Work' : 'Other' } : null,
+      reimbursementIncomeLinks: [],
+    });
+    prismaMock.transaction.findMany.mockResolvedValue([
+      income('inc-other', 'cat-2'),
+      income('inc-same', 'cat-1'),
+    ]);
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(result[0].transactionId).toBe('inc-same');
+    expect(result[0].categoryName).toBe('Work');
+    expect(result[0].reasons).toContain('Same category (Work)');
+    expect(result[1].reasons).not.toContain('Same category (Other)');
+  });
+
+  it('never treats two uncategorized transactions as a category match', async () => {
+    prismaMock.transaction.findFirst.mockResolvedValue(expenseDetail({ categoryId: null }));
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'inc-1',
+        date: new Date('2026-03-20'),
+        amount: 80,
+        payee: 'Someone',
+        accountId: 'acc-1',
+        account: { name: 'Checking' },
+        categoryId: null,
+        category: null,
+        reimbursementIncomeLinks: [],
+      },
+    ]);
+
+    const result = await listReimbursementCandidates('user-1', 'exp-1');
+
+    expect(result[0].reasons.some((r) => r.startsWith('Same category'))).toBe(false);
+  });
+});
+
+describe('listPendingReimbursementExpenseIds', () => {
+  it('keeps PENDING and PARTIAL expenses, drops fully linked ones', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { id: 'none-linked', reimbursementExpectedAmount: 100, reimbursementExpenseLinks: [] },
+      { id: 'no-expected', reimbursementExpectedAmount: null, reimbursementExpenseLinks: [] },
+      {
+        id: 'partial',
+        reimbursementExpectedAmount: 100,
+        reimbursementExpenseLinks: [{ amount: 40 }, { amount: 10 }],
+      },
+      {
+        id: 'complete',
+        reimbursementExpectedAmount: 100,
+        reimbursementExpenseLinks: [{ amount: 60 }, { amount: 40 }],
+      },
+    ]);
+
+    const result = await listPendingReimbursementExpenseIds('user-1');
+
+    expect(result).toEqual(['none-linked', 'no-expected', 'partial']);
+  });
+
+  it("only reads the user's reimbursable expenses not manually completed", async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    expect(await listPendingReimbursementExpenseIds('user-1')).toEqual([]);
+    expect(prismaMock.transaction.findMany.mock.calls[0][0].where).toEqual({
+      userId: 'user-1',
+      isReimbursable: true,
+      reimbursementCompletedAt: null,
+    });
   });
 });
 
@@ -714,6 +815,7 @@ describe('listReimbursedAmountsByExpenseDate', () => {
         expense: { categoryId: 'cat-1', date: new Date('2026-01-15') },
       },
     ]);
+    prismaMock.transaction.findMany.mockResolvedValue([]);
 
     const result = await listReimbursedAmountsByExpenseDate(
       'user-1',
@@ -727,6 +829,76 @@ describe('listReimbursedAmountsByExpenseDate', () => {
         categoryId: 'cat-1',
         expenseDate: new Date('2026-01-15').toISOString(),
         amount: '25.00',
+      },
+    ]);
+  });
+
+  it('adds the unlinked expected amount of a manually completed expense', async () => {
+    prismaMock.reimbursementLink.findMany.mockResolvedValue([
+      {
+        amount: 10,
+        expenseTransactionId: 'exp-1',
+        expense: { categoryId: 'cat-1', date: new Date('2026-01-15') },
+      },
+    ]);
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'exp-1',
+        categoryId: 'cat-1',
+        date: new Date('2026-01-15'),
+        reimbursementExpectedAmount: 80,
+        reimbursementExpenseLinks: [{ amount: 10 }],
+      },
+      {
+        id: 'exp-2',
+        categoryId: null,
+        date: new Date('2026-01-20'),
+        reimbursementExpectedAmount: 30,
+        reimbursementExpenseLinks: [],
+      },
+      {
+        // already linked in full: no top-up row
+        id: 'exp-3',
+        categoryId: 'cat-2',
+        date: new Date('2026-01-21'),
+        reimbursementExpectedAmount: 5,
+        reimbursementExpenseLinks: [{ amount: 5 }],
+      },
+    ]);
+
+    const result = await listReimbursedAmountsByExpenseDate(
+      'user-1',
+      new Date('2026-01-01'),
+      new Date('2026-02-01'),
+    );
+
+    expect(prismaMock.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'user-1',
+          isReimbursable: true,
+          reimbursementCompletedAt: { not: null },
+        }),
+      }),
+    );
+    expect(result).toEqual([
+      {
+        expenseTransactionId: 'exp-1',
+        categoryId: 'cat-1',
+        expenseDate: new Date('2026-01-15').toISOString(),
+        amount: '10.00',
+      },
+      {
+        expenseTransactionId: 'exp-1',
+        categoryId: 'cat-1',
+        expenseDate: new Date('2026-01-15').toISOString(),
+        amount: '70.00',
+      },
+      {
+        expenseTransactionId: 'exp-2',
+        categoryId: null,
+        expenseDate: new Date('2026-01-20').toISOString(),
+        amount: '30.00',
       },
     ]);
   });

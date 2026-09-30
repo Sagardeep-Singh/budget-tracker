@@ -70,9 +70,28 @@ const row = (payee: string): Locator => rows().filter({ hasText: payee });
 const loadMore = (): Locator =>
   page.getByTestId('transactions-list-desktop').getByRole('button', { name: 'Load more' });
 
-const visit = async (accountIds: string[]): Promise<void> => {
-  await page.goto(`/transactions?accountIds=${accountIds.join(',')}`);
+const visit = async (accountIds: string[], range?: { from: string; to: string }): Promise<void> => {
+  const period = range ? `&from=${range.from}&to=${range.to}` : '';
+  await page.goto(`/transactions?accountIds=${accountIds.join(',')}${period}`);
   await expect(page.getByTestId('transactions-list-desktop')).toBeVisible();
+};
+
+/** The desktop totals card (the mobile one renders too, CSS-hidden). */
+const summary = (): Locator => page.getByTestId('transactions-summary');
+
+/** Picks a custom range in the header's period selector (a shallow URL update). */
+const pickRange = async (from: string, to: string): Promise<void> => {
+  // the trigger is labelled with the current selection: "All time", a month or a range
+  await page
+    .getByRole('button', { name: /^(All time|.*\d{4})$/ })
+    .filter({ visible: true })
+    .first()
+    .click();
+  await page.getByLabel('From', { exact: true }).filter({ visible: true }).fill(from);
+  await page.getByLabel('To', { exact: true }).filter({ visible: true }).fill(to);
+  const response = page.waitForResponse((r) => isPaginatedResponse(r.url()));
+  await page.getByRole('button', { name: 'Apply range' }).click();
+  await response;
 };
 
 /** Opens the Filters dialog, lets `edit` change it, applies, and waits for the refetch. */
@@ -211,7 +230,7 @@ test.afterAll(async () => {
 test('1. initial load is bounded to one page (SSR, no client fetch)', async () => {
   await visit([ids.bulk]);
   await expect(rows()).toHaveCount(50);
-  await expect(page.getByText('105 transactions', { exact: true })).toBeVisible();
+  await expect(summary().getByText('105 transactions', { exact: true })).toBeVisible();
 });
 
 test('9 (first half). the day header shows the FULL day total before every row is loaded', async () => {
@@ -388,17 +407,11 @@ test('4. every filter type narrows server-side, then widens again', async () => 
   await applyFilters((d) => d.getByLabel(names.category).uncheck());
   await expect(groceries).toBeVisible();
 
-  // from / to (inclusive single day)
-  await applyFilters(async (d) => {
-    await d.locator('#filter-from').fill(days.statementCurrent);
-    await d.locator('#filter-to').fill(days.statementCurrent);
-  });
+  // from / to (inclusive single day) — the period selector's params, now outside the dialog
+  await visit([ids.mixed], { from: days.statementCurrent, to: days.statementCurrent });
   await expect(coffee).toBeVisible();
   await expect(groceries).toBeHidden();
-  await applyFilters(async (d) => {
-    await d.locator('#filter-from').fill('');
-    await d.locator('#filter-to').fill('');
-  });
+  await visit([ids.mixed]);
   await expect(groceries).toBeVisible();
 
   // hideTransfers
@@ -423,23 +436,20 @@ test('4. every filter type narrows server-side, then widens again', async () => 
   await expect(coffee).toBeVisible();
 });
 
-test('5. By month shows only the current month; previous period swaps it', async () => {
+test('5. the period selector narrows to a month server-side; another month swaps it', async () => {
   await visit([ids.mixed]);
   const current = row(`Mixed Month Now ${stamp}`);
   const previous = row(`Mixed Month Before ${stamp}`);
   await expect(current).toBeVisible();
   await expect(previous).toBeVisible();
 
-  let response = page.waitForResponse((r) => isPaginatedResponse(r.url()));
-  await page.getByRole('button', { name: 'By month' }).click();
-  await response;
+  const monthEnd = isoDay(new Date(month.end.getTime() - DAY_MS));
+  await pickRange(days.monthCurrent, monthEnd);
+  await expect(page).toHaveURL(new RegExp(`from=${days.monthCurrent}&to=${monthEnd}`));
   await expect(current).toBeVisible();
   await expect(previous).toBeHidden();
-  await expect(page.getByText(/transactions? in this period/)).toBeVisible();
 
-  response = page.waitForResponse((r) => isPaginatedResponse(r.url()));
-  await page.getByRole('button', { name: 'Previous period' }).click();
-  await response;
+  await pickRange(days.monthPrevious, days.monthPrevious);
   await expect(previous).toBeVisible();
   await expect(current).toBeHidden();
 });
@@ -450,32 +460,46 @@ test('6. By statement places rows on each side of the close date correctly', asy
   const inPrevious = row(`Mixed Groceries ${stamp}`); // the previous statement's close day
 
   let response = page.waitForResponse((r) => isPaginatedResponse(r.url()));
-  await page.getByRole('button', { name: 'By statement' }).click();
+  await page.getByRole('button', { name: 'View by statement' }).click();
   await response;
   await expect(inCurrent).toBeVisible();
   await expect(inPrevious).toBeHidden();
 
   response = page.waitForResponse((r) => isPaginatedResponse(r.url()));
-  await page.getByRole('button', { name: 'Previous period' }).click();
+  await page.getByRole('button', { name: 'Previous statement' }).click();
   await response;
   await expect(inPrevious).toBeVisible();
   await expect(inCurrent).toBeHidden();
 });
 
-test('8. summary bar and excluded-bucket chips keep their bucket precedence', async () => {
+test('8. totals card keeps bucket precedence and nets reimbursed spending', async () => {
   await visit([ids.chips]);
-  const bar = page.getByTestId('transactions-summary');
+  const bar = summary();
   await expect(bar).toContainText('6 transactions');
+  const stat = (label: string): Locator =>
+    bar.locator('dt', { hasText: label }).locator('xpath=following-sibling::dd[1]');
   // the $40 payback is linked reimbursement income, so it is NOT credit
-  await expect(bar).toContainText('Credit+100.00');
-  await expect(bar).toContainText('Debit−40.00');
-  await expect(bar).toContainText('Net+60.00');
-  const chip = (label: string): Locator =>
+  await expect(stat('Credit')).toContainText('100.00');
+  // the $40 lunch is fully reimbursed, so it nets out of Debit (like Overview's Out)
+  await expect(stat('Debit')).toContainText('0.00');
+  await expect(stat('Net')).toContainText('100.00');
+  const excluded = (label: string): Locator =>
     bar.locator('span').filter({ hasText: label }).locator('span.font-money');
   // payment AND transfer (30) counts toward payments only
-  await expect(chip('Payments (excluded)')).toHaveText('$230.00');
-  await expect(chip('Transfers (excluded)')).toHaveText('$50.00');
-  await expect(chip('Reimbursement income (excluded)')).toHaveText('$40.00');
+  await expect(excluded('Payments')).toHaveText('$230.00');
+  await expect(excluded('Transfers')).toHaveText('$50.00');
+  await expect(excluded('Reimbursements')).toHaveText('$40.00');
+});
+
+test('8b. the pending reimbursements filter narrows server-side', async () => {
+  await visit([ids.chips]);
+  const lunch = row(`Chips Work Lunch ${stamp}`);
+  await expect(lunch).toBeVisible();
+  // fully linked, so not pending
+  await page.goto(`/transactions?accountIds=${ids.chips}&pendingReimbursementsOnly=true`);
+  await expect(page.getByTestId('transactions-list-desktop')).toBeVisible();
+  await expect(rows()).toHaveCount(0);
+  await expect(summary()).toContainText('0 transactions');
 });
 
 test('14. a transaction added from the page appears without a manual reload', async () => {
@@ -492,7 +516,7 @@ test('14. a transaction added from the page appears without a manual reload', as
   await expect(drawer).toBeHidden();
   await response;
   await expect(row(payee)).toBeVisible();
-  await expect(page.getByText('7 transactions', { exact: true })).toBeVisible();
+  await expect(summary().getByText('7 transactions', { exact: true })).toBeVisible();
 });
 
 type PageEnvelope = {
@@ -543,7 +567,17 @@ test('a malformed cursor is a 400, not a silent restart', async () => {
 });
 
 test('10 (AC 10). opening and closing the add overlay keeps the loaded pages', async () => {
+  // Closing the overlay pushes a bare /transactions, which `proxy.ts` redirects
+  // to the stored period: store the bulk rows' month so it lands on the same scope.
+  const month = BULK_DAY.slice(0, 7);
+  await page
+    .context()
+    .addCookies([
+      { name: 'period', value: `m:${month.replace('-', '')}`, url: 'http://localhost:3000' },
+    ]);
   await page.goto('/transactions');
+  const scopedUrl = new RegExp(`/transactions\\?from=${month}-01&to=${month}-\\d{2}$`);
+  await expect(page).toHaveURL(scopedUrl);
   await expect(rows()).toHaveCount(50);
   const response = page.waitForResponse((r) => isPaginatedResponse(r.url()));
   await loadMore().click();
@@ -555,10 +589,11 @@ test('10 (AC 10). opening and closing the add overlay keeps the loaded pages', a
   await expect(overlay).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(overlay).toBeHidden();
-  await expect(page).toHaveURL(/\/transactions$/);
+  await expect(page).toHaveURL(scopedUrl);
   // give any (wrong) refetch time to land before asserting nothing collapsed
   await page.waitForTimeout(1500);
   await expect(rows()).toHaveCount(100);
+  await page.context().clearCookies({ name: 'period' });
 });
 
 test('mobile: amount search, count line and Load more drive the mobile tree', async ({
@@ -576,7 +611,12 @@ test('mobile: amount search, count line and Load more drive the mobile tree', as
   let response = mobile.waitForResponse((r) => isPaginatedResponse(r.url()));
   await mobile.getByPlaceholder('Search payee or amount').fill('10.00');
   await response;
-  await expect(mobile.getByText('105 transactions · transfers excluded')).toBeVisible();
+  await expect(
+    mobile
+      .getByTestId('transaction-totals')
+      .filter({ visible: true })
+      .getByText('105 transactions'),
+  ).toBeVisible();
   await expect(mobileRows).toHaveCount(50);
 
   response = mobile.waitForResponse((r) => isPaginatedResponse(r.url()));

@@ -36,7 +36,11 @@ const statusClass = (status: string | null): string => {
  */
 const buildFullPatch = (
   transaction: FrontendTransaction,
-  overrides: { reimbursementCompleted: boolean },
+  overrides: {
+    isReimbursable?: boolean;
+    reimbursementExpectedAmount?: string;
+    reimbursementCompleted?: boolean;
+  },
 ): Record<string, unknown> => ({
   accountId: transaction.accountId,
   categoryId: transaction.categoryId,
@@ -52,12 +56,28 @@ const buildFullPatch = (
   ...overrides,
 });
 
+const sameAmount = (a: string | null, b: string): boolean =>
+  a !== null && Math.round(Number(a) * 100) === Math.round(Number(b) * 100);
+
 export const ReimbursementPanel = ({
   transaction,
+  expectedAmount,
+  onLinkedTotalChange,
 }: {
   transaction: FrontendTransaction;
+  /** the form's current (possibly unsaved) expected reimbursement */
+  expectedAmount: string;
+  onLinkedTotalChange?: (linkedTotal: string) => void;
 }): React.ReactElement => {
   const router = useRouter();
+  // What the server currently holds for the reimbursable fields. Starts from
+  // the saved transaction and moves forward as this panel persists them, so a
+  // freshly ticked "will be paid back" box can be linked without saving first.
+  const [saved, setSaved] = useState({
+    isReimbursable: transaction.isReimbursable,
+    expectedAmount: transaction.reimbursementExpectedAmount,
+  });
+  const [persistPending, setPersistPending] = useState(false);
   const [detail, setDetail] = useState<FrontendExpenseReimbursement | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -81,6 +101,7 @@ export const ReimbursementPanel = ({
       return;
     }
     setDetail(res.data);
+    onLinkedTotalChange?.(res.data.linkedTotal);
   };
 
   useEffect(() => {
@@ -95,12 +116,60 @@ export const ReimbursementPanel = ({
     router.refresh();
   };
 
+  /**
+   * Links and the complete toggle need the expense to be reimbursable on the
+   * server, so persist the form's reimbursable flag and expected amount first
+   * when they differ from what is saved. Other unsaved form edits are left
+   * alone until the user saves the form.
+   */
+  const ensureReimbursableSaved = async (): Promise<boolean> => {
+    const expected = Number(expectedAmount);
+    if (!expectedAmount || Number.isNaN(expected) || expected <= 0) {
+      setActionError('Enter the expected reimbursement first.');
+      return false;
+    }
+    if (expected > Number(transaction.amount)) {
+      setActionError('The expected reimbursement cannot exceed the expense amount.');
+      return false;
+    }
+    if (saved.isReimbursable && sameAmount(saved.expectedAmount, expectedAmount)) return true;
+
+    setPersistPending(true);
+    const res = await patchJSON(
+      `/api/transactions/${transaction.id}`,
+      buildFullPatch(transaction, {
+        isReimbursable: true,
+        reimbursementExpectedAmount: expectedAmount,
+      }),
+    );
+    setPersistPending(false);
+    if (!res.ok) {
+      setActionError(res.error ?? 'Could not mark this expense as reimbursable. Try again.');
+      return false;
+    }
+    setSaved({ isReimbursable: true, expectedAmount });
+    await afterChange();
+    return true;
+  };
+
+  const openPicker = async (): Promise<void> => {
+    setActionError(null);
+    if (!(await ensureReimbursableSaved())) return;
+    setPickerKey((k) => k + 1);
+    setPickerOpen(true);
+  };
+
   const toggleComplete = async (completed: boolean): Promise<void> => {
     setActionError(null);
+    if (!(await ensureReimbursableSaved())) return;
     setCompleteTogglePending(true);
     const res = await patchJSON(
       `/api/transactions/${transaction.id}`,
-      buildFullPatch(transaction, { reimbursementCompleted: completed }),
+      buildFullPatch(transaction, {
+        isReimbursable: true,
+        reimbursementExpectedAmount: expectedAmount,
+        reimbursementCompleted: completed,
+      }),
     );
     setCompleteTogglePending(false);
     if (!res.ok) {
@@ -223,14 +292,7 @@ export const ReimbursementPanel = ({
             Derived from linked amount — will revert automatically if a link is removed.
           </p>
         )}
-        <Button
-          type="button"
-          icon={Plus}
-          onClick={() => {
-            setPickerKey((k) => k + 1);
-            setPickerOpen(true);
-          }}
-        >
+        <Button type="button" icon={Plus} loading={persistPending} onClick={openPicker}>
           Link income
         </Button>
       </div>

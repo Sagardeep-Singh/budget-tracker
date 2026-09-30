@@ -17,6 +17,7 @@ export type OverviewDayEntry = {
 
 export type OverviewBudgetRing = {
   id: string;
+  categoryId: string;
   categoryName: string;
   fraction: number;
   pctLabel: string;
@@ -27,6 +28,10 @@ export type OverviewBudgetRing = {
 export type OverviewExpenseSlice = {
   categoryId: string | null;
   categoryName: string;
+  /** The categories this slice sums, for drilling into its transactions:
+   * one id for a named category, several for "Other", none for
+   * "Uncategorized". Uncategorized spend folded into "Other" isn't listed. */
+  categoryIds: string[];
   amount: string;
   fraction: number;
 };
@@ -107,7 +112,7 @@ export const getOverviewData = async (
       where: { userId, date: { gte: start, lt: end } },
       include: {
         category: { select: { name: true } },
-        _count: { select: { reimbursementIncomeLinks: true } },
+        reimbursementIncomeLinks: { select: { amount: true } },
       },
       orderBy: { date: 'asc' },
     }),
@@ -130,6 +135,13 @@ export const getOverviewData = async (
   }
   const netExpenseAmount = (t: (typeof transactions)[number]): number =>
     Math.max(0, Number(t.amount) - (reimbursedByTransaction.get(t.id) ?? 0));
+  // Only the part of an income linked as a reimbursement is excluded; any
+  // unlinked remainder is still ordinary income.
+  const netIncomeAmount = (t: (typeof transactions)[number]): number =>
+    Math.max(
+      0,
+      Number(t.amount) - t.reimbursementIncomeLinks.reduce((sum, l) => sum + Number(l.amount), 0),
+    );
 
   const limit = budgets.reduce((sum, b) => sum + Number(b.limitAmount), 0);
   const spent = budgets.reduce((sum, b) => sum + Number(b.spent), 0);
@@ -140,17 +152,11 @@ export const getOverviewData = async (
   // every income/spending aggregate — the money never left the ledger. Balance
   // math further down deliberately still counts them. Income linked as a
   // reimbursement is excluded the same way (it's the user's own money coming
-  // back, not new income) — the gate reads live link existence via `_count`,
-  // not a static flag, so it starts/stops applying as links are made/removed.
+  // back, not new income), but only up to the linked amount — it reads live
+  // links, not a static flag, so it starts/stops applying as links change.
   const income = transactions
-    .filter(
-      (t) =>
-        t.type === 'INCOME' &&
-        !t.isPayment &&
-        !t.isTransfer &&
-        t._count.reimbursementIncomeLinks === 0,
-    )
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter((t) => t.type === 'INCOME' && !t.isPayment && !t.isTransfer)
+    .reduce((sum, t) => sum + netIncomeAmount(t), 0);
   const expense = transactions
     .filter((t) => t.type === 'EXPENSE' && !t.isTransfer)
     .reduce((sum, t) => sum + netExpenseAmount(t), 0);
@@ -180,15 +186,24 @@ export const getOverviewData = async (
 
   const EXPENSE_SLICE_CAP = 6;
   const topSlices = sortedExpenseSlices.slice(0, EXPENSE_SLICE_CAP);
-  const otherAmount = sortedExpenseSlices
-    .slice(EXPENSE_SLICE_CAP)
-    .reduce((sum, s) => sum + s.amount, 0);
+  const otherSlices = sortedExpenseSlices.slice(EXPENSE_SLICE_CAP);
+  const otherAmount = otherSlices.reduce((sum, s) => sum + s.amount, 0);
   const expenseBreakdown: OverviewExpenseSlice[] = [
-    ...topSlices,
-    ...(otherAmount > 0 ? [{ categoryId: null, categoryName: 'Other', amount: otherAmount }] : []),
+    ...topSlices.map((s) => ({ ...s, categoryIds: s.categoryId ? [s.categoryId] : [] })),
+    ...(otherAmount > 0
+      ? [
+          {
+            categoryId: null,
+            categoryName: 'Other',
+            categoryIds: otherSlices.flatMap((s) => (s.categoryId ? [s.categoryId] : [])),
+            amount: otherAmount,
+          },
+        ]
+      : []),
   ].map((s) => ({
     categoryId: s.categoryId,
     categoryName: s.categoryName,
+    categoryIds: s.categoryIds,
     amount: s.amount.toFixed(2),
     fraction: expense > 0 ? s.amount / expense : 0,
   }));
@@ -212,13 +227,7 @@ export const getOverviewData = async (
   for (const t of transactions) {
     const d = t.date.getUTCDate();
     const bucket = dayMap.get(d)!;
-    if (
-      t.type === 'INCOME' &&
-      !t.isPayment &&
-      !t.isTransfer &&
-      t._count.reimbursementIncomeLinks === 0
-    )
-      bucket.income += Number(t.amount);
+    if (t.type === 'INCOME' && !t.isPayment && !t.isTransfer) bucket.income += netIncomeAmount(t);
     if (t.type === 'EXPENSE' && !t.isTransfer) bucket.expense += netExpenseAmount(t);
   }
   const dayBars: OverviewDayBar[] = Array.from(dayMap.entries()).map(([day, v]) => ({
@@ -308,6 +317,7 @@ export const getOverviewData = async (
       const fraction = budgetLimit > 0 ? budgetSpent / budgetLimit : 0;
       return {
         id: b.id,
+        categoryId: b.categoryId,
         categoryName: b.categoryName,
         fraction,
         pctLabel: `${Math.round(Math.min(fraction, 1) * 100)}%`,

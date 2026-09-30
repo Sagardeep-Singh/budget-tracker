@@ -48,3 +48,12 @@ export const getCalendarMonthPeriod = (month: number): Period => {
     end: atUtcMidnight(year, monthIndex + 1, 1),
   };
 };
+
+/** Whether `period` is exactly one statement period for `statementDay`. */
+export const isStatementPeriod = (statementDay: number, period: Period): boolean => {
+  const expected = getStatementPeriod(statementDay, period.start);
+  return (
+    expected.start.getTime() === period.start.getTime() &&
+    expected.end.getTime() === period.end.getTime()
+  );
+};

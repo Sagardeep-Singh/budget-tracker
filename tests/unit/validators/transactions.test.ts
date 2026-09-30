@@ -165,6 +165,7 @@ describe('transactionsPageQuerySchema', () => {
       hideTransfers: false,
       hidePayments: false,
       uncategorizedOnly: false,
+      pendingReimbursementsOnly: false,
       mobileSearch: '',
       quickFilter: 'all',
       limit: 50,

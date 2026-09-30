@@ -17,19 +17,14 @@ import { Drawer } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
+import { TransactionTotals } from '@/components/transactions/transaction-totals';
 import { TransactionForm } from '@/components/transactions/transaction-form';
+import { AddTransactionLink } from '@/components/transactions/add-transaction-link';
 import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
 import { MatchTransfersDialog } from '@/components/transactions/match-transfers-dialog';
-import { PeriodPicker, type PeriodMode } from '@/components/transactions/period-picker';
+import { StatementPicker } from '@/components/transactions/period-picker';
 import { deleteJSON, getJSON, postJSON, type ApiFailure } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
-import {
-  getCalendarMonthPeriod,
-  getNextStatementPeriod,
-  getPreviousStatementPeriod,
-  getStatementPeriod,
-  type Period,
-} from '@/lib/statement';
 import {
   countActiveFilterGroups,
   parseTransactionFilters,
@@ -37,6 +32,7 @@ import {
   type TransactionFilters,
 } from '@/lib/transactions/transaction-filters';
 import type { QuickFilter } from '@/lib/transactions/transaction-scope';
+import type { TransactionSummary } from '@/lib/transactions/transaction-summary';
 import {
   transactionsPageSearchParams,
   transactionsPageUrl,
@@ -48,9 +44,38 @@ import type { TransactionsPageResult } from '@/lib/services/transactionsPage';
 import { formatDate } from '@/lib/format';
 import { categoryColorVar } from '@/lib/ui/category-color';
 
-const toYyyymm = (date: Date): number => date.getUTCFullYear() * 100 + (date.getUTCMonth() + 1);
-
 const toCents = (value: string | number): number => Math.round(Number(value) * 100);
+
+/** The quick pills are shortcuts into the same `type` / `uncategorizedOnly`
+ * filters the dialog edits, so the two can never disagree. A combination the
+ * pills can't express (set from the dialog) leaves no pill highlighted. */
+const QUICK_FILTERS: Record<QuickFilter, Pick<TransactionFilters, 'type' | 'uncategorizedOnly'>> = {
+  all: { type: null, uncategorizedOnly: false },
+  uncategorized: { type: null, uncategorizedOnly: true },
+  spending: { type: 'EXPENSE', uncategorizedOnly: false },
+  income: { type: 'INCOME', uncategorizedOnly: false },
+};
+
+const activeQuickFilter = (filters: TransactionFilters): QuickFilter | null =>
+  (Object.keys(QUICK_FILTERS) as QuickFilter[]).find(
+    (key) =>
+      QUICK_FILTERS[key].type === filters.type &&
+      QUICK_FILTERS[key].uncategorizedOnly === filters.uncategorizedOnly,
+  ) ?? null;
+
+/** The server's `toFixed(2)` totals as the numbers `TransactionTotals` renders. */
+const toTotals = (
+  summary: TransactionsPageResult['summary'],
+  count: number,
+): TransactionSummary => ({
+  count,
+  credit: Number(summary.credit),
+  debit: Number(summary.debit),
+  net: Number(summary.net),
+  payments: Number(summary.payments),
+  transfers: Number(summary.transfers),
+  reimbursementIncome: Number(summary.reimbursementIncome),
+});
 
 /**
  * Rows arrive newest-first across every loaded page, so grouping in arrival
@@ -104,15 +129,18 @@ export const TransactionsView = ({
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [drawerKey, setDrawerKey] = useState(0);
-  const [detail, setDetail] = useState<FrontendTransaction | null>(null);
+  // `?tx=<id>` (Overview's day panel links here) opens that transaction's
+  // drawer on arrival. Those links are scoped to the transaction's own day,
+  // so it lands on page 1.
+  const [detail, setDetail] = useState<FrontendTransaction | null>(() => {
+    const id = searchParams.get('tx');
+    return id ? (initialPage.rows.find((t) => t.id === id) ?? null) : null;
+  });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
   const [matchResult, setMatchResult] = useState<string | null>(null);
-  const [periodMode, setPeriodMode] = useState<PeriodMode>('ALL');
-  const [periodAnchor, setPeriodAnchor] = useState(() => new Date());
   const [mobileSearch, setMobileSearch] = useState('');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
   const [filtersDialogKey, setFiltersDialogKey] = useState(0);
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
@@ -210,12 +238,16 @@ export const TransactionsView = ({
     if (pendingPayeePushes.length === 0) payeeUrlTargetRef.current = filters.payee;
   }, [filters.payee, pendingPayeePushes]);
 
+  // The native History API, not `router.replace`: the view fetches its own
+  // page from `/api/transactions` whenever the URL's filters change (below),
+  // so a server re-render per change would only duplicate that request.
+  // Next keeps `useSearchParams` in sync with replaceState.
   const pushFilters = useCallback(
     (next: TransactionFilters): void => {
       const query = transactionFiltersToSearchParams(next).toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
     },
-    [pathname, router],
+    [pathname],
   );
 
   useEffect(() => {
@@ -242,50 +274,12 @@ export const TransactionsView = ({
 
   const selectedAccountId = filters.accountIds.length === 1 ? filters.accountIds[0] : null;
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
-  const canUseStatementView =
-    selectedAccount?.type === 'CREDIT_CARD' && !!selectedAccount.statementDay;
+  const isCreditCard = selectedAccount?.type === 'CREDIT_CARD';
+  const quickFilter = activeQuickFilter(filters);
 
   const openFiltersDialog = (): void => {
     setFiltersDialogKey((k) => k + 1);
     setFiltersDialogOpen(true);
-  };
-
-  const handleApplyFilters = (next: TransactionFilters): void => {
-    // Switching away from (or into) exactly one selected account changes
-    // whether the statement/month Period Picker is even shown, so its state
-    // resets the same way the old single-select dropdown's onChange did.
-    const nextSingleAccountId = next.accountIds.length === 1 ? next.accountIds[0] : null;
-    if (nextSingleAccountId !== selectedAccountId) {
-      setPeriodMode('ALL');
-      setPeriodAnchor(new Date());
-    }
-    pushFilters(next);
-  };
-
-  const period: Period | null = useMemo(() => {
-    if (periodMode === 'ALL') return null;
-    if (periodMode === 'STATEMENT' && selectedAccount?.statementDay) {
-      return getStatementPeriod(selectedAccount.statementDay, periodAnchor);
-    }
-    if (periodMode === 'MONTH') {
-      return getCalendarMonthPeriod(toYyyymm(periodAnchor));
-    }
-    return null;
-  }, [periodMode, periodAnchor, selectedAccount]);
-
-  const shiftPeriod = (direction: 'prev' | 'next'): void => {
-    if (!period) return;
-    if (periodMode === 'STATEMENT' && selectedAccount?.statementDay) {
-      const next =
-        direction === 'prev'
-          ? getPreviousStatementPeriod(selectedAccount.statementDay, period)
-          : getNextStatementPeriod(selectedAccount.statementDay, period);
-      setPeriodAnchor(next.start);
-      return;
-    }
-    const anchor = new Date(periodAnchor);
-    anchor.setUTCMonth(anchor.getUTCMonth() + (direction === 'prev' ? -1 : 1));
-    setPeriodAnchor(anchor);
   };
 
   const openCreate = (): void => {
@@ -298,12 +292,22 @@ export const TransactionsView = ({
     setDrawerKey((k) => k + 1);
   };
 
+  // Drops `?tx=` on close so a refresh or back navigation doesn't reopen it.
+  const closeDetail = (): void => {
+    setDetail(null);
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('tx')) return;
+    params.delete('tx');
+    const query = params.toString();
+    window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
+  };
+
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
     await deleteJSON(`/api/transactions/${id}`);
     setDeletePending(false);
     setConfirmDeleteId(null);
-    setDetail(null);
+    closeDetail();
     setReloadNonce((n) => n + 1);
     router.refresh();
   };
@@ -337,11 +341,12 @@ export const TransactionsView = ({
     () =>
       transactionsPageSearchParams({
         filters: { ...filters, payee: settledPayee },
-        period,
+        period: null,
         mobileSearch: settledMobileSearch,
-        quickFilter,
+        // the pills are plain `type`/`uncategorizedOnly` filters now, already in `filters`
+        quickFilter: 'all',
       }).toString(),
-    [filters, settledPayee, period, settledMobileSearch, quickFilter],
+    [filters, settledPayee, settledMobileSearch],
   );
   const requestKey = `${scopeKey}#${reloadNonce}`;
   // Page 1 for the current key is in flight (or about to be): previous rows
@@ -439,8 +444,7 @@ export const TransactionsView = ({
   };
 
   const rows = pages.flatMap((p) => p.rows);
-  const { summary, desktopCount, totalCount, uncategorizedCount } = pages[0];
-  const net = Number(summary.net);
+  const { summary, mobileSummary, desktopCount, totalCount, uncategorizedCount } = pages[0];
 
   // Each page's dayTotals entry is the authoritative full-day total, so later
   // pages overwrite rather than add.
@@ -586,21 +590,16 @@ export const TransactionsView = ({
         </p>
       )}
 
-      {selectedAccountId && (
-        <div className="mt-3 hidden lg:block">
-          <PeriodPicker
-            mode={periodMode}
-            onModeChange={(m) => {
-              setPeriodMode(m);
-              setPeriodAnchor(new Date());
-            }}
-            period={period}
-            onPrev={() => shiftPeriod('prev')}
-            onNext={() => shiftPeriod('next')}
-            allowStatement={canUseStatementView}
-          />
-          {selectedAccount?.type === 'CREDIT_CARD' && !selectedAccount.statementDay && (
-            <p className="text-ink-muted mt-1 text-xs">
+      {isCreditCard && (
+        <div className="mt-3">
+          {selectedAccount.statementDay ? (
+            <StatementPicker
+              statementDay={selectedAccount.statementDay}
+              range={{ from: filters.from, to: filters.to }}
+              onSelect={(range) => pushFilters({ ...filters, ...range })}
+            />
+          ) : (
+            <p className="text-ink-muted text-xs">
               Set a statement day on this account to view by statement.
             </p>
           )}
@@ -610,56 +609,9 @@ export const TransactionsView = ({
       <div
         data-testid="transactions-summary"
         aria-busy={pending}
-        className={cn(
-          'border-line bg-paper-raised mt-3.5 hidden items-start gap-3 rounded-[14px] border px-6 py-3.5 transition-opacity lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-6',
-          pending && 'opacity-60',
-        )}
+        className={cn('mt-3.5 hidden transition-opacity lg:block', pending && 'opacity-60')}
       >
-        <span className="text-ink-muted text-[12.5px] font-medium whitespace-nowrap">
-          {desktopCount} transaction{plural(desktopCount)}
-          {period ? ' in this period' : ''}
-        </span>
-        {/* Wraps rather than scrolls below lg: a scroll container would hide Net
-            off-screen with no affordance. */}
-        <div className="flex flex-wrap items-center gap-x-6.5 gap-y-2.5 text-[13.5px] lg:flex-nowrap">
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-ink-muted text-xs">Credit</span>
-            <span className="text-sky font-mono tabular-nums">
-              +{Number(summary.credit).toFixed(2)}
-            </span>
-          </span>
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-ink-muted text-xs">Debit</span>
-            <span className="text-rose font-mono tabular-nums">
-              −{Number(summary.debit).toFixed(2)}
-            </span>
-          </span>
-          <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-            <span className="text-ink-muted text-xs">Net</span>
-            <span className={cn('font-mono tabular-nums', net >= 0 ? 'text-sky' : 'text-rose')}>
-              {net >= 0 ? '+' : '−'}
-              {Math.abs(net).toFixed(2)}
-            </span>
-          </span>
-          {Number(summary.payments) > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-              <span className="text-ink-muted text-xs">Payments (excluded)</span>
-              <Money value={summary.payments} tone="neutral" />
-            </span>
-          )}
-          {Number(summary.transfers) > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-              <span className="text-ink-muted text-xs">Transfers (excluded)</span>
-              <Money value={summary.transfers} tone="neutral" />
-            </span>
-          )}
-          {Number(summary.reimbursementIncome) > 0 && (
-            <span className="border-line flex items-baseline gap-1.5 border-l-0 pl-0 lg:border-l lg:pl-6.5">
-              <span className="text-ink-muted text-xs">Reimbursement income (excluded)</span>
-              <Money value={summary.reimbursementIncome} tone="neutral" />
-            </span>
-          )}
-        </div>
+        <TransactionTotals summary={toTotals(summary, desktopCount)} />
       </div>
 
       <div className="hidden lg:block">{renderScopeError()}</div>
@@ -819,7 +771,7 @@ export const TransactionsView = ({
             <button
               key={key}
               type="button"
-              onClick={() => setQuickFilter(key)}
+              onClick={() => pushFilters({ ...filters, ...QUICK_FILTERS[key] })}
               className={cn(
                 'shrink-0 rounded-full px-3.5 py-2 text-[12.5px] font-medium',
                 quickFilter === key
@@ -832,12 +784,10 @@ export const TransactionsView = ({
           ))}
         </div>
 
-        {/* "transfers excluded" is a known, pre-existing copy bug (the count
-            does not exclude transfers) — deliberately left as-is, see the
-            pagination plan's Decision 10. */}
-        <p className={cn('text-ink-muted mt-3.5 text-[12.5px]', pending && 'opacity-60')}>
-          {totalCount} transaction{plural(totalCount)} · transfers excluded
-        </p>
+        <TransactionTotals
+          summary={toTotals(mobileSummary, totalCount)}
+          className={cn('mt-3.5 transition-opacity', pending && 'opacity-60')}
+        />
 
         {renderScopeError()}
 
@@ -928,12 +878,7 @@ export const TransactionsView = ({
         />
       </Drawer>
 
-      <Drawer
-        key={`drawer-${drawerKey}`}
-        open={!!detail}
-        onClose={() => setDetail(null)}
-        title="Transaction"
-      >
+      <Drawer key={`drawer-${drawerKey}`} open={!!detail} onClose={closeDetail} title="Transaction">
         {detail && (
           <>
             <div className="font-display mt-4 text-[22px] font-semibold tracking-[-0.02em]">
@@ -945,7 +890,7 @@ export const TransactionsView = ({
                 accounts={accounts}
                 categories={categories}
                 onDone={() => {
-                  setDetail(null);
+                  closeDetail();
                   // an edit to a row past page 1 may leave the SSR page 1
                   // unchanged, so don't rely on the refresh to notice it
                   setReloadNonce((n) => n + 1);
@@ -984,7 +929,7 @@ export const TransactionsView = ({
         open={filtersDialogOpen}
         onClose={() => setFiltersDialogOpen(false)}
         filters={filters}
-        onApply={handleApplyFilters}
+        onApply={pushFilters}
         accounts={accounts}
         categories={categories}
       />
@@ -1006,12 +951,9 @@ export const TransactionsView = ({
         >
           Import CSV
         </Link>
-        <Link
-          href="?overlay=add"
-          className="bg-iris text-paper-raised focus-visible:outline-paper-raised flex flex-[1.3] items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
+        <AddTransactionLink className="bg-iris text-paper-raised focus-visible:outline-paper-raised flex flex-[1.3] items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
           <Plus size={16} /> Log a spend
-        </Link>
+        </AddTransactionLink>
       </div>
     </div>
   );

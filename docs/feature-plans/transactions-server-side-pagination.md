@@ -2079,3 +2079,15 @@ tests/e2e/transaction-batch-indicator.spec.ts tests/e2e/import-undo.spec.ts` —
   login-rate-limit lockouts (see Open concern #1); not a regression in the code under review.
   `RateLimitBucket` rows were cleared afterward (local dev data only, same as the implementer's own
   prior workaround) and the scratch Playwright config was deleted; `playwright.config.ts` untouched.
+
+## Merge with main (2026-09-30)
+
+Main shipped several client-side Transactions features while this PR was open (#73, #74, #75, #77, #80, #82, #83). Each was ported onto the server-side read path:
+
+- [x] Pending reimbursements filter: `listPendingReimbursementExpenseIds` (lib/services/reimbursements.ts) resolves PENDING/PARTIAL expense ids first, and `buildTransactionWhere` adds `id IN (...)`. It's also in the validator and covered by the parity suite.
+- [x] Totals card (#77) and reimbursement-netted Debit (#82/#83): the summary now goes through main's `summarizeTransactions` over lean rows instead of the `groupBy` buckets. `mobileSummary` (mobile search included) backs the mobile totals card.
+- [x] Unified period selector (#75): the old Period Picker `period` state is gone. The header's `DateRangePopover` and the `StatementPicker` write `from`/`to` into the URL, and the view refetches. The service keeps its `period` param, but the view no longer sends it.
+- [x] Quick pills as `type`/`uncategorizedOnly` filters (#75): the view always sends `quickFilter: 'all'`. `uncategorizedCount` ignores the pill-controlled filters (Mode A via a pill-free where, Mode B via a pill-free scan).
+- [x] Current-month default (#74, `proxy.ts`): e2e specs now pass explicit `from`/`to` where they depend on older rows.
+- [x] `?tx=` deep link (#80): the drawer opens from page 1's rows. Those links are scoped to the transaction's day, so it lands on page 1.
+- [x] Add-transaction overlay: the open link (`AddTransactionLink`) and `close` now keep the current params. With the period in the URL, a bare `?overlay=add` swapped the scope and collapsed the loaded pages (AC 10).

@@ -1,8 +1,14 @@
 'use client';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/cn';
-import type { Period } from '@/lib/statement';
+import {
+  getNextStatementPeriod,
+  getPreviousStatementPeriod,
+  getStatementPeriod,
+  isStatementPeriod,
+  type Period,
+} from '@/lib/statement';
+import { periodToRange, type DateRange } from '@/lib/period-selection';
 
 const DATE_LABEL = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
@@ -15,62 +21,64 @@ const formatPeriod = (period: Period): string => {
   return `${DATE_LABEL.format(period.start)} – ${DATE_LABEL.format(inclusiveEnd)}`;
 };
 
-export type PeriodMode = 'ALL' | 'MONTH' | 'STATEMENT';
+const rangeToPeriod = ({ from, to }: DateRange): Period | null =>
+  from && to
+    ? {
+        start: new Date(`${from}T00:00:00Z`),
+        end: new Date(new Date(`${to}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000),
+      }
+    : null;
 
-export const PeriodPicker = ({
-  mode,
-  onModeChange,
-  period,
-  onPrev,
-  onNext,
-  allowStatement,
+/**
+ * Credit card statement helper for a single selected card. It doesn't own a
+ * period of its own: it writes the statement's dates into the same
+ * `from`/`to` the page's period selector uses, so the two can never disagree.
+ * While the active range is exactly a statement, ‹ › step between statements.
+ */
+export const StatementPicker = ({
+  statementDay,
+  range,
+  onSelect,
 }: {
-  mode: PeriodMode;
-  onModeChange: (mode: PeriodMode) => void;
-  period: Period | null;
-  onPrev: () => void;
-  onNext: () => void;
-  allowStatement: boolean;
-}): React.ReactElement => (
-  // Wraps rather than overflows at mobile width, matching the Transactions
-  // summary bar. No bottom sheet needed here: there's no drill-down content,
-  // just a pill row and prev/next.
-  <div className="flex flex-wrap items-center gap-2">
-    <div className="border-line bg-paper-raised flex rounded-full border p-0.5 text-xs">
-      {(['ALL', 'MONTH', ...(allowStatement ? (['STATEMENT'] as const) : [])] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => onModeChange(m)}
-          className={cn(
-            'rounded-full px-3 py-1 font-medium transition-colors',
-            mode === m ? 'bg-iris text-paper-raised' : 'text-ink-muted hover:text-ink',
-          )}
-        >
-          {m === 'ALL' ? 'All time' : m === 'MONTH' ? 'By month' : 'By statement'}
-        </button>
-      ))}
+  statementDay: number;
+  range: DateRange;
+  onSelect: (range: { from: string; to: string }) => void;
+}): React.ReactElement => {
+  const current = rangeToPeriod(range);
+  const active = current && isStatementPeriod(statementDay, current) ? current : null;
+
+  if (!active) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(periodToRange(getStatementPeriod(statementDay, new Date())))}
+        className="border-line bg-paper-raised text-ink rounded-full border px-3.5 py-1.5 text-xs font-medium"
+      >
+        View by statement
+      </button>
+    );
+  }
+
+  return (
+    <div className="text-ink-muted flex items-center gap-1 text-sm">
+      <span className="text-xs">Statement</span>
+      <button
+        type="button"
+        onClick={() => onSelect(periodToRange(getPreviousStatementPeriod(statementDay, active)))}
+        aria-label="Previous statement"
+        className="hover:bg-paper-raised hover:text-ink rounded-full px-2 py-1"
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <span className="font-money tabular-nums">{formatPeriod(active)}</span>
+      <button
+        type="button"
+        onClick={() => onSelect(periodToRange(getNextStatementPeriod(statementDay, active)))}
+        aria-label="Next statement"
+        className="hover:bg-paper-raised hover:text-ink rounded-full px-2 py-1"
+      >
+        <ChevronRight size={16} />
+      </button>
     </div>
-    {period && mode !== 'ALL' && (
-      <div className="text-ink-muted flex items-center gap-1 text-sm">
-        <button
-          type="button"
-          onClick={onPrev}
-          aria-label="Previous period"
-          className="hover:bg-paper-raised hover:text-ink rounded-full px-2 py-1"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span className="font-money tabular-nums">{formatPeriod(period)}</span>
-        <button
-          type="button"
-          onClick={onNext}
-          aria-label="Next period"
-          className="hover:bg-paper-raised hover:text-ink rounded-full px-2 py-1"
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    )}
-  </div>
-);
+  );
+};

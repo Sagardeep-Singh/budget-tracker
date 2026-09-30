@@ -15,7 +15,8 @@ const moneyCompact = (value: number): string =>
 const WIDTH = 600;
 const HEIGHT = 160;
 const PAD_LEFT = 44;
-const PAD_X = 8;
+// Room for the last month's centered label ("Sep*") so it isn't clipped at the edge.
+const PAD_X = 16;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 22;
 const USABLE_WIDTH = WIDTH - PAD_LEFT - PAD_X;

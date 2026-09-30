@@ -43,6 +43,8 @@ export type ReimbursementCandidate = {
   payee: string | null;
   accountId: string;
   accountName: string;
+  categoryId: string | null;
+  categoryName: string | null;
   suggestedAmount: string;
   score: number;
   reasons: string[];
@@ -169,8 +171,24 @@ const DEFAULT_CANDIDATE_LIMIT = 8;
 const AMOUNT_SCORE_WEIGHT = 0.6;
 const DATE_SCORE_WEIGHT = 0.4;
 const PAYEE_BONUS = 0.2;
+const CATEGORY_BONUS = 0.15;
 const DATE_DECAY_DAYS = 45;
 const DATE_FAR_DAYS = 120;
+
+/** One search word must match payee, note, account or category (case-insensitive), or the amount when numeric. */
+const buildSearchClause = (token: string): Record<string, unknown> => {
+  const contains = { contains: token, mode: 'insensitive' as const };
+  const amount = Number(token.replace(/^\$/, '').replace(/,/g, ''));
+  return {
+    OR: [
+      { payee: contains },
+      { note: contains },
+      { account: { name: contains } },
+      { category: { name: contains } },
+      ...(Number.isFinite(amount) && amount > 0 ? [{ amount }] : []),
+    ],
+  };
+};
 
 export const listReimbursementCandidates = async (
   userId: string,
@@ -187,6 +205,8 @@ export const listReimbursementCandidates = async (
   const summary = toExpenseReimbursement(expense);
   const outstandingCents = Math.max(1, toCents(summary.outstanding));
 
+  const searchTokens = (options.search ?? '').trim().split(/\s+/).filter(Boolean);
+
   const pool = await prisma.transaction.findMany({
     where: {
       userId,
@@ -195,15 +215,15 @@ export const listReimbursementCandidates = async (
       isPayment: false,
       ...(options.search ? {} : { date: { gte: expense.date } }),
       reimbursementIncomeLinks: { none: { expenseTransactionId } },
-      ...(options.search
-        ? { payee: { contains: options.search, mode: 'insensitive' as const } }
-        : {}),
+      ...(searchTokens.length > 0 ? { AND: searchTokens.map(buildSearchClause) } : {}),
     },
     include: {
       account: { select: { name: true } },
+      category: { select: { name: true } },
       reimbursementIncomeLinks: { select: { amount: true } },
     },
-    orderBy: { date: 'asc' },
+    // a search can match far more than the pool cap, so keep the most recent
+    orderBy: { date: searchTokens.length > 0 ? 'desc' : 'asc' },
     take: CANDIDATE_POOL_CAP,
   });
 
@@ -244,9 +264,16 @@ export const listReimbursementCandidates = async (
       const payeeMatches = tokens.some((t) => compileRuleMatcher(t).test(income.payee ?? ''));
       const payeeBonus = payeeMatches ? PAYEE_BONUS : 0;
 
+      const categoryMatches =
+        expense.categoryId !== null && income.categoryId === expense.categoryId;
+      const categoryBonus = categoryMatches ? CATEGORY_BONUS : 0;
+
       const score = Math.min(
         1,
-        AMOUNT_SCORE_WEIGHT * amountScore + DATE_SCORE_WEIGHT * dateScore + payeeBonus,
+        AMOUNT_SCORE_WEIGHT * amountScore +
+          DATE_SCORE_WEIGHT * dateScore +
+          payeeBonus +
+          categoryBonus,
       );
 
       const reasons: string[] = [];
@@ -256,6 +283,7 @@ export const listReimbursementCandidates = async (
       if (days >= 0 && days <= DATE_DECAY_DAYS)
         reasons.push(`${Math.round(days)} days after the expense`);
       if (payeeMatches) reasons.push('Payee matches the expense');
+      if (categoryMatches) reasons.push(`Same category (${income.category?.name ?? 'Unknown'})`);
       if (reasons.length === 0) reasons.push('Possible match');
 
       const suggestedAmount = Math.min(availableCents, outstandingCents);
@@ -268,6 +296,8 @@ export const listReimbursementCandidates = async (
         payee: income.payee,
         accountId: income.accountId,
         accountName: income.account.name,
+        categoryId: income.categoryId,
+        categoryName: income.category?.name ?? null,
         suggestedAmount: fromCents(suggestedAmount),
         score,
         reasons,
@@ -283,6 +313,38 @@ export const listReimbursementCandidates = async (
     );
 
   return candidates.slice(0, options.limit ?? DEFAULT_CANDIDATE_LIMIT);
+};
+
+/** Ids of the user's reimbursable expenses still awaiting money (PENDING or
+ * PARTIAL), the server-side half of the Transactions page's "pending
+ * reimbursements" filter. Status is derived from the linked total, which a
+ * Prisma where-clause can't compare against, so it is resolved here first. */
+export const listPendingReimbursementExpenseIds = async (userId: string): Promise<string[]> => {
+  const expenses = await prisma.transaction.findMany({
+    where: { userId, isReimbursable: true, reimbursementCompletedAt: null },
+    select: {
+      id: true,
+      reimbursementExpectedAmount: true,
+      reimbursementExpenseLinks: { select: { amount: true } },
+    },
+  });
+  return expenses
+    .filter((expense) => {
+      const status = deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents:
+          expense.reimbursementExpectedAmount == null
+            ? null
+            : toCents(expense.reimbursementExpectedAmount),
+        linkedCents: expense.reimbursementExpenseLinks.reduce(
+          (sum, l) => sum + toCents(l.amount),
+          0,
+        ),
+        completedAt: null,
+      });
+      return status === 'PENDING' || status === 'PARTIAL';
+    })
+    .map((expense) => expense.id);
 };
 
 export const getPendingReimbursementSummary = async (
@@ -507,27 +569,63 @@ export type ReimbursedExpenseRow = {
   amount: string;
 };
 
-/** links whose EXPENSE falls in [start, end) — the net-out source for budgets/overview/trends */
+/** reimbursed amounts for EXPENSES falling in [start, end) — the net-out source for
+ * budgets/overview/trends. One row per link, plus a top-up row for an expense the user
+ * manually marked fully reimbursed, covering whatever of its expected amount isn't linked. */
 export const listReimbursedAmountsByExpenseDate = async (
   userId: string,
   start: Date,
   end: Date,
 ): Promise<ReimbursedExpenseRow[]> => {
-  const rows = await prisma.reimbursementLink.findMany({
-    where: {
-      userId,
-      expense: { type: 'EXPENSE', isTransfer: false, date: { gte: start, lt: end } },
-    },
-    select: {
-      amount: true,
-      expenseTransactionId: true,
-      expense: { select: { categoryId: true, date: true } },
-    },
-  });
-  return rows.map((r) => ({
+  const [rows, manuallyCompleted] = await Promise.all([
+    prisma.reimbursementLink.findMany({
+      where: {
+        userId,
+        expense: { type: 'EXPENSE', isTransfer: false, date: { gte: start, lt: end } },
+      },
+      select: {
+        amount: true,
+        expenseTransactionId: true,
+        expense: { select: { categoryId: true, date: true } },
+      },
+    }),
+    prisma.transaction.findMany({
+      where: {
+        userId,
+        type: 'EXPENSE',
+        isTransfer: false,
+        isReimbursable: true,
+        reimbursementCompletedAt: { not: null },
+        date: { gte: start, lt: end },
+      },
+      select: {
+        id: true,
+        categoryId: true,
+        date: true,
+        reimbursementExpectedAmount: true,
+        reimbursementExpenseLinks: { select: { amount: true } },
+      },
+    }),
+  ]);
+  const linkRows = rows.map((r) => ({
     expenseTransactionId: r.expenseTransactionId,
     categoryId: r.expense.categoryId,
     expenseDate: r.expense.date.toISOString(),
     amount: fromCents(toCents(r.amount)),
   }));
+  const topUpRows = manuallyCompleted.flatMap((t) => {
+    const linkedCents = t.reimbursementExpenseLinks.reduce((sum, l) => sum + toCents(l.amount), 0);
+    const remainingCents = toCents(t.reimbursementExpectedAmount) - linkedCents;
+    return remainingCents > 0
+      ? [
+          {
+            expenseTransactionId: t.id,
+            categoryId: t.categoryId,
+            expenseDate: t.date.toISOString(),
+            amount: fromCents(remainingCents),
+          },
+        ]
+      : [];
+  });
+  return [...linkRows, ...topUpRows];
 };

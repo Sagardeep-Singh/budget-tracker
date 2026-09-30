@@ -78,10 +78,11 @@ test('confirming undo removes the transactions and marks the batch undone', asyn
   const payee = `E2E Undo ${stamp}`;
   await importFile(page, filename, payee);
 
-  // The CSV row is dated 2026-03-01 and the list loads 50 rows at a time:
-  // scope to its payee so both this check and the "gone" check below look at
-  // the row itself, not whatever happens to be on page 1 of the dev history.
-  const scopedList = `/transactions?payee=${encodeURIComponent(payee)}`;
+  // The CSV row is dated 2026-03-01 (bare /transactions opens on the current
+  // month) and the list loads 50 rows at a time: scope to its month and payee
+  // so both this check and the "gone" check below look at the row itself, not
+  // whatever happens to be on page 1 of the dev history.
+  const scopedList = `/transactions?from=2026-03-01&to=2026-03-31&payee=${encodeURIComponent(payee)}`;
   await page.goto(scopedList);
   // Desktop and mobile transaction rows both render (CSS-hidden, not
   // unmounted); this test runs at the default desktop viewport, so the

@@ -152,6 +152,7 @@ export const transactionsPageQuerySchema = z
     hideTransfers: lenientFlag,
     hidePayments: lenientFlag,
     uncategorizedOnly: lenientFlag,
+    pendingReimbursementsOnly: lenientFlag,
     periodStart: z.coerce.date().optional(),
     periodEnd: z.coerce.date().optional(),
     mobileSearch: z.string().max(120).catch(''),

@@ -79,6 +79,11 @@ const evalClause = (row: Row, clause: Record<string, unknown>): boolean => {
       if (typeof v.lte === 'number') return Number(row.amount) <= v.lte;
       return fail('amount clause', clause);
     }
+    case 'id': {
+      const v = value as { in?: unknown };
+      if (Object.keys(v).join() !== 'in' || !Array.isArray(v.in)) return fail('id', clause);
+      return v.in.includes(row.id);
+    }
     case 'isTransfer':
     case 'isPayment':
       if (typeof value !== 'boolean') return fail(key, clause);
@@ -126,10 +131,14 @@ const tx = (overrides: Partial<Row> = {}): Row => ({
 });
 
 const serverMatches = (rows: Row[], filters: TransactionFilters): string[] => {
+  // stands in for listPendingReimbursementExpenseIds, which derives the same status
+  const pendingReimbursementIds = rows
+    .filter((r) => r.reimbursementStatus === 'PENDING' || r.reimbursementStatus === 'PARTIAL')
+    .map((r) => r.id);
   const where = buildTransactionWhere(
     'user-1',
     { filters, period: null, mobileSearch: '', quickFilter: 'all' },
-    { mobile: false },
+    { mobile: false, pendingReimbursementIds },
   );
   return rows
     .filter((r) => evalWhere(r, where) && matchesDeferredPayee(r.payee, filters))
@@ -159,6 +168,9 @@ const fixtures: Row[] = [
   tx({ date: '2026-06-15T18:30:00.000Z', payee: 'Evening', amount: '20.00' }),
   tx({ amount: '20.00', categoryId: 'cat-2', accountId: 'acc-2' }),
   tx({ payee: 'Other account', accountId: 'acc-3', categoryId: 'cat-3' }),
+  tx({ payee: 'Pending reimb', isReimbursable: true, reimbursementStatus: 'PENDING' }),
+  tx({ payee: 'Partial reimb', isReimbursable: true, reimbursementStatus: 'PARTIAL' }),
+  tx({ payee: 'Complete reimb', isReimbursable: true, reimbursementStatus: 'COMPLETE' }),
 ];
 
 const cases: [string, Partial<TransactionFilters>][] = [
@@ -186,6 +198,8 @@ const cases: [string, Partial<TransactionFilters>][] = [
   ['hideTransfers', { hideTransfers: true }],
   ['hidePayments', { hidePayments: true }],
   ['uncategorizedOnly', { uncategorizedOnly: true }],
+  ['pendingReimbursementsOnly', { pendingReimbursementsOnly: true }],
+  ['pendingReimbursementsOnly + payee', { pendingReimbursementsOnly: true, payee: 'partial' }],
   [
     'all three flags together',
     { hideTransfers: true, hidePayments: true, uncategorizedOnly: true },

@@ -9,6 +9,7 @@ const { prismaMock } = vi.hoisted(() => ({
     },
     transaction: {
       groupBy: vi.fn(),
+      findMany: vi.fn(),
     },
     category: {
       findFirst: vi.fn(),
@@ -27,6 +28,7 @@ const { ServiceValidationError } = await import('@/lib/services/common');
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.reimbursementLink.findMany.mockResolvedValue([]);
+  prismaMock.transaction.findMany.mockResolvedValue([]);
 });
 
 describe('listBudgets', () => {

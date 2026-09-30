@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
-import { toCents } from '@/lib/services/reimbursements';
+import { listPendingReimbursementExpenseIds, toCents } from '@/lib/services/reimbursements';
 import { include, toFrontend, type FrontendTransaction } from '@/lib/services/transactions';
 import {
   compareTransactionOrder,
@@ -15,6 +15,7 @@ import {
   type TransactionScope,
 } from '@/lib/transactions/transaction-scope';
 import type { TransactionFilters } from '@/lib/transactions/transaction-filters';
+import { summarizeTransactions } from '@/lib/transactions/transaction-summary';
 import type { TransactionsPageQuery } from '@/lib/validators/transactions';
 
 /**
@@ -63,10 +64,13 @@ export type TransactionsPageResult = {
   totalCount: number;
   /** desktop-scope row count (mobile params omitted) — the "N transactions" label */
   desktopCount: number;
-  /** desktop-scope count of rows with no category — the mobile Uncategorized pill badge */
+  /** desktop-scope count of rows with no category, ignoring the pill-controlled
+   * `type`/`uncategorizedOnly` filters — the mobile Uncategorized pill badge */
   uncategorizedCount: number;
-  /** desktop-scope totals; bucket precedence isPayment > isTransfer > isReimbursementIncome > type */
+  /** desktop-scope totals, computed by `summarizeTransactions` (reimbursement-netted) */
   summary: TransactionSummary;
+  /** full-scope totals (mobile search included) — the mobile totals card */
+  mobileSummary: TransactionSummary;
   /** full-day totals for every UTC day this page's rows touch, page-boundary independent */
   dayTotals: DayTotal[];
 };
@@ -104,6 +108,19 @@ const prismaSafeMobileSearch = (mobileSearch: string): string | null => {
   return term && !isAmountSubstringCandidate(term) && !needsExactStringMatch(term) ? term : null;
 };
 
+export type BuildWhereOptions = {
+  mobile: boolean;
+  /** required when `filters.pendingReimbursementsOnly` is set */
+  pendingReimbursementIds?: string[];
+};
+
+/** The scope with the mobile pills' `type`/`uncategorizedOnly` filters cleared,
+ * so the Uncategorized badge doesn't drop to its own subset when a pill is on. */
+const withoutPillFilters = (scope: TransactionScope): TransactionScope => ({
+  ...scope,
+  filters: { ...scope.filters, type: null, uncategorizedOnly: false },
+});
+
 /**
  * The one predicate behind the page query and every aggregate.
  * `mobile: false` omits `mobileSearch`/`quickFilter` — the desktop scope.
@@ -121,12 +138,16 @@ const prismaSafeMobileSearch = (mobileSearch: string): string | null => {
  * "Probe result" section of `docs/feature-plans/transactions-server-side-pagination.md`).
  * {@link matchesDeferredPayee} is the JS half for the desktop payee.
  *
+ * `pendingReimbursementsOnly` depends on a derived status (linked total vs
+ * expected amount) Prisma can't compare, so the caller resolves the matching
+ * ids first ({@link listPendingReimbursementExpenseIds}) and passes them in.
+ *
  * No `skippedAt` clause, deliberately: skipped transactions stay visible (Decision 9).
  */
 export const buildTransactionWhere = (
   userId: string,
   scope: TransactionScope,
-  options: { mobile: boolean },
+  options: BuildWhereOptions,
 ): Prisma.TransactionWhereInput => {
   const { filters, period } = scope;
   const and: Prisma.TransactionWhereInput[] = [];
@@ -155,6 +176,12 @@ export const buildTransactionWhere = (
   if (filters.hideTransfers) and.push({ isTransfer: false });
   if (filters.hidePayments) and.push({ isPayment: false });
   if (filters.uncategorizedOnly) and.push({ categoryId: null });
+  if (filters.pendingReimbursementsOnly) {
+    if (!options.pendingReimbursementIds) {
+      throw new Error('pendingReimbursementIds is required when pendingReimbursementsOnly is set');
+    }
+    and.push({ id: { in: options.pendingReimbursementIds } });
+  }
 
   if (options.mobile) {
     if (scope.quickFilter === 'uncategorized') and.push({ categoryId: null });
@@ -197,6 +224,7 @@ export const toTransactionsPageRequest = (
     hideTransfers: query.hideTransfers,
     hidePayments: query.hidePayments,
     uncategorizedOnly: query.uncategorizedOnly,
+    pendingReimbursementsOnly: query.pendingReimbursementsOnly,
   },
   period:
     query.periodStart && query.periodEnd
@@ -213,55 +241,72 @@ const olderThan = (cursor: TransactionCursor): Prisma.TransactionWhereInput => (
   OR: [{ date: { lt: cursor.date } }, { date: cursor.date, id: { lt: cursor.id } }],
 });
 
-type SummaryCents = {
-  credit: number;
-  debit: number;
-  payments: number;
-  transfers: number;
-  reimbursementIncome: number;
+/** The columns `summarizeTransactions` needs, selected without the display relations. */
+const SUMMARY_SELECT = {
+  amount: true,
+  type: true,
+  isPayment: true,
+  isTransfer: true,
+  isReimbursable: true,
+  reimbursementExpectedAmount: true,
+  reimbursementCompletedAt: true,
+  reimbursementExpenseLinks: { select: { amount: true } },
+  reimbursementIncomeLinks: { select: { amount: true } },
+} as const;
+
+type SummaryRow = {
+  amount: unknown;
+  type: string;
+  isPayment: boolean;
+  isTransfer: boolean;
+  isReimbursable: boolean;
+  reimbursementExpectedAmount: unknown;
+  reimbursementCompletedAt: Date | null;
+  reimbursementExpenseLinks: { amount: unknown }[];
+  reimbursementIncomeLinks: { amount: unknown }[];
 };
 
-const emptySummary = (): SummaryCents => ({
-  credit: 0,
-  debit: 0,
-  payments: 0,
-  transfers: 0,
-  reimbursementIncome: 0,
-});
+const sumLinks = (links: { amount: unknown }[]): string =>
+  fromCents(links.reduce((sum, l) => sum + toCents(l.amount), 0));
 
 /**
- * Adds one bucket-cell's total to the summary with today's precedence:
- * payment, then transfer, then reimbursement income, then type. `reimbCents`
- * is the share of the cell that is reimbursement income; it is clamped to
- * `[0, cents]` so an (invariant-violating) larger `reimb` sum can never drive
- * credit/debit negative.
+ * Totals through the same `summarizeTransactions` the client used before
+ * pagination, so Debit stays netted of reimbursements exactly as Overview's
+ * Out is. It needs per-row reimbursement fields, so this reads lean rows over
+ * the whole scope rather than a `groupBy`.
  */
-const addToSummary = (
-  acc: SummaryCents,
-  cell: { type: string; isPayment: boolean; isTransfer: boolean },
-  cents: number,
-  reimbCents: number,
-): void => {
-  if (cell.isPayment) {
-    acc.payments += cents;
-  } else if (cell.isTransfer) {
-    acc.transfers += cents;
-  } else {
-    const reimb = Math.min(Math.max(reimbCents, 0), cents);
-    acc.reimbursementIncome += reimb;
-    if (cell.type === 'INCOME') acc.credit += cents - reimb;
-    else acc.debit += cents - reimb;
-  }
+const summarizeRows = (rows: SummaryRow[]): TransactionSummary => {
+  const totals = summarizeTransactions(
+    rows.map((r) => ({
+      amount: fromCents(toCents(r.amount)),
+      type: r.type as FrontendTransaction['type'],
+      isPayment: r.isPayment,
+      isTransfer: r.isTransfer,
+      isReimbursementIncome: r.reimbursementIncomeLinks.length > 0,
+      isReimbursable: r.isReimbursable,
+      reimbursementExpectedAmount:
+        r.reimbursementExpectedAmount == null
+          ? null
+          : fromCents(toCents(r.reimbursementExpectedAmount)),
+      reimbursementLinkedTotal: sumLinks(r.reimbursementExpenseLinks),
+      reimbursementCompletedManually: r.reimbursementCompletedAt !== null,
+      reimbursementIncomeLinkedTotal: sumLinks(r.reimbursementIncomeLinks),
+    })),
+  );
+  return {
+    credit: totals.credit.toFixed(2),
+    debit: totals.debit.toFixed(2),
+    payments: totals.payments.toFixed(2),
+    transfers: totals.transfers.toFixed(2),
+    reimbursementIncome: totals.reimbursementIncome.toFixed(2),
+    net: totals.net.toFixed(2),
+  };
 };
 
-const toSummary = (acc: SummaryCents): TransactionSummary => ({
-  credit: fromCents(acc.credit),
-  debit: fromCents(acc.debit),
-  payments: fromCents(acc.payments),
-  transfers: fromCents(acc.transfers),
-  reimbursementIncome: fromCents(acc.reimbursementIncome),
-  net: fromCents(acc.credit - acc.debit),
-});
+const summarize = async (where: Prisma.TransactionWhereInput): Promise<TransactionSummary> =>
+  summarizeRows(
+    (await prisma.transaction.findMany({ where, select: SUMMARY_SELECT })) as SummaryRow[],
+  );
 
 const toDayTotals = (byDay: Map<string, number>): DayTotal[] =>
   [...byDay.entries()]
@@ -273,35 +318,6 @@ const pageDayWindow = (rows: { date: Date }[]): { start: Date; end: Date } => {
   const start = new Date(`${dayKey(rows[rows.length - 1].date)}T00:00:00.000Z`);
   const end = new Date(new Date(`${dayKey(rows[0].date)}T00:00:00.000Z`).getTime() + DAY_MS);
   return { start, end };
-};
-
-type SummaryCell = {
-  type: string;
-  isPayment: boolean;
-  isTransfer: boolean;
-  _sum: { amount: unknown };
-};
-
-const cellKey = (c: { type: string; isPayment: boolean; isTransfer: boolean }): string =>
-  `${c.type}|${c.isPayment}|${c.isTransfer}`;
-
-const summarize = async (where: Prisma.TransactionWhereInput): Promise<TransactionSummary> => {
-  const by: Prisma.TransactionScalarFieldEnum[] = ['type', 'isPayment', 'isTransfer'];
-  const [all, reimb] = (await Promise.all([
-    prisma.transaction.groupBy({ by, where, _sum: { amount: true } }),
-    prisma.transaction.groupBy({
-      by,
-      where: { AND: [where, { reimbursementIncomeLinks: { some: {} } }] },
-      _sum: { amount: true },
-    }),
-  ])) as unknown as [SummaryCell[], SummaryCell[]];
-
-  const reimbByCell = new Map(reimb.map((c) => [cellKey(c), toCents(c._sum.amount ?? 0)]));
-  const acc = emptySummary();
-  for (const cell of all) {
-    addToSummary(acc, cell, toCents(cell._sum.amount ?? 0), reimbByCell.get(cellKey(cell)) ?? 0);
-  }
-  return toSummary(acc);
 };
 
 const EMPTY_PAGE_TAIL = {
@@ -320,30 +336,41 @@ const getPageModeA = async (
   userId: string,
   request: TransactionsPageRequest,
   cursor: TransactionCursor | null,
+  pendingReimbursementIds: string[] | undefined,
 ): Promise<TransactionsPageResult> => {
-  const where = buildTransactionWhere(userId, request, { mobile: true });
+  const where = buildTransactionWhere(userId, request, {
+    mobile: true,
+    pendingReimbursementIds,
+  });
   const mobileDefaults = request.mobileSearch.trim() === '' && request.quickFilter === 'all';
   const desktopWhere = mobileDefaults
     ? where
-    : buildTransactionWhere(userId, request, { mobile: false });
+    : buildTransactionWhere(userId, request, { mobile: false, pendingReimbursementIds });
+  const pillFreeWhere = buildTransactionWhere(userId, withoutPillFilters(request), {
+    mobile: false,
+    pendingReimbursementIds,
+  });
 
-  const [found, totalCount, desktopCountOrNull, uncategorizedCount, summary] = await Promise.all([
-    prisma.transaction.findMany({
-      where: cursor ? { AND: [where, olderThan(cursor)] } : where,
-      include,
-      orderBy: ORDER_BY,
-      take: request.limit + 1,
-    }),
-    prisma.transaction.count({ where }),
-    mobileDefaults ? Promise.resolve(null) : prisma.transaction.count({ where: desktopWhere }),
-    prisma.transaction.count({ where: { AND: [desktopWhere, { categoryId: null }] } }),
-    summarize(desktopWhere),
-  ]);
+  const [found, totalCount, desktopCountOrNull, uncategorizedCount, summary, mobileSummaryOrNull] =
+    await Promise.all([
+      prisma.transaction.findMany({
+        where: cursor ? { AND: [where, olderThan(cursor)] } : where,
+        include,
+        orderBy: ORDER_BY,
+        take: request.limit + 1,
+      }),
+      prisma.transaction.count({ where }),
+      mobileDefaults ? Promise.resolve(null) : prisma.transaction.count({ where: desktopWhere }),
+      prisma.transaction.count({ where: { AND: [pillFreeWhere, { categoryId: null }] } }),
+      summarize(desktopWhere),
+      mobileDefaults ? Promise.resolve(null) : summarize(where),
+    ]);
   const desktopCount = desktopCountOrNull ?? totalCount;
+  const mobileSummary = mobileSummaryOrNull ?? summary;
 
   const hasMore = found.length > request.limit;
   const rows = hasMore ? found.slice(0, request.limit) : found;
-  const base = { totalCount, desktopCount, uncategorizedCount, summary };
+  const base = { totalCount, desktopCount, uncategorizedCount, summary, mobileSummary };
   if (rows.length === 0) return { rows: [], ...EMPTY_PAGE_TAIL, ...base };
 
   const oldest = rows[rows.length - 1];
@@ -384,16 +411,11 @@ const getPageModeA = async (
   };
 };
 
-type ScanRow = {
+type ScanRow = SummaryRow & {
   id: string;
   date: Date;
-  amount: unknown;
-  type: string;
   payee: string | null;
   categoryId: string | null;
-  isPayment: boolean;
-  isTransfer: boolean;
-  _count: { reimbursementIncomeLinks: number };
 };
 
 /**
@@ -408,27 +430,28 @@ const getPageModeB = async (
   userId: string,
   request: TransactionsPageRequest,
   cursor: TransactionCursor | null,
+  pendingReimbursementIds: string[] | undefined,
 ): Promise<TransactionsPageResult> => {
+  // Scanned without the pill-controlled `type`/`uncategorizedOnly` filters so
+  // the Uncategorized badge can be counted from the same scan; they're
+  // re-applied in JS for the desktop scope below.
   const scan = (await prisma.transaction.findMany({
-    where: buildTransactionWhere(userId, request, { mobile: false }),
-    select: {
-      id: true,
-      date: true,
-      amount: true,
-      type: true,
-      payee: true,
-      categoryId: true,
-      isPayment: true,
-      isTransfer: true,
-      _count: { select: { reimbursementIncomeLinks: true } },
-    },
+    where: buildTransactionWhere(userId, withoutPillFilters(request), {
+      mobile: false,
+      pendingReimbursementIds,
+    }),
+    select: { id: true, date: true, payee: true, categoryId: true, ...SUMMARY_SELECT },
     orderBy: ORDER_BY,
   })) as ScanRow[];
 
+  const { type, uncategorizedOnly } = request.filters;
   const searchLower = request.mobileSearch.trim().toLowerCase();
-  const desktop = scan
+  const pillFree = scan
     .filter((r) => matchesDeferredPayee(r.payee, request.filters))
     .sort(compareTransactionOrder);
+  const desktop = pillFree.filter(
+    (r) => (!type || r.type === type) && (!uncategorizedOnly || !r.categoryId),
+  );
   const full = desktop.filter((r) => {
     if (request.quickFilter === 'uncategorized' && r.categoryId) return false;
     if (request.quickFilter === 'spending' && r.type !== 'EXPENSE') return false;
@@ -441,16 +464,12 @@ const getPageModeB = async (
     );
   });
 
-  const acc = emptySummary();
-  for (const r of desktop) {
-    const cents = toCents(r.amount);
-    addToSummary(acc, r, cents, r._count.reimbursementIncomeLinks > 0 ? cents : 0);
-  }
   const base = {
     totalCount: full.length,
     desktopCount: desktop.length,
-    uncategorizedCount: desktop.filter((r) => !r.categoryId).length,
-    summary: toSummary(acc),
+    uncategorizedCount: pillFree.filter((r) => !r.categoryId).length,
+    summary: summarizeRows(desktop),
+    mobileSummary: summarizeRows(full),
   };
 
   const after = cursor ? full.filter((r) => isOlderThanCursor(r, cursor)) : full;
@@ -511,7 +530,10 @@ export const getTransactionsPage = async (
     cursor = decodeTransactionCursor(request.cursor);
     if (!cursor) throw new ServiceValidationError('Invalid cursor');
   }
+  const pendingReimbursementIds = request.filters.pendingReimbursementsOnly
+    ? await listPendingReimbursementExpenseIds(userId)
+    : undefined;
   return needsModeB(request)
-    ? getPageModeB(userId, request, cursor)
-    : getPageModeA(userId, request, cursor);
+    ? getPageModeB(userId, request, cursor, pendingReimbursementIds)
+    : getPageModeA(userId, request, cursor, pendingReimbursementIds);
 };

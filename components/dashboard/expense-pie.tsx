@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { overviewCategoryHref } from '@/lib/dashboard/drilldown';
 import type { OverviewExpenseSlice } from '@/lib/services/overview';
 
 // Validated categorical palette (dataviz skill default, first 6 of 8 fixed
@@ -25,9 +27,11 @@ const GAP = 3;
 export const ExpensePie = ({
   slices,
   total,
+  month,
 }: {
   slices: OverviewExpenseSlice[];
   total: string;
+  month: number;
 }): React.ReactElement => {
   if (slices.length === 0) {
     return <p className="text-ink-muted text-sm">No expenses logged yet this month.</p>;
@@ -54,38 +58,52 @@ export const ExpensePie = ({
         aria-label={`Expense breakdown by category, total ${money(total)}`}
         className="shrink-0"
       >
+        {/* Arcs are a mouse shortcut to the same links as the legend, so
+            they stay out of the tab order and the accessibility tree. */}
         {arcs.map((a) => (
-          <circle
+          <Link
             key={a.categoryId ?? a.categoryName}
-            cx={CENTER}
-            cy={CENTER}
-            r={RADIUS}
-            fill="none"
-            stroke={a.color}
-            strokeWidth={STROKE}
-            strokeDasharray={`${a.length} ${CIRCUMFERENCE - a.length}`}
-            strokeDashoffset={a.offset}
-            transform={`rotate(-90 ${CENTER} ${CENTER})`}
+            href={overviewCategoryHref(month, a.categoryIds)}
+            tabIndex={-1}
+            aria-hidden
+            className="cursor-pointer transition-opacity hover:opacity-80"
           >
-            <title>{`${a.categoryName}: ${money(a.amount)} (${Math.round(a.fraction * 100)}%)`}</title>
-          </circle>
+            <circle
+              cx={CENTER}
+              cy={CENTER}
+              r={RADIUS}
+              fill="none"
+              stroke={a.color}
+              strokeWidth={STROKE}
+              strokeDasharray={`${a.length} ${CIRCUMFERENCE - a.length}`}
+              strokeDashoffset={a.offset}
+              transform={`rotate(-90 ${CENTER} ${CENTER})`}
+            >
+              <title>{`${a.categoryName}: ${money(a.amount)} (${Math.round(a.fraction * 100)}%)`}</title>
+            </circle>
+          </Link>
         ))}
       </svg>
       {/* Doubles as the accessible table view: every slice's name, share, and
           amount is plain text, never color-only. */}
-      <ul className="min-w-0 flex-1 space-y-2">
+      <ul className="-mx-2 min-w-0 flex-1">
         {arcs.map((a) => (
-          <li
-            key={a.categoryId ?? a.categoryName}
-            className="flex items-center justify-between gap-3 text-[13px]"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
-              <span className="text-ink truncate">{a.categoryName}</span>
-            </span>
-            <span className="text-ink-muted shrink-0 font-mono tabular-nums">
-              {money(a.amount)}
-            </span>
+          <li key={a.categoryId ?? a.categoryName}>
+            <Link
+              href={overviewCategoryHref(month, a.categoryIds)}
+              className="hover:bg-paper flex items-center justify-between gap-3 rounded-lg px-2 py-1 text-[13px]"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: a.color }}
+                />
+                <span className="text-ink truncate">{a.categoryName}</span>
+              </span>
+              <span className="text-ink-muted shrink-0 font-mono tabular-nums">
+                {money(a.amount)}
+              </span>
+            </Link>
           </li>
         ))}
       </ul>

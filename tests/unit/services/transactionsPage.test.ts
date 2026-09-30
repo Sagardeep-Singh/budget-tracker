@@ -49,6 +49,11 @@ type DbRowInput = {
   isPayment?: boolean;
   isTransfer?: boolean;
   reimbursementIncome?: boolean;
+  /** the linked part of a reimbursement income; defaults to its whole amount */
+  reimbursementIncomeLinked?: number | string;
+  /** a reimbursable expense: its expected amount and linked income amounts */
+  reimbursable?: { expected: number | string | null; linked: (number | string)[] };
+  reimbursementCompletedAt?: Date;
 };
 
 /** A DB row carrying both the full `include` shape and the Mode B lean `select` shape. */
@@ -66,15 +71,19 @@ const dbRow = (input: DbRowInput): Record<string, unknown> => ({
   importBatchId: null,
   isTransfer: input.isTransfer ?? false,
   transferMatchId: null,
-  isReimbursable: false,
-  reimbursementExpectedAmount: null,
-  reimbursementCompletedAt: null,
+  isReimbursable: !!input.reimbursable,
+  reimbursementExpectedAmount:
+    input.reimbursable?.expected == null ? null : new Prisma.Decimal(input.reimbursable.expected),
+  reimbursementCompletedAt: input.reimbursementCompletedAt ?? null,
   account: { name: 'Checking' },
   category: input.categoryId ? { name: 'Food' } : null,
   importBatch: null,
-  reimbursementExpenseLinks: [],
-  reimbursementIncomeLinks: input.reimbursementIncome ? [{ amount: input.amount }] : [],
-  _count: { reimbursementIncomeLinks: input.reimbursementIncome ? 1 : 0 },
+  reimbursementExpenseLinks: (input.reimbursable?.linked ?? []).map((amount) => ({
+    amount: new Prisma.Decimal(amount),
+  })),
+  reimbursementIncomeLinks: input.reimbursementIncome
+    ? [{ amount: new Prisma.Decimal(input.reimbursementIncomeLinked ?? input.amount) }]
+    : [],
 });
 
 /** `count` of rows, newest first, one per day walking back from 2026-06-30. */
@@ -90,22 +99,12 @@ const rowsDescending = (count: number): Record<string, unknown>[] =>
 type GroupByArgs = { by: string[]; where: { AND?: unknown[] } };
 
 /**
- * Dispatches `groupBy` on its `by` shape (and, for the summary pair, on whether
- * the reimbursement-income relation filter is present) so a test that feeds the
- * wrong mock to the wrong query shape fails instead of passing by accident.
+ * Dispatches `groupBy` on its `by` shape so a test that feeds the wrong mock to
+ * the wrong query shape fails instead of passing by accident.
  */
-const mockGroupBy = (data: {
-  summary?: unknown[];
-  summaryReimb?: unknown[];
-  older?: unknown[];
-  days?: unknown[];
-}): void => {
+const mockGroupBy = (data: { older?: unknown[]; days?: unknown[] }): void => {
   prismaMock.transaction.groupBy.mockImplementation(async (args: GroupByArgs) => {
     const by = args.by.join(',');
-    if (by === 'type,isPayment,isTransfer') {
-      const isReimb = JSON.stringify(args.where).includes('reimbursementIncomeLinks');
-      return isReimb ? (data.summaryReimb ?? []) : (data.summary ?? []);
-    }
     if (by === 'date,type') return data.days ?? [];
     if (by === 'type') return data.older ?? [];
     throw new Error(`unexpected groupBy by=${by}`);
@@ -331,7 +330,17 @@ describe('getTransactionsPage — Mode A', () => {
     select?: unknown;
   };
   const pageCall = (): FindManyArgs =>
-    prismaMock.transaction.findMany.mock.calls[0][0] as FindManyArgs;
+    (prismaMock.transaction.findMany.mock.calls as [FindManyArgs][]).find(([a]) => a.include)![0];
+  /** the lean summary reads (`select`), in call order: desktop scope, then mobile scope */
+  const summaryCalls = (): FindManyArgs[] =>
+    (prismaMock.transaction.findMany.mock.calls as [FindManyArgs][])
+      .map(([a]) => a)
+      .filter((a) => a.select);
+  /** `page` answers the page query (`include`), `summaryRows` the summary reads (`select`). */
+  const mockModeA = (page: Record<string, unknown>[], summaryRows: Record<string, unknown>[]) =>
+    prismaMock.transaction.findMany.mockImplementation(async (args: FindManyArgs) =>
+      args.include ? page : summaryRows,
+    );
 
   it('fetches limit + 1 in (date desc, id desc) order; exactly `limit` rows means no more', async () => {
     prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(3));
@@ -399,15 +408,12 @@ describe('getTransactionsPage — Mode A', () => {
   });
 
   it('short-circuits an empty page but still computes the scope aggregates', async () => {
-    prismaMock.transaction.findMany.mockResolvedValue([]);
+    mockModeA([], [dbRow({ id: 's', date: '2026-06-01', amount: 40, type: 'INCOME' })]);
     // full scope empty, desktop scope not (quick filter narrows it to nothing)
     prismaMock.transaction.count
       .mockResolvedValueOnce(0) // full scope
       .mockResolvedValueOnce(7) // desktop scope
       .mockResolvedValueOnce(2); // desktop uncategorized
-    mockGroupBy({
-      summary: [{ type: 'INCOME', isPayment: false, isTransfer: false, _sum: { amount: 40 } }],
-    });
 
     const result = await getTransactionsPage('user-1', {
       ...scope({}, { quickFilter: 'uncategorized' }),
@@ -455,23 +461,12 @@ describe('getTransactionsPage — Mode A', () => {
   });
 
   it('converts Decimal sums exactly (no float drift, no Decimal leak)', async () => {
-    prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(1));
+    mockModeA(rowsDescending(1), [
+      dbRow({ id: 'a', date: '2026-06-01', amount: '0.1', type: 'INCOME' }),
+      dbRow({ id: 'b', date: '2026-06-01', amount: '0.3' }),
+    ]);
     mockGroupBy({
       older: [{ type: 'INCOME', _sum: { amount: new Prisma.Decimal('123.45') } }],
-      summary: [
-        {
-          type: 'INCOME',
-          isPayment: false,
-          isTransfer: false,
-          _sum: { amount: new Prisma.Decimal('0.1') },
-        },
-        {
-          type: 'EXPENSE',
-          isPayment: false,
-          isTransfer: false,
-          _sum: { amount: new Prisma.Decimal('0.3') },
-        },
-      ],
     });
 
     const result = await getTransactionsPage('user-1', { ...scope(), limit: 50 });
@@ -487,41 +482,62 @@ describe('getTransactionsPage — Mode A', () => {
     });
   });
 
-  it('folds summary cells with payment > transfer > reimbursement income > type precedence', async () => {
-    prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(1));
-    mockGroupBy({
-      summary: [
-        { type: 'EXPENSE', isPayment: true, isTransfer: true, _sum: { amount: 50 } },
-        { type: 'EXPENSE', isPayment: false, isTransfer: true, _sum: { amount: 30 } },
-        { type: 'INCOME', isPayment: false, isTransfer: false, _sum: { amount: 200 } },
-        { type: 'EXPENSE', isPayment: false, isTransfer: false, _sum: { amount: 80 } },
-      ],
-      summaryReimb: [{ type: 'INCOME', isPayment: false, isTransfer: false, _sum: { amount: 45 } }],
-    });
+  it('buckets the summary with payment > transfer > reimbursement income > type precedence', async () => {
+    mockModeA(rowsDescending(1), [
+      dbRow({ id: 'a', date: '2026-06-01', amount: 50, isPayment: true, isTransfer: true }),
+      dbRow({ id: 'b', date: '2026-06-01', amount: 30, isTransfer: true }),
+      dbRow({
+        id: 'c',
+        date: '2026-06-01',
+        amount: 200,
+        type: 'INCOME',
+        reimbursementIncome: true,
+        reimbursementIncomeLinked: 45,
+      }),
+      dbRow({ id: 'd', date: '2026-06-01', amount: 80 }),
+    ]);
 
     const result = await getTransactionsPage('user-1', { ...scope(), limit: 50 });
 
     expect(result.summary).toEqual({
       payments: '50.00', // payment AND transfer -> payments only
       transfers: '30.00',
-      reimbursementIncome: '45.00',
+      reimbursementIncome: '45.00', // only the linked part of the income
       credit: '155.00', // 200 - 45 reimbursement share
       debit: '80.00',
       net: '75.00',
     });
   });
 
-  it('clamps a reimbursement share larger than its cell instead of going negative', async () => {
-    prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(1));
-    mockGroupBy({
-      summary: [{ type: 'INCOME', isPayment: false, isTransfer: false, _sum: { amount: 20 } }],
-      summaryReimb: [{ type: 'INCOME', isPayment: false, isTransfer: false, _sum: { amount: 35 } }],
-    });
+  it('nets reimbursable expenses by what has been paid back, like Overview Out', async () => {
+    mockModeA(rowsDescending(1), [
+      // partly reimbursed: 100 - 30
+      dbRow({
+        id: 'a',
+        date: '2026-06-01',
+        amount: 100,
+        reimbursable: { expected: 100, linked: [30] },
+      }),
+      // marked fully reimbursed by hand: counts the expected amount as paid back
+      dbRow({
+        id: 'b',
+        date: '2026-06-01',
+        amount: 60,
+        reimbursable: { expected: 60, linked: [10] },
+        reimbursementCompletedAt: new Date('2026-06-02'),
+      }),
+      // over-reimbursed clamps at 0, never a negative debit
+      dbRow({
+        id: 'c',
+        date: '2026-06-01',
+        amount: 20,
+        reimbursable: { expected: 20, linked: [25] },
+      }),
+    ]);
 
     const result = await getTransactionsPage('user-1', { ...scope(), limit: 50 });
 
-    expect(result.summary.reimbursementIncome).toBe('20.00');
-    expect(result.summary.credit).toBe('0.00');
+    expect(result.summary.debit).toBe('70.00');
   });
 
   it('folds day totals from distinct instants into one signed UTC-day entry', async () => {
@@ -584,11 +600,59 @@ describe('getTransactionsPage — Mode A', () => {
     expect(calls[0]).toEqual({ where: { userId: 'user-1', AND: [{ type: 'EXPENSE' }] } });
     expect(calls[1]).toEqual({ where: { userId: 'user-1' } });
     expect(calls[2]).toEqual({ where: { AND: [{ userId: 'user-1' }, { categoryId: null }] } });
-    // the summary is desktop-scoped: no quick-filter clause in its predicate
-    const [summaryAll] = groupByCallsWith('type,isPayment,isTransfer');
-    expect(summaryAll.where).toEqual({ userId: 'user-1' });
+    // the desktop summary has no quick-filter clause; the mobile one does
+    expect(summaryCalls().map((c) => c.where)).toEqual([
+      { userId: 'user-1' },
+      { userId: 'user-1', AND: [{ type: 'EXPENSE' }] },
+    ]);
     // while rows and the running balance use the mobile-inclusive scope
     expect(pageCall().where).toEqual({ userId: 'user-1', AND: [{ type: 'EXPENSE' }] });
+  });
+
+  it('counts the Uncategorized badge without the pill-controlled type/uncategorizedOnly filters', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(1));
+
+    await getTransactionsPage('user-1', {
+      ...scope({ type: 'EXPENSE', uncategorizedOnly: true, hideTransfers: true }),
+      limit: 50,
+    });
+
+    const calls = prismaMock.transaction.count.mock.calls.map(([a]) => a);
+    expect(calls[1]).toEqual({
+      where: { AND: [{ userId: 'user-1', AND: [{ isTransfer: false }] }, { categoryId: null }] },
+    });
+  });
+
+  it('resolves pending reimbursement ids first and restricts the scope to them', async () => {
+    prismaMock.transaction.findMany.mockImplementation(async (args: FindManyArgs) => {
+      const where = args.where as Record<string, unknown>;
+      if (where.isReimbursable) {
+        return [
+          { id: 'pending', reimbursementExpectedAmount: 50, reimbursementExpenseLinks: [] },
+          {
+            id: 'partial',
+            reimbursementExpectedAmount: 50,
+            reimbursementExpenseLinks: [{ amount: 20 }],
+          },
+          {
+            id: 'fully-linked',
+            reimbursementExpectedAmount: 50,
+            reimbursementExpenseLinks: [{ amount: 50 }],
+          },
+        ];
+      }
+      return [];
+    });
+
+    await getTransactionsPage('user-1', {
+      ...scope({ pendingReimbursementsOnly: true }),
+      limit: 50,
+    });
+
+    expect(pageCall().where).toEqual({
+      userId: 'user-1',
+      AND: [{ id: { in: ['pending', 'partial'] } }],
+    });
   });
 
   it('scopes the page query, counts and every aggregate by userId', async () => {
@@ -650,13 +714,17 @@ describe('getTransactionsPage — Mode B', () => {
     expect(scanCall().select).toEqual({
       id: true,
       date: true,
-      amount: true,
-      type: true,
       payee: true,
       categoryId: true,
+      amount: true,
+      type: true,
       isPayment: true,
       isTransfer: true,
-      _count: { select: { reimbursementIncomeLinks: true } },
+      isReimbursable: true,
+      reimbursementExpectedAmount: true,
+      reimbursementCompletedAt: true,
+      reimbursementExpenseLinks: { select: { amount: true } },
+      reimbursementIncomeLinks: { select: { amount: true } },
     });
     expect(scanCall()).not.toHaveProperty('include');
     expect(scanCall().where).toEqual({ userId: 'user-1' });
@@ -790,6 +858,23 @@ describe('getTransactionsPage — Mode B', () => {
     expect(result.rows.map((r) => r.id)).toEqual(['c', 'u']);
     expect(result.totalCount).toBe(2);
     expect(result.desktopCount).toBe(3);
+    expect(result.uncategorizedCount).toBe(2);
+  });
+
+  it('re-applies the type filter in JS but counts Uncategorized without it', async () => {
+    const rows = [
+      dbRow({ id: 'e', date: '2026-06-15T00:00:00.000Z', amount: '5.00' }),
+      dbRow({ id: 'i', date: '2026-06-14T00:00:00.000Z', amount: '5.00', type: 'INCOME' }),
+    ];
+    mockScan(rows);
+    const result = await getTransactionsPage('user-1', {
+      ...scope({ type: 'EXPENSE' }, { mobileSearch: '5' }),
+      limit: 50,
+    });
+    // the scan itself leaves `type` out so the badge can see both rows
+    expect(scanCall().where).toEqual({ userId: 'user-1' });
+    expect(result.rows.map((r) => r.id)).toEqual(['e']);
+    expect(result.desktopCount).toBe(1);
     expect(result.uncategorizedCount).toBe(2);
   });
 
