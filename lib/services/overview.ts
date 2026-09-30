@@ -17,6 +17,7 @@ export type OverviewDayEntry = {
 
 export type OverviewBudgetRing = {
   id: string;
+  categoryId: string;
   categoryName: string;
   fraction: number;
   pctLabel: string;
@@ -27,6 +28,10 @@ export type OverviewBudgetRing = {
 export type OverviewExpenseSlice = {
   categoryId: string | null;
   categoryName: string;
+  /** The categories this slice sums, for drilling into its transactions:
+   * one id for a named category, several for "Other", none for
+   * "Uncategorized". Uncategorized spend folded into "Other" isn't listed. */
+  categoryIds: string[];
   amount: string;
   fraction: number;
 };
@@ -180,15 +185,24 @@ export const getOverviewData = async (
 
   const EXPENSE_SLICE_CAP = 6;
   const topSlices = sortedExpenseSlices.slice(0, EXPENSE_SLICE_CAP);
-  const otherAmount = sortedExpenseSlices
-    .slice(EXPENSE_SLICE_CAP)
-    .reduce((sum, s) => sum + s.amount, 0);
+  const otherSlices = sortedExpenseSlices.slice(EXPENSE_SLICE_CAP);
+  const otherAmount = otherSlices.reduce((sum, s) => sum + s.amount, 0);
   const expenseBreakdown: OverviewExpenseSlice[] = [
-    ...topSlices,
-    ...(otherAmount > 0 ? [{ categoryId: null, categoryName: 'Other', amount: otherAmount }] : []),
+    ...topSlices.map((s) => ({ ...s, categoryIds: s.categoryId ? [s.categoryId] : [] })),
+    ...(otherAmount > 0
+      ? [
+          {
+            categoryId: null,
+            categoryName: 'Other',
+            categoryIds: otherSlices.flatMap((s) => (s.categoryId ? [s.categoryId] : [])),
+            amount: otherAmount,
+          },
+        ]
+      : []),
   ].map((s) => ({
     categoryId: s.categoryId,
     categoryName: s.categoryName,
+    categoryIds: s.categoryIds,
     amount: s.amount.toFixed(2),
     fraction: expense > 0 ? s.amount / expense : 0,
   }));
@@ -308,6 +322,7 @@ export const getOverviewData = async (
       const fraction = budgetLimit > 0 ? budgetSpent / budgetLimit : 0;
       return {
         id: b.id,
+        categoryId: b.categoryId,
         categoryName: b.categoryName,
         fraction,
         pctLabel: `${Math.round(Math.min(fraction, 1) * 100)}%`,

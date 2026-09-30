@@ -81,7 +81,12 @@ export const TransactionsView = ({
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [drawerKey, setDrawerKey] = useState(0);
-  const [detail, setDetail] = useState<FrontendTransaction | null>(null);
+  // `?tx=<id>` (Overview's day panel links here) opens that transaction's
+  // drawer on arrival.
+  const [detail, setDetail] = useState<FrontendTransaction | null>(() => {
+    const id = searchParams.get('tx');
+    return id ? (initialTransactions.find((t) => t.id === id) ?? null) : null;
+  });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
@@ -179,12 +184,22 @@ export const TransactionsView = ({
     setDrawerKey((k) => k + 1);
   };
 
+  // Drops `?tx=` on close so a refresh or back navigation doesn't reopen it.
+  const closeDetail = (): void => {
+    setDetail(null);
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('tx')) return;
+    params.delete('tx');
+    const query = params.toString();
+    window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
+  };
+
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
     await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
     setDeletePending(false);
     setConfirmDeleteId(null);
-    setDetail(null);
+    closeDetail();
     router.refresh();
   };
 
@@ -577,12 +592,7 @@ export const TransactionsView = ({
         />
       </Drawer>
 
-      <Drawer
-        key={`drawer-${drawerKey}`}
-        open={!!detail}
-        onClose={() => setDetail(null)}
-        title="Transaction"
-      >
+      <Drawer key={`drawer-${drawerKey}`} open={!!detail} onClose={closeDetail} title="Transaction">
         {detail && (
           <>
             <div className="font-display mt-4 text-[22px] font-semibold tracking-[-0.02em]">
@@ -593,7 +603,7 @@ export const TransactionsView = ({
                 transaction={detail}
                 accounts={accounts}
                 categories={categories}
-                onDone={() => setDetail(null)}
+                onDone={closeDetail}
               />
             </div>
             {detail.importBatchFilename && detail.importBatchId && (
