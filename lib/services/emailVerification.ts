@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { prisma } from '@/lib/db/prisma';
 import { isEmailConfigured, sendEmail } from '@/lib/email/brevo';
+import { buildVerificationEmail } from '@/lib/email/verification-email';
 import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
 
 const TOKEN_BYTES = 32;
@@ -13,15 +14,9 @@ const RESEND_WINDOW_MS = 60 * 60 * 1000;
 
 const hashToken = (rawToken: string): string => createHash('sha256').update(rawToken).digest('hex');
 
-const verifyUrl = (rawToken: string): string => {
-  const base = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
-  return `${base}/api/auth/verify?token=${rawToken}`;
-};
+const appUrl = (): string => process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 
-const verificationEmailHtml = (rawToken: string): string =>
-  `<p>Confirm your email for Ledger by clicking the link below. It expires in 24 hours.</p>` +
-  `<p><a href="${verifyUrl(rawToken)}">Verify email address</a></p>` +
-  `<p>If you didn't create a Ledger account, you can ignore this email.</p>`;
+const verifyUrl = (rawToken: string): string => `${appUrl()}/api/auth/verify?token=${rawToken}`;
 
 export const isEmailVerificationConfigured = (): boolean => isEmailConfigured();
 
@@ -53,8 +48,11 @@ export const issueAndSendVerificationEmail = async (
 
   await sendEmail({
     to: email,
-    subject: 'Verify your Ledger email address',
-    html: verificationEmailHtml(rawToken),
+    ...buildVerificationEmail({
+      appUrl: appUrl(),
+      verifyUrl: verifyUrl(rawToken),
+      hoursValid: TOKEN_TTL_MS / (60 * 60 * 1000),
+    }),
   });
 };
 

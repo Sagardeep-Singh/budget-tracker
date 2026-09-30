@@ -34,6 +34,8 @@ export const sendEmail = async (params: {
   to: string;
   subject: string;
   html: string;
+  /** plain-text alternative, for clients that don't render HTML */
+  text?: string;
 }): Promise<void> => {
   const key = apiKey();
   const from = senderEmail();
@@ -55,6 +57,7 @@ export const sendEmail = async (params: {
         to: [{ email: params.to }],
         subject: params.subject,
         htmlContent: params.html,
+        ...(params.text ? { textContent: params.text } : {}),
       }),
     });
   } catch {
