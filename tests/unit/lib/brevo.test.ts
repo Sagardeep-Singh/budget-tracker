@@ -62,6 +62,16 @@ describe('sendEmail', () => {
     });
   });
 
+  it('sends the plain-text alternative when one is given', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 201 });
+    const { sendEmail } = await import('@/lib/email/brevo');
+
+    await sendEmail({ to: 'a@b.com', subject: 'Verify', html: '<p>link</p>', text: 'link' });
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.textContent).toBe('link');
+  });
+
   it('throws EmailSendError on a non-2xx response', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 401 });
     const { sendEmail, EmailSendError } = await import('@/lib/email/brevo');
