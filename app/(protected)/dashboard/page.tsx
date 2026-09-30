@@ -8,6 +8,12 @@ import { PeriodPopover } from '@/components/dashboard/period-popover';
 import { ExpensePie } from '@/components/dashboard/expense-pie';
 import { DayPanel } from '@/components/dashboard/day-panel';
 import { getByDayBars } from '@/lib/dashboard/day-bars';
+import {
+  overviewCategoryHref,
+  overviewExpenseHref,
+  overviewIncomeHref,
+  overviewNetHref,
+} from '@/lib/dashboard/drilldown';
 import { cn } from '@/lib/cn';
 import { getStoredPeriod } from '@/lib/period-cookie';
 import { selectionMonth } from '@/lib/period-selection';
@@ -224,30 +230,30 @@ const DashboardPage = async ({
                       )}
                     </div>
                     <div className="border-line mt-4.5 flex flex-wrap gap-x-6.5 gap-y-3 border-t pt-4 lg:flex-nowrap">
-                      <div>
+                      <Link href={overviewIncomeHref(data.month)} className="group">
                         <div className="text-ink-muted text-[10.5px] font-semibold tracking-[0.08em] uppercase">
                           In
                         </div>
-                        <div className="text-sky mt-1.5 font-mono text-lg tabular-nums">
+                        <div className="text-sky mt-1.5 font-mono text-lg tabular-nums group-hover:underline">
                           {money(hero.income)}
                         </div>
-                      </div>
-                      <div>
+                      </Link>
+                      <Link href={overviewExpenseHref(data.month)} className="group">
                         <div className="text-ink-muted text-[10.5px] font-semibold tracking-[0.08em] uppercase">
                           Out
                         </div>
-                        <div className="text-rose mt-1.5 font-mono text-lg tabular-nums">
+                        <div className="text-rose mt-1.5 font-mono text-lg tabular-nums group-hover:underline">
                           {money(hero.expense)}
                         </div>
-                      </div>
-                      <div>
+                      </Link>
+                      <Link href={overviewNetHref(data.month)} className="group">
                         <div className="text-ink-muted text-[10.5px] font-semibold tracking-[0.08em] uppercase">
                           Net
                         </div>
-                        <div className="mt-1.5 font-mono text-lg tabular-nums">
+                        <div className="mt-1.5 font-mono text-lg tabular-nums group-hover:underline">
                           {money(hero.net)}
                         </div>
-                      </div>
+                      </Link>
                     </div>
                   </div>
                 </div>
@@ -281,7 +287,11 @@ const DashboardPage = async ({
                 ) : (
                   <div className="grid grid-cols-4 gap-2.5">
                     {budgetRings.map((r) => (
-                      <div key={r.id} className="flex flex-col items-center gap-2.5">
+                      <Link
+                        key={r.id}
+                        href={overviewCategoryHref(data.month, [r.categoryId])}
+                        className="hover:bg-paper flex flex-col items-center gap-2.5 rounded-xl py-1.5"
+                      >
                         <Ring size="category" fraction={r.fraction}>
                           <span className="font-mono text-sm">{r.pctLabel}</span>
                         </Ring>
@@ -298,7 +308,7 @@ const DashboardPage = async ({
                             {r.over && ' over'}
                           </span>
                         </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 )}
@@ -309,7 +319,7 @@ const DashboardPage = async ({
                   <h2 className="font-display text-base font-semibold">Spending by category</h2>
                   <span className="text-ink-muted text-xs">all expenses this month</span>
                 </div>
-                <ExpensePie slices={expenseBreakdown} total={hero.expense} />
+                <ExpensePie slices={expenseBreakdown} total={hero.expense} month={data.month} />
               </div>
 
               <div className="border-line bg-paper-raised rounded-[18px] border p-5.5">
@@ -330,6 +340,7 @@ const DashboardPage = async ({
             <div className="flex min-w-0 flex-col gap-5">
               <div data-testid="day-panel-desktop">
                 <DayPanel
+                  month={data.month}
                   selectedDay={selectedDay}
                   daysInMonth={data.daysInMonth}
                   dayHref={dayHref}
@@ -466,22 +477,25 @@ const DashboardPage = async ({
                 <span className="text-ink-muted text-[11.5px]">separate from budgets</span>
               </div>
               <div className="mt-3.5 grid grid-cols-2 gap-3">
-                <div>
+                <Link href={overviewIncomeHref(data.month)}>
                   <div className="text-ink-muted text-[10px] tracking-[0.08em] uppercase">In</div>
                   <div className="text-sky mt-0.5 font-mono text-[17px]">{money(hero.income)}</div>
-                </div>
-                <div>
+                </Link>
+                <Link href={overviewExpenseHref(data.month)}>
                   <div className="text-ink-muted text-[10px] tracking-[0.08em] uppercase">Out</div>
                   <div className="text-rose mt-0.5 font-mono text-[17px]">
                     {money(hero.expense)}
                   </div>
-                </div>
+                </Link>
               </div>
               <div className="bg-line my-3.5 h-px" />
-              <div className="flex items-baseline justify-between gap-2.5">
+              <Link
+                href={overviewNetHref(data.month)}
+                className="flex items-baseline justify-between gap-2.5"
+              >
                 <span className="text-ink-muted text-[13px]">Net this month</span>
                 <span className="font-mono text-[17px] font-medium">{money(hero.net)}</span>
-              </div>
+              </Link>
               <p className="text-ink-muted mt-2.5 text-[11.5px] leading-relaxed">
                 Excludes transfers between your own accounts.
               </p>
@@ -499,7 +513,11 @@ const DashboardPage = async ({
                   {budgetRings.map((r) => {
                     const alert = r.fraction > 0.85;
                     return (
-                      <div key={r.id}>
+                      <Link
+                        key={r.id}
+                        href={overviewCategoryHref(data.month, [r.categoryId])}
+                        className="block"
+                      >
                         <div className="flex items-baseline justify-between gap-2 text-[13px]">
                           <span className="font-medium">{r.categoryName}</span>
                           <span className={cn('font-mono', alert ? 'text-rose' : 'text-iris')}>
@@ -513,7 +531,7 @@ const DashboardPage = async ({
                             style={{ width: `${Math.round(Math.min(r.fraction, 1) * 100)}%` }}
                           />
                         </div>
-                      </div>
+                      </Link>
                     );
                   })}
                 </div>
@@ -526,6 +544,7 @@ const DashboardPage = async ({
       {dayFocus && (
         <div className="lg:hidden" data-testid="day-panel-mobile">
           <DayPanel
+            month={data.month}
             selectedDay={selectedDay}
             daysInMonth={data.daysInMonth}
             dayHref={dayHref}

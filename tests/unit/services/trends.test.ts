@@ -7,7 +7,21 @@ const { prismaMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+// the manually-completed-reimbursement lookup in listReimbursedAmountsByExpenseDate
+// also calls transaction.findMany; route it away so each test's own
+// transaction.findMany mocks (and their call order) stay about the ledger rows
+vi.mock('@/lib/db/prisma', () => ({
+  prisma: {
+    ...prismaMock,
+    transaction: {
+      ...prismaMock.transaction,
+      findMany: (args?: { where?: { reimbursementCompletedAt?: unknown } }) =>
+        args?.where?.reimbursementCompletedAt
+          ? Promise.resolve([])
+          : prismaMock.transaction.findMany(args),
+    },
+  },
+}));
 
 const { getSpendingTrends } = await import('@/lib/services/trends');
 
@@ -25,7 +39,7 @@ describe('getSpendingTrends', () => {
         amount: 100,
         date: new Date(Date.UTC(2026, 0, 10)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: { id: 'cat-1', name: 'Groceries' },
       },
@@ -35,7 +49,7 @@ describe('getSpendingTrends', () => {
         amount: 150,
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: { id: 'cat-1', name: 'Groceries' },
       },
@@ -44,7 +58,7 @@ describe('getSpendingTrends', () => {
         amount: 500,
         date: new Date(Date.UTC(2026, 1, 12)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: null,
       },
@@ -69,7 +83,7 @@ describe('getSpendingTrends', () => {
         amount: 60,
         date: new Date(Date.UTC(2026, 1, 5)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: { id: 'cat-1', name: 'Dining' },
       },
@@ -78,7 +92,7 @@ describe('getSpendingTrends', () => {
         amount: 400,
         date: new Date(Date.UTC(2026, 1, 5)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: true,
         category: null,
       },
@@ -87,7 +101,7 @@ describe('getSpendingTrends', () => {
         amount: 400,
         date: new Date(Date.UTC(2026, 1, 6)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: true,
         category: null,
       },
@@ -110,7 +124,7 @@ describe('getSpendingTrends', () => {
         amount: 100 - i,
         date: feb(1),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category,
       })),
@@ -143,7 +157,7 @@ describe('getSpendingTrends', () => {
         amount: 50,
         date: new Date(Date.UTC(2025, 8, 10)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: { id: 'cat-dining', name: 'Dining' },
       },
@@ -153,7 +167,7 @@ describe('getSpendingTrends', () => {
         amount: 170,
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: { id: 'cat-dining', name: 'Dining' },
       },
@@ -162,7 +176,7 @@ describe('getSpendingTrends', () => {
         amount: 40,
         date: new Date(Date.UTC(2025, 8, 15)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         isTransfer: false,
         category: { id: 'cat-groceries', name: 'Groceries' },
       },
@@ -198,7 +212,7 @@ describe('getSpendingTrends', () => {
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
         isTransfer: false,
-        _count: { reimbursementIncomeLinks: 1 },
+        reimbursementIncomeLinks: [{ amount: 500 }],
         category: null,
       },
     ]);
@@ -207,6 +221,26 @@ describe('getSpendingTrends', () => {
 
     const feb = result.months.find((m) => m.month === 202602)!;
     expect(feb.income).toBe(0);
+  });
+
+  it('only excludes the linked part of an income used as a reimbursement', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      {
+        id: 'inc-1',
+        type: 'INCOME',
+        amount: 500,
+        date: new Date(Date.UTC(2026, 1, 10)),
+        isPayment: false,
+        isTransfer: false,
+        reimbursementIncomeLinks: [{ amount: 120 }],
+        category: null,
+      },
+    ]);
+
+    const result = await getSpendingTrends('user-1', { month: 202602, range: 3 });
+
+    const feb = result.months.find((m) => m.month === 202602)!;
+    expect(feb.income).toBe(380);
   });
 
   it('nets a reimbursed expense out of the month total and category breakdown', async () => {
@@ -218,7 +252,7 @@ describe('getSpendingTrends', () => {
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
         isTransfer: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         category: { id: 'cat-1', name: 'Work' },
       },
     ]);
@@ -247,7 +281,7 @@ describe('getSpendingTrends', () => {
         date: new Date(Date.UTC(2025, 8, 10)),
         isPayment: false,
         isTransfer: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         category: { id: 'cat-dining', name: 'Dining' },
       },
       // current (Feb): Dining 170 gross, 130 reimbursed -> net 40. Gross vs.
@@ -260,7 +294,7 @@ describe('getSpendingTrends', () => {
         date: new Date(Date.UTC(2026, 1, 10)),
         isPayment: false,
         isTransfer: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         category: { id: 'cat-dining', name: 'Dining' },
       },
     ]);

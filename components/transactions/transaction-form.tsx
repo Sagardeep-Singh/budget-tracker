@@ -51,7 +51,9 @@ export const TransactionForm = ({
 
   const [amountValue, setAmountValue] = useState(transaction?.amount ?? '');
   const [expectedAmountError, setExpectedAmountError] = useState<string | null>(null);
-  const hasReimbursementLinks = Number(transaction?.reimbursementLinkedTotal ?? 0) > 0;
+  // kept in sync by the reimbursement panel, since links can change without saving the form
+  const [linkedTotal, setLinkedTotal] = useState(transaction?.reimbursementLinkedTotal ?? '0');
+  const hasReimbursementLinks = Number(linkedTotal) > 0;
 
   // Thin FormData → values adapter; all the logic lives in the shared hook so
   // the mobile keypad screen can't drift from it.
@@ -215,7 +217,11 @@ export const TransactionForm = ({
           )}
           {transaction && isReimbursable && (
             <div className="mt-3">
-              <ReimbursementPanel transaction={transaction} />
+              <ReimbursementPanel
+                transaction={transaction}
+                expectedAmount={reimbursementExpectedAmount}
+                onLinkedTotalChange={setLinkedTotal}
+              />
             </div>
           )}
         </div>

@@ -3,6 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { Ring, type RingSize } from '@/components/ui/ring';
 import { Money } from '@/components/ui/money';
 import { cn } from '@/lib/cn';
+import { overviewDayHref } from '@/lib/dashboard/drilldown';
 import type { OverviewData } from '@/lib/services/overview';
 
 const money = (value: string): string =>
@@ -14,12 +15,14 @@ const money = (value: string): string =>
  * `ringSize` and `backHref` are the only differences between the two.
  */
 export const DayPanel = ({
+  month,
   selectedDay,
   daysInMonth,
   dayHref,
   ringSize = 'budget',
   backHref,
 }: {
+  month: number;
   selectedDay: OverviewData['selectedDay'];
   daysInMonth: number;
   dayHref: (day: number) => string;
@@ -87,22 +90,33 @@ export const DayPanel = ({
 
     {selectedDay.rows.length > 0 ? (
       <div className="border-line mt-4 border-t">
-        {selectedDay.rows.map((row) => (
-          <div
-            key={row.id}
-            className="ledger-row flex items-center gap-3.5 py-3 text-sm last:border-b-0"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13.5px] font-medium">{row.payee}</div>
-              <div className="text-ink-muted mt-0.5 text-xs">{row.categoryName}</div>
-            </div>
-            <Money
-              value={row.amount}
-              tone={row.tone}
-              className="shrink-0 text-[13.5px] tabular-nums"
-            />
-          </div>
-        ))}
+        <div>
+          {/* Each row opens that transaction's edit drawer on Transactions,
+            scoped to this day, rather than duplicating the drawer here. */}
+          {selectedDay.rows.map((row) => (
+            <Link
+              key={row.id}
+              href={overviewDayHref(month, selectedDay.day, row.id)}
+              className="ledger-row hover:bg-paper flex items-center gap-3.5 py-3 text-sm last:border-b-0"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13.5px] font-medium">{row.payee}</div>
+                <div className="text-ink-muted mt-0.5 text-xs">{row.categoryName}</div>
+              </div>
+              <Money
+                value={row.amount}
+                tone={row.tone}
+                className="shrink-0 text-[13.5px] tabular-nums"
+              />
+            </Link>
+          ))}
+        </div>
+        <Link
+          href={overviewDayHref(month, selectedDay.day)}
+          className="text-iris mt-3 inline-block text-[13px] font-semibold"
+        >
+          View in Transactions →
+        </Link>
       </div>
     ) : (
       <div className="border-line text-ink-muted mt-4 border-t pt-4.5 text-center text-[13px]">

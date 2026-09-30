@@ -41,6 +41,8 @@ amount actually reimbursed`, clamped at 0 (overshoot is allowed but never become
   credit). Attributed to the **expense's month** — a January expense reimbursed in March
   retroactively lowers January's spent. Accepted: past months can shift when a late
   reimbursement arrives.
+  An expense manually marked fully reimbursed counts as reimbursed for its full expected amount
+  (linked total topped up to expected), since that's what "fully reimbursed" asserts.
 - **The Overview page nets out reimbursements everywhere, not just budgets** — `hero.expense`,
   the category pie, daily bars, and Trends' expense sums all subtract reimbursed amounts too.
   This keeps the dashboard internally consistent: reimbursement income is already excluded from

@@ -10,7 +10,21 @@ const { prismaMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+// the manually-completed-reimbursement lookup in listReimbursedAmountsByExpenseDate
+// also calls transaction.findMany; route it away so each test's own
+// transaction.findMany mocks (and their call order) stay about the ledger rows
+vi.mock('@/lib/db/prisma', () => ({
+  prisma: {
+    ...prismaMock,
+    transaction: {
+      ...prismaMock.transaction,
+      findMany: (args?: { where?: { reimbursementCompletedAt?: unknown } }) =>
+        args?.where?.reimbursementCompletedAt
+          ? Promise.resolve([])
+          : prismaMock.transaction.findMany(args),
+    },
+  },
+}));
 
 const { getOverviewData } = await import('@/lib/services/overview');
 
@@ -42,7 +56,7 @@ describe('getOverviewData', () => {
         amount: 150,
         date: new Date(Date.UTC(2026, 2, 5)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         payee: 'Store',
         category: { name: 'Groceries' },
       },
@@ -52,7 +66,7 @@ describe('getOverviewData', () => {
         amount: 500,
         date: new Date(Date.UTC(2026, 2, 5)),
         isPayment: false,
-        _count: { reimbursementIncomeLinks: 0 },
+        reimbursementIncomeLinks: [],
         payee: 'Payroll',
         category: null,
       },
@@ -107,7 +121,7 @@ describe('getOverviewData', () => {
           amount: 100,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Store',
           categoryId: 'cat-1',
@@ -119,7 +133,7 @@ describe('getOverviewData', () => {
           amount: 40,
           date: new Date(Date.UTC(2026, 2, 6)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Unknown',
           categoryId: null,
@@ -131,7 +145,7 @@ describe('getOverviewData', () => {
           amount: 500,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Payroll',
           categoryId: null,
@@ -145,7 +159,7 @@ describe('getOverviewData', () => {
           amount: 250,
           date: new Date(Date.UTC(2026, 2, 7)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: true,
           payee: 'Payment to Visa',
           categoryId: 'cat-1',
@@ -158,8 +172,20 @@ describe('getOverviewData', () => {
     const result = await getOverviewData('user-1', { month: 202603 });
 
     expect(result.expenseBreakdown).toEqual([
-      { categoryId: 'cat-1', categoryName: 'Groceries', amount: '100.00', fraction: 100 / 140 },
-      { categoryId: null, categoryName: 'Uncategorized', amount: '40.00', fraction: 40 / 140 },
+      {
+        categoryId: 'cat-1',
+        categoryName: 'Groceries',
+        categoryIds: ['cat-1'],
+        amount: '100.00',
+        fraction: 100 / 140,
+      },
+      {
+        categoryId: null,
+        categoryName: 'Uncategorized',
+        categoryIds: [],
+        amount: '40.00',
+        fraction: 40 / 140,
+      },
     ]);
   });
 
@@ -186,7 +212,7 @@ describe('getOverviewData', () => {
           amount: 60,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: false,
           payee: 'Store',
           category: { name: 'Groceries' },
@@ -197,7 +223,7 @@ describe('getOverviewData', () => {
           amount: 400,
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: true,
           payee: 'Payment to Visa',
           category: null,
@@ -211,7 +237,7 @@ describe('getOverviewData', () => {
           amount: 400,
           date: new Date(Date.UTC(2026, 2, 6)),
           isPayment: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           isTransfer: true,
           payee: 'Transfer in',
           category: null,
@@ -245,7 +271,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 1 },
+          reimbursementIncomeLinks: [{ amount: 100 }],
           payee: 'Reimbursement',
           category: null,
         },
@@ -257,6 +283,33 @@ describe('getOverviewData', () => {
 
     expect(result.hero.income).toBe('0.00');
     expect(result.dayBars.find((d) => d.day === 5)?.income).toBe(0);
+  });
+
+  it('only excludes the linked part of an income used as a reimbursement', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+    prismaMock.account.findFirst.mockResolvedValue(null);
+    prismaMock.transaction.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 't1',
+          type: 'INCOME',
+          amount: 100,
+          date: new Date(Date.UTC(2026, 2, 5)),
+          isPayment: false,
+          isTransfer: false,
+          reimbursementIncomeLinks: [{ amount: 25 }, { amount: 15 }],
+          payee: 'Paycheck',
+          category: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+
+    const result = await getOverviewData('user-1', { month: 202603, day: 5 });
+
+    expect(result.hero.income).toBe('60.00');
+    expect(result.dayBars.find((d) => d.day === 5)?.income).toBe(60);
   });
 
   it('counts an otherwise-identical income row once it has no active links', async () => {
@@ -272,7 +325,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           payee: 'Payroll',
           category: null,
         },
@@ -298,7 +351,7 @@ describe('getOverviewData', () => {
           date: new Date(Date.UTC(2026, 2, 5)),
           isPayment: false,
           isTransfer: false,
-          _count: { reimbursementIncomeLinks: 0 },
+          reimbursementIncomeLinks: [],
           payee: 'Office supplies',
           categoryId: 'cat-1',
           category: { name: 'Work' },
@@ -318,7 +371,13 @@ describe('getOverviewData', () => {
 
     expect(result.hero.expense).toBe('60.00');
     expect(result.expenseBreakdown).toEqual([
-      { categoryId: 'cat-1', categoryName: 'Work', amount: '60.00', fraction: 1 },
+      {
+        categoryId: 'cat-1',
+        categoryName: 'Work',
+        categoryIds: ['cat-1'],
+        amount: '60.00',
+        fraction: 1,
+      },
     ]);
     expect(result.dayBars.find((d) => d.day === 5)?.expense).toBe(60);
     expect(result.selectedDay.spent).toBe('60.00');
@@ -373,5 +432,68 @@ describe('getOverviewData', () => {
 
     expect(result.cycleCard?.cycleSpend).toBe('100.00');
     expect(result.cycleCard?.balance).toBe('-100.00');
+  });
+
+  it('exposes the category ids behind each budget ring and expense slice for drill-downs', async () => {
+    prismaMock.budget.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        categoryId: 'cat-1',
+        month: 202603,
+        limitAmount: 500,
+        category: { name: 'Cat 1' },
+      },
+    ]);
+    prismaMock.transaction.groupBy.mockResolvedValue([]);
+    prismaMock.account.findFirst.mockResolvedValue(null);
+    // Eight named categories (80 down to 10) plus a small uncategorized spend:
+    // the top six get their own slice, the rest fold into "Other".
+    const expenses = Array.from({ length: 8 }, (_, i) => ({
+      id: `t${i + 1}`,
+      type: 'EXPENSE',
+      amount: 80 - i * 10,
+      date: new Date(Date.UTC(2026, 2, 5)),
+      isPayment: false,
+      isTransfer: false,
+      reimbursementIncomeLinks: [],
+      payee: 'Store',
+      categoryId: `cat-${i + 1}`,
+      category: { name: `Cat ${i + 1}` },
+    }));
+    prismaMock.transaction.findMany
+      .mockResolvedValueOnce([
+        ...expenses,
+        {
+          id: 't-uncat',
+          type: 'EXPENSE',
+          amount: 5,
+          date: new Date(Date.UTC(2026, 2, 5)),
+          isPayment: false,
+          isTransfer: false,
+          reimbursementIncomeLinks: [],
+          payee: 'Unknown',
+          categoryId: null,
+          category: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prismaMock.categoryRule.findMany.mockResolvedValue([]);
+
+    const result = await getOverviewData('user-1', { month: 202603 });
+
+    expect(result.budgetRings[0].categoryId).toBe('cat-1');
+    expect(result.expenseBreakdown.slice(0, 6).map((s) => s.categoryIds)).toEqual([
+      ['cat-1'],
+      ['cat-2'],
+      ['cat-3'],
+      ['cat-4'],
+      ['cat-5'],
+      ['cat-6'],
+    ]);
+    const other = result.expenseBreakdown[6];
+    expect(other.categoryName).toBe('Other');
+    expect(other.amount).toBe('35.00');
+    // Uncategorized spend folded into Other can't be expressed as an id.
+    expect(other.categoryIds).toEqual(['cat-7', 'cat-8']);
   });
 });
