@@ -73,8 +73,10 @@ test.describe('mobile width', () => {
     await login(page);
 
     // Read both regardless of visibility — only one is displayed at a time.
-    const sidebarBadge = sidebar(page).locator('a[href="/categorize"] span').last();
-    const count = Number((await sidebarBadge.textContent())?.trim() ?? '0');
+    // The badge is omitted entirely when nothing is left to categorize.
+    const sidebarBadge = sidebar(page).getByTestId('nav-badge-categorize');
+    const count =
+      (await sidebarBadge.count()) > 0 ? Number((await sidebarBadge.textContent())?.trim()) : 0;
 
     const dot = page.getByTestId('nav-dot-categorize');
     if (count > 0) {

@@ -30,32 +30,29 @@ export const buildSidebarItems = (counts: NavCounts): SidebarNavItem[] => [
     href: '/transactions',
     label: 'Transactions',
     icon: <Receipt className={navIconClassName} />,
-    badge: counts.transactions,
   },
   {
     href: '/categorize',
     label: 'Categorize',
     icon: <Tag className={navIconClassName} />,
-    badge: counts.categorize,
+    // Hidden at zero: the badge is a call to action, not a stat.
+    badge: counts.categorize > 0 ? counts.categorize : undefined,
     alert: true,
   },
   {
     href: '/budgets',
     label: 'Budgets',
     icon: <PiggyBank className={navIconClassName} />,
-    badge: counts.budgets,
   },
   {
     href: '/accounts',
     label: 'Accounts',
     icon: <Wallet className={navIconClassName} />,
-    badge: counts.accounts,
   },
   {
     href: '/rules',
     label: 'Rules',
     icon: <ListFilter className={navIconClassName} />,
-    badge: counts.rules,
   },
   {
     href: '/import',
@@ -67,9 +64,9 @@ export const buildSidebarItems = (counts: NavCounts): SidebarNavItem[] => [
 
 /**
  * The five items that don't get a slot in the mobile bottom nav — shown in its
- * "More" modal. Mirrors the sidebar entries above (same icons/hrefs/badges).
+ * "More" modal. Mirrors the sidebar entries above (same icons/hrefs).
  */
-export const buildMoreItems = (counts: NavCounts): SidebarNavItem[] => [
+export const buildMoreItems = (): SidebarNavItem[] => [
   {
     href: '/trends',
     label: 'Trends',
@@ -79,13 +76,11 @@ export const buildMoreItems = (counts: NavCounts): SidebarNavItem[] => [
     href: '/accounts',
     label: 'Accounts',
     icon: <Wallet className={navIconClassName} />,
-    badge: counts.accounts,
   },
   {
     href: '/rules',
     label: 'Rules',
     icon: <ListFilter className={navIconClassName} />,
-    badge: counts.rules,
   },
   {
     href: '/import',
