@@ -10,7 +10,21 @@ const { prismaMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+// the manually-completed-reimbursement lookup in listReimbursedAmountsByExpenseDate
+// also calls transaction.findMany; route it away so each test's own
+// transaction.findMany mocks (and their call order) stay about the ledger rows
+vi.mock('@/lib/db/prisma', () => ({
+  prisma: {
+    ...prismaMock,
+    transaction: {
+      ...prismaMock.transaction,
+      findMany: (args?: { where?: { reimbursementCompletedAt?: unknown } }) =>
+        args?.where?.reimbursementCompletedAt
+          ? Promise.resolve([])
+          : prismaMock.transaction.findMany(args),
+    },
+  },
+}));
 
 const { getOverviewData } = await import('@/lib/services/overview');
 
