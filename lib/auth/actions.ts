@@ -1,10 +1,27 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { signIn, signOut } from '@/auth';
 import { AuthError } from 'next-auth';
 import { createUser } from '@/lib/services/users';
 import { signUpSchema } from '@/lib/validators/signup';
 import { ServiceValidationError } from '@/lib/services/common';
+import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
+import { clientIpFromHeaders } from '@/lib/http/clientIp';
+import { AuthRateLimitedError } from '@/lib/auth/errors';
+
+const TOO_MANY_ATTEMPTS = 'Too many attempts. Try again in a few minutes.';
+
+// Account-creation abuse guard: bounds how many accounts one source can spin
+// up, independent of the tighter per-login-attempt limits in
+// lib/auth/config.ts (signup is a rarer action than login, so a looser
+// window with a lower cap is enough).
+const SIGNUP_WINDOW_MS = 60 * 60 * 1000;
+const SIGNUP_IP_LIMIT = 5;
+
+// See lib/auth/config.ts's matching flag — same reasoning, the e2e suite
+// creates far more accounts per run than any real signup source would.
+const rateLimitDisabled = process.env.E2E_DISABLE_RATE_LIMIT === '1';
 
 export const signOutAction = async (): Promise<void> => {
   await signOut({ redirectTo: '/login' });
@@ -42,6 +59,9 @@ export const signInAction = async (
       redirectTo: '/dashboard',
     });
   } catch (error) {
+    if (error instanceof AuthRateLimitedError) {
+      return TOO_MANY_ATTEMPTS;
+    }
     if (error instanceof AuthError) {
       return 'Incorrect email or password.';
     }
@@ -64,6 +84,18 @@ export const signUpAction = async (
   });
   if (!parsed.success) {
     return parsed.error.issues[0]?.message ?? 'Check the form and try again.';
+  }
+
+  if (!rateLimitDisabled) {
+    const ip = clientIpFromHeaders(await headers());
+    try {
+      await checkRateLimit('signup:ip', ip, SIGNUP_IP_LIMIT, SIGNUP_WINDOW_MS);
+    } catch (error) {
+      if (error instanceof RateLimitedError) {
+        return TOO_MANY_ATTEMPTS;
+      }
+      throw error;
+    }
   }
 
   try {
