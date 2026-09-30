@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, sendEmailMock, isEmailConfiguredMock } = vi.hoisted(() => ({
+const { prismaMock, sendEmailMock, isEmailConfiguredMock, checkRateLimitMock } = vi.hoisted(() => ({
   prismaMock: {
     emailVerificationToken: {
       upsert: vi.fn(),
@@ -15,9 +15,14 @@ const { prismaMock, sendEmailMock, isEmailConfiguredMock } = vi.hoisted(() => ({
   },
   sendEmailMock: vi.fn(),
   isEmailConfiguredMock: vi.fn(),
+  checkRateLimitMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
+vi.mock('@/lib/services/rateLimit', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/services/rateLimit')>()),
+  checkRateLimit: checkRateLimitMock,
+}));
 vi.mock('@/lib/email/brevo', () => ({
   sendEmail: sendEmailMock,
   isEmailConfigured: isEmailConfiguredMock,
@@ -29,6 +34,7 @@ const {
   consumeVerificationToken,
   getEmailVerificationStatus,
 } = await import('@/lib/services/emailVerification');
+const { RateLimitedError } = await import('@/lib/services/rateLimit');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -106,6 +112,52 @@ describe('resendVerificationEmail', () => {
 
     expect(result).toEqual({ ok: true });
     expect(sendEmailMock).toHaveBeenCalled();
+  });
+
+  it('counts each send against a per-user limit of 5 an hour', async () => {
+    prismaMock.emailVerificationToken.findUnique.mockResolvedValue(null);
+    prismaMock.emailVerificationToken.upsert.mockResolvedValue({});
+    sendEmailMock.mockResolvedValue(undefined);
+
+    await resendVerificationEmail('user-1', 'a@b.com');
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      'verify-resend:user',
+      'user-1',
+      5,
+      60 * 60 * 1000,
+    );
+  });
+
+  it("rejects with the limiter's retryAfterMs once the hourly limit is hit, without sending", async () => {
+    prismaMock.emailVerificationToken.findUnique.mockResolvedValue({
+      createdAt: new Date(Date.now() - 120_000),
+    });
+    checkRateLimitMock.mockRejectedValueOnce(new RateLimitedError(1_800_000));
+
+    const result = await resendVerificationEmail('user-1', 'a@b.com');
+
+    expect(result).toEqual({ ok: false, retryAfterMs: 1_800_000 });
+    expect(prismaMock.emailVerificationToken.upsert).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it('does not use up the hourly limit on a click inside the cooldown', async () => {
+    prismaMock.emailVerificationToken.findUnique.mockResolvedValue({
+      createdAt: new Date(Date.now() - 5_000),
+    });
+
+    await resendVerificationEmail('user-1', 'a@b.com');
+
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it('rethrows limiter failures that are not a rate-limit hit', async () => {
+    prismaMock.emailVerificationToken.findUnique.mockResolvedValue(null);
+    checkRateLimitMock.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(resendVerificationEmail('user-1', 'a@b.com')).rejects.toThrow('db down');
+    expect(sendEmailMock).not.toHaveBeenCalled();
   });
 });
 
