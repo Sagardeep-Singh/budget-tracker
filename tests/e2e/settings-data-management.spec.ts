@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { signUpThenSignIn } from './fixtures/auth';
 
 const uniqueEmail = (tag: string): string =>
   `${tag}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
@@ -7,12 +8,7 @@ const PASSWORD = 'a-long-enough-password';
 
 const signUpFreshUser = async (page: Page, tag: string): Promise<string> => {
   const email = uniqueEmail(tag);
-  await page.goto('/signup');
-  await page.getByLabel('Name').fill('Data Management Person');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await signUpThenSignIn(page, { name: 'Data Management Person', email, password: PASSWORD });
   return email;
 };
 

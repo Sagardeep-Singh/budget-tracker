@@ -1,22 +1,53 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db/prisma';
-import { ServiceValidationError } from '@/lib/services/common';
+import { Prisma } from '@prisma/client';
 import type { SignUpInput } from '@/lib/validators/signup';
 
 const BCRYPT_ROUNDS = 12;
 
-export const createUser = async (input: SignUpInput): Promise<{ id: string }> => {
-  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+export type CreateUserResult = { id: string; created: boolean };
+
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+
+/**
+ * Doesn't throw on a taken email: the caller has to answer both cases the
+ * same way so signup can't be used to check whether an address is
+ * registered. `created: false` means the address already had an account and
+ * nothing was written.
+ *
+ * The password is hashed on both paths so the duplicate case isn't
+ * noticeably faster than a real signup.
+ */
+export const createUser = async (input: SignUpInput): Promise<CreateUserResult> => {
+  const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+
+  const existing = await prisma.user.findUnique({
+    where: { email: input.email },
+    select: { id: true },
+  });
   if (existing) {
-    throw new ServiceValidationError('An account with this email already exists.');
+    return { id: existing.id, created: false };
   }
 
-  const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-  const user = await prisma.user.create({
-    data: { email: input.email, name: input.name, passwordHash },
-  });
-
-  return { id: user.id };
+  try {
+    const user = await prisma.user.create({
+      data: { email: input.email, name: input.name, passwordHash },
+    });
+    return { id: user.id, created: true };
+  } catch (error) {
+    // A concurrent signup for the same address won the race.
+    if (isUniqueViolation(error)) {
+      const winner = await prisma.user.findUnique({
+        where: { email: input.email },
+        select: { id: true },
+      });
+      if (winner) {
+        return { id: winner.id, created: false };
+      }
+    }
+    throw error;
+  }
 };
 
 export const userHasPassword = async (userId: string): Promise<boolean> => {

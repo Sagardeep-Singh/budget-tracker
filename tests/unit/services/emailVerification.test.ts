@@ -30,6 +30,7 @@ vi.mock('@/lib/email/brevo', () => ({
 
 const {
   issueAndSendVerificationEmail,
+  sendAccountExistsEmail,
   resendVerificationEmail,
   consumeVerificationToken,
   getEmailVerificationStatus,
@@ -71,6 +72,51 @@ describe('issueAndSendVerificationEmail', () => {
     sendEmailMock.mockRejectedValue(new Error('brevo down'));
 
     await expect(issueAndSendVerificationEmail('user-1', 'a@b.com')).rejects.toThrow('brevo down');
+  });
+});
+
+describe('sendAccountExistsEmail', () => {
+  it('does nothing when email is not configured', async () => {
+    isEmailConfiguredMock.mockReturnValue(false);
+
+    await sendAccountExistsEmail('a@b.com');
+
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it('rate limits per lowercased address, then sends the notice with a login link', async () => {
+    checkRateLimitMock.mockResolvedValue(undefined);
+    sendEmailMock.mockResolvedValue(undefined);
+
+    await sendAccountExistsEmail('Jane@Example.com');
+
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      'signup-exists:email',
+      'jane@example.com',
+      3,
+      60 * 60 * 1000,
+    );
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const [arg] = sendEmailMock.mock.calls[0];
+    expect(arg.to).toBe('Jane@Example.com');
+    expect(arg.subject).toBe('You already have a Ledger account');
+    expect(arg.text).toMatch(/Sign in: https?:\/\/[^\s]+\/login/);
+    expect(prismaMock.emailVerificationToken.upsert).not.toHaveBeenCalled();
+  });
+
+  it('skips silently when the address is over its hourly limit', async () => {
+    checkRateLimitMock.mockRejectedValue(new RateLimitedError(60_000));
+
+    await expect(sendAccountExistsEmail('a@b.com')).resolves.toBeUndefined();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it('propagates send failures so the caller decides', async () => {
+    checkRateLimitMock.mockResolvedValue(undefined);
+    sendEmailMock.mockRejectedValue(new Error('brevo down'));
+
+    await expect(sendAccountExistsEmail('a@b.com')).rejects.toThrow('brevo down');
   });
 });
 

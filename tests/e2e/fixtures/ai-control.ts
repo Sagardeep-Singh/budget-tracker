@@ -1,4 +1,5 @@
 import type { APIRequestContext, Page } from '@playwright/test';
+import { signUpThenSignIn } from './auth';
 
 /**
  * Client for the local provider fixture (`ai-provider-server.ts`). Kept in its
@@ -80,12 +81,7 @@ const EMAIL_DOMAIN = 'example.com';
 
 export const signUpFreshUser = async (page: Page, tag: string): Promise<string> => {
   const email = `${tag}-${Date.now()}-${Math.random().toString(36).slice(2)}@${EMAIL_DOMAIN}`;
-  await page.goto('/signup');
-  await page.getByLabel('Name').fill('AI Person');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('a-long-enough-password');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await page.waitForURL(/\/dashboard/);
+  await signUpThenSignIn(page, { name: 'AI Person', email, password: 'a-long-enough-password' });
   return email;
 };
 
