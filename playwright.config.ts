@@ -18,6 +18,14 @@ const AI_FIXTURE_URL = `http://127.0.0.1:${AI_FIXTURE_PORT}`;
 const E2E_SECRET_ENCRYPTION_KEY =
   process.env.SECRET_ENCRYPTION_KEY ?? 'ZTJlLW9ubHktdGhyb3dhd2F5LWtleS0zMmJ5dGVzISE=';
 
+/**
+ * Same reasoning as the AI fixture above, for the email-verification specs:
+ * the send happens server-side (lib/email/brevo.ts), so it needs its own
+ * local stand-in rather than a `page.route()` intercept.
+ */
+const BREVO_FIXTURE_PORT = Number(process.env.BREVO_FIXTURE_PORT ?? 4598);
+const BREVO_FIXTURE_URL = `http://127.0.0.1:${BREVO_FIXTURE_PORT}`;
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -37,6 +45,12 @@ export default defineConfig({
       env: { AI_FIXTURE_PORT: String(AI_FIXTURE_PORT) },
     },
     {
+      command: 'npx tsx tests/e2e/fixtures/brevo-server.ts',
+      url: `${BREVO_FIXTURE_URL}/__control/health`,
+      reuseExistingServer: !process.env.CI,
+      env: { BREVO_FIXTURE_PORT: String(BREVO_FIXTURE_PORT) },
+    },
+    {
       command: 'npm run dev',
       url: 'http://localhost:3000',
       reuseExistingServer: !process.env.CI,
@@ -44,6 +58,9 @@ export default defineConfig({
         AI_ANTHROPIC_BASE_URL: AI_FIXTURE_URL,
         AI_OPENAI_BASE_URL: AI_FIXTURE_URL,
         SECRET_ENCRYPTION_KEY: E2E_SECRET_ENCRYPTION_KEY,
+        BREVO_BASE_URL: BREVO_FIXTURE_URL,
+        BREVO_API_KEY: 'e2e-fixture-key',
+        BREVO_SENDER_EMAIL: 'noreply@e2e-fixture.test',
         // The suite logs in as the same dev user across many specs — far more
         // attempts per run than the login/signup rate limiter (lib/auth/) is
         // meant to catch. Without this, a full run trips the limiter partway

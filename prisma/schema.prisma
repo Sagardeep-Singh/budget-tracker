@@ -42,7 +42,14 @@ model User {
   name         String?
   /// nullable: users who sign up via Google have no password
   passwordHash String?
-  createdAt    DateTime @default(now())
+  /// null = unverified. Google sign-up sets this immediately (Google already
+  /// verified the address); credentials sign-up leaves it null until the
+  /// emailed link is clicked. Never gates access — see
+  /// lib/services/emailVerification.ts and the 2026-09-17 codebase review's
+  /// "Signup has no email verification" finding for the accepted-risk
+  /// reasoning behind that choice.
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
 
   accounts           Account[]
   categories         Category[]
@@ -55,6 +62,22 @@ model User {
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
   aiSettings             UserAiSettings?
+  emailVerificationToken EmailVerificationToken?
+}
+
+/// One row per user, replaced (not appended) on every (re)send — sending a
+/// new link invalidates any earlier one, so a stale email in an inbox can't
+/// be used after a newer one was requested. The raw token is only ever in
+/// the emailed link; `tokenHash` is its SHA-256 hex digest, same reasoning
+/// as never storing a plaintext password.
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Account {
