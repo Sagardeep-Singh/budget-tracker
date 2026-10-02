@@ -36,15 +36,18 @@ test('an imported row shows a non-interactive filename chip and links to history
   const payee = `E2E Chip ${stamp}`;
   await importFile(page, filename, payee);
 
-  // the imported row is dated March 2026; bare /transactions opens on the current month
-  await page.goto('/transactions?from=2026-03-01&to=2026-03-31');
+  // The CSV row is dated 2026-03-01 (bare /transactions opens on the current
+  // month); the list loads 50 rows at a time, so also search for it (the same
+  // payee filter a user would type) rather than relying on it landing on
+  // page 1 of the whole shared dev history.
+  await page.goto(`/transactions?from=2026-03-01&to=2026-03-31&payee=${encodeURIComponent(payee)}`);
+  const listUrl = page.url();
   const row = page.locator('.ledger-row').filter({ hasText: payee });
   await expect(row).toContainText(filename);
 
   // clicking the chip opens the detail drawer, it does not navigate
   await row.getByText(filename).click();
-  // still on Transactions (the URL carries the default period's from/to)
-  await expect(page).toHaveURL(/\/transactions(\?|$)/);
+  await expect(page).toHaveURL(listUrl);
   const drawer = page.getByRole('dialog', { name: 'Transaction' });
   await expect(drawer).toBeVisible();
 

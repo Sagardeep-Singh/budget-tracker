@@ -40,7 +40,7 @@ export type FrontendTransaction = {
   reimbursementIncomeLinkedTotal: string;
 };
 
-const toFrontend = (tx: {
+export const toFrontend = (tx: {
   id: string;
   accountId: string;
   categoryId: string | null;
@@ -104,7 +104,7 @@ const toFrontend = (tx: {
   };
 };
 
-const include = {
+export const include = {
   account: { select: { name: true } },
   category: { select: { name: true } },
   importBatch: { select: { id: true, filename: true } },

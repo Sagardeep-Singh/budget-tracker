@@ -27,6 +27,7 @@ const {
   deleteReimbursementLink,
   listReimbursementCandidates,
   getPendingReimbursementSummary,
+  listPendingReimbursementExpenseIds,
   assertNoActiveLinks,
   listReimbursedAmountsByExpenseDate,
 } = await import('@/lib/services/reimbursements');
@@ -699,6 +700,40 @@ describe('listReimbursementCandidates', () => {
     const result = await listReimbursementCandidates('user-1', 'exp-1');
 
     expect(result[0].reasons.some((r) => r.startsWith('Same category'))).toBe(false);
+  });
+});
+
+describe('listPendingReimbursementExpenseIds', () => {
+  it('keeps PENDING and PARTIAL expenses, drops fully linked ones', async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([
+      { id: 'none-linked', reimbursementExpectedAmount: 100, reimbursementExpenseLinks: [] },
+      { id: 'no-expected', reimbursementExpectedAmount: null, reimbursementExpenseLinks: [] },
+      {
+        id: 'partial',
+        reimbursementExpectedAmount: 100,
+        reimbursementExpenseLinks: [{ amount: 40 }, { amount: 10 }],
+      },
+      {
+        id: 'complete',
+        reimbursementExpectedAmount: 100,
+        reimbursementExpenseLinks: [{ amount: 60 }, { amount: 40 }],
+      },
+    ]);
+
+    const result = await listPendingReimbursementExpenseIds('user-1');
+
+    expect(result).toEqual(['none-linked', 'no-expected', 'partial']);
+  });
+
+  it("only reads the user's reimbursable expenses not manually completed", async () => {
+    prismaMock.transaction.findMany.mockResolvedValue([]);
+
+    expect(await listPendingReimbursementExpenseIds('user-1')).toEqual([]);
+    expect(prismaMock.transaction.findMany.mock.calls[0][0].where).toEqual({
+      userId: 'user-1',
+      isReimbursable: true,
+      reimbursementCompletedAt: null,
+    });
   });
 });
 

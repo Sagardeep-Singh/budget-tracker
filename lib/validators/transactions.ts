@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { parseDateParam } from '@/lib/period-selection';
+import { TRANSACTIONS_PAGE_SIZE } from '@/lib/transactions/transactions-page-query';
 
 export const transactionTypeSchema = z.enum(['INCOME', 'EXPENSE']);
 
@@ -101,6 +103,53 @@ export const listTransactionsQuerySchema = z.object({
   to: z.coerce.date().optional(),
 });
 
+const csvIds = z
+  .string()
+  .optional()
+  .catch(undefined)
+  .transform((v) =>
+    v
+      ? v
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+  );
+
+const lenientDate = z
+  .string()
+  .nullish()
+  .catch(null)
+  .transform((v) => parseDateParam(v));
+
+const lenientFlag = z
+  .enum(['true', 'false'])
+  .catch('false')
+  .transform((v) => v === 'true');
+
+/**
+ * `GET /api/transactions?paginated=1`. Filters are lenient (bad values mean
+ * "no filter"); `limit` and `cursor` are strict, since our client sends them.
+ */
+export const transactionsPageQuerySchema = z.object({
+  from: lenientDate,
+  to: lenientDate,
+  accountIds: csvIds,
+  categoryIds: csvIds,
+  payee: z.string().max(120).catch(''),
+  type: transactionTypeSchema.nullish().catch(null),
+  amountMin: z.string().nullish().catch(null),
+  amountMax: z.string().nullish().catch(null),
+  hideTransfers: lenientFlag,
+  hidePayments: lenientFlag,
+  uncategorizedOnly: lenientFlag,
+  pendingReimbursementsOnly: lenientFlag,
+  mobileSearch: z.string().max(120).catch(''),
+  limit: z.coerce.number().int().min(1).max(100).default(TRANSACTIONS_PAGE_SIZE),
+  cursor: z.string().max(200).optional(),
+});
+
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
 export type ListTransactionsQuery = z.infer<typeof listTransactionsQuerySchema>;
+export type TransactionsPageQuery = z.infer<typeof transactionsPageQuerySchema>;

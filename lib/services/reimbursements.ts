@@ -58,7 +58,7 @@ export type FrontendReimbursementPendingSummary = {
 /** Money is a Decimal in Prisma — never compare two of them with `===`. */
 export const toCents = (value: unknown): number => Math.round(Number(value) * 100);
 
-const fromCents = (cents: number): string => (cents / 100).toFixed(2);
+export const fromCents = (cents: number): string => (cents / 100).toFixed(2);
 
 export const deriveReimbursementStatus = (args: {
   isReimbursable: boolean;
@@ -313,6 +313,35 @@ export const listReimbursementCandidates = async (
     );
 
   return candidates.slice(0, options.limit ?? DEFAULT_CANDIDATE_LIMIT);
+};
+
+/** Ids of PENDING/PARTIAL reimbursable expenses. Status is derived, so Prisma can't filter on it. */
+export const listPendingReimbursementExpenseIds = async (userId: string): Promise<string[]> => {
+  const expenses = await prisma.transaction.findMany({
+    where: { userId, isReimbursable: true, reimbursementCompletedAt: null },
+    select: {
+      id: true,
+      reimbursementExpectedAmount: true,
+      reimbursementExpenseLinks: { select: { amount: true } },
+    },
+  });
+  return expenses
+    .filter((expense) => {
+      const status = deriveReimbursementStatus({
+        isReimbursable: true,
+        expectedCents:
+          expense.reimbursementExpectedAmount == null
+            ? null
+            : toCents(expense.reimbursementExpectedAmount),
+        linkedCents: expense.reimbursementExpenseLinks.reduce(
+          (sum, l) => sum + toCents(l.amount),
+          0,
+        ),
+        completedAt: null,
+      });
+      return status === 'PENDING' || status === 'PARTIAL';
+    })
+    .map((expense) => expense.id);
 };
 
 export const getPendingReimbursementSummary = async (

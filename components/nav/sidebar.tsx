@@ -1,8 +1,8 @@
-import Link from 'next/link';
 import { LogOut, Plus } from 'lucide-react';
 import { signOutAction } from '@/lib/auth/actions';
 import { SidebarNav } from '@/components/nav/sidebar-nav';
 import { LogoMark } from '@/components/ui/logo-mark';
+import { AddTransactionLink } from '@/components/transactions/add-transaction-link';
 import { buildSidebarItems } from '@/lib/nav/items';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { NavCounts } from '@/lib/services/nav';
@@ -25,12 +25,9 @@ export const Sidebar = ({
         <LogoMark size={22} />
         Ledger
       </div>
-      <Link
-        href="?overlay=add"
-        className="bg-iris text-paper-raised mb-5 flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
-      >
+      <AddTransactionLink className="bg-iris text-paper-raised mb-5 flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold">
         <Plus size={16} /> Log a transaction
-      </Link>
+      </AddTransactionLink>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <SidebarNav items={navItems} />

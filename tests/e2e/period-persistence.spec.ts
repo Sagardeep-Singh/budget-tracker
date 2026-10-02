@@ -48,7 +48,8 @@ test('typing in the payee search never waits on the server', async ({ page }) =>
   await page.goto('/transactions');
   await expect(page).toHaveURL(/from=/);
 
-  // Filtering is client-side, so no RSC request should fire while typing.
+  // The list refetches from the API, not a server render, so no RSC request
+  // should fire while typing.
   let serverRenders = 0;
   page.on('request', (request) => {
     if (request.headers()['rsc'] && request.url().includes('/transactions')) serverRenders += 1;

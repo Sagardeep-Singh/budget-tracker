@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeftRight,
   HandCoins,
+  Loader2,
   Plus,
   Search,
   SlidersHorizontal,
@@ -18,29 +19,38 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Money } from '@/components/ui/money';
 import { TransactionTotals } from '@/components/transactions/transaction-totals';
 import { TransactionForm } from '@/components/transactions/transaction-form';
+import { AddTransactionLink } from '@/components/transactions/add-transaction-link';
 import { TransactionFiltersDialog } from '@/components/transactions/transaction-filters-dialog';
 import { MatchTransfersDialog } from '@/components/transactions/match-transfers-dialog';
 import { StatementPicker } from '@/components/transactions/period-picker';
+import { deleteJSON, getJSON, postJSON, type ApiFailure } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import {
   countActiveFilterGroups,
-  matchesTransactionFilters,
   parseTransactionFilters,
   transactionFiltersToSearchParams,
   type TransactionFilters,
 } from '@/lib/transactions/transaction-filters';
-import { summarizeTransactions } from '@/lib/transactions/transaction-summary';
+import type { TransactionSummary } from '@/lib/transactions/transaction-summary';
+import {
+  transactionsPageSearchParams,
+  transactionsPageUrl,
+} from '@/lib/transactions/transactions-page-query';
 import type { FrontendAccount } from '@/lib/services/accounts';
 import type { FrontendCategory } from '@/lib/services/categories';
 import type { FrontendTransaction } from '@/lib/services/transactions';
+import type { TransactionsPageResult } from '@/lib/services/transactionsPage';
 import { formatDate } from '@/lib/format';
 import { categoryColorVar } from '@/lib/ui/category-color';
 
-type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
+const toCents = (value: string | number): number => Math.round(Number(value) * 100);
 
 /** The quick pills are shortcuts into the same `type` / `uncategorizedOnly`
  * filters the dialog edits, so the two can never disagree. A combination the
  * pills can't express (set from the dialog) leaves no pill highlighted. */
+/** Mobile pills: presets of the `type`/`uncategorizedOnly` filters. */
+type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
+
 const QUICK_FILTERS: Record<QuickFilter, Pick<TransactionFilters, 'type' | 'uncategorizedOnly'>> = {
   all: { type: null, uncategorizedOnly: false },
   uncategorized: { type: null, uncategorizedOnly: true },
@@ -55,23 +65,50 @@ const activeQuickFilter = (filters: TransactionFilters): QuickFilter | null =>
       QUICK_FILTERS[key].uncategorizedOnly === filters.uncategorizedOnly,
   ) ?? null;
 
+const toTotals = (
+  summary: TransactionsPageResult['summary'],
+  count: number,
+): TransactionSummary => ({
+  count,
+  credit: Number(summary.credit),
+  debit: Number(summary.debit),
+  net: Number(summary.net),
+  payments: Number(summary.payments),
+  transfers: Number(summary.transfers),
+  reimbursementIncome: Number(summary.reimbursementIncome),
+});
+
+/** Groups by UTC day; a page that lands mid-day appends to the existing group. */
 const groupByDay = (list: FrontendTransaction[]): [string, FrontendTransaction[]][] => {
-  const sorted = [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const groups = new Map<string, FrontendTransaction[]>();
-  for (const t of sorted) {
-    const key = formatDate(t.date);
+  for (const t of list) {
+    const key = t.date.slice(0, 10);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(t);
   }
-  return Array.from(groups.entries()).reverse();
+  return Array.from(groups.entries());
 };
 
+/** A 400 must not be retried as-is; `network` errors retry the same request. */
+type FetchErrorKind = 'invalid-request' | 'network';
+const classifyFailure = (res: ApiFailure): FetchErrorKind =>
+  res.status === 400 ? 'invalid-request' : 'network';
+
+type Tree = 'desktop' | 'mobile';
+
+const plural = (n: number): string => (n === 1 ? '' : 's');
+
+/** Scope part of a request key (`<scope query>#<reloadNonce>`). */
+const scopeOf = (requestKey: string): string => requestKey.slice(0, requestKey.lastIndexOf('#'));
+
 export const TransactionsView = ({
-  initialTransactions,
+  initialPage,
+  initialRequestKey,
   accounts,
   categories,
 }: {
-  initialTransactions: FrontendTransaction[];
+  initialPage: TransactionsPageResult;
+  initialRequestKey: string;
   accounts: FrontendAccount[];
   categories: FrontendCategory[];
 }): React.ReactElement => {
@@ -81,11 +118,10 @@ export const TransactionsView = ({
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [drawerKey, setDrawerKey] = useState(0);
-  // `?tx=<id>` (Overview's day panel links here) opens that transaction's
-  // drawer on arrival.
+  // `?tx=<id>` opens that row's drawer; the link is scoped to its day, so it's on page 1.
   const [detail, setDetail] = useState<FrontendTransaction | null>(() => {
     const id = searchParams.get('tx');
-    return id ? (initialTransactions.find((t) => t.id === id) ?? null) : null;
+    return id ? (initialPage.rows.find((t) => t.id === id) ?? null) : null;
   });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
@@ -97,6 +133,42 @@ export const TransactionsView = ({
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [matchDialogKey, setMatchDialogKey] = useState(0);
 
+  // Loaded pages for `pagesKey`. Key = `<scope query>#<reloadNonce>`; mutations bump the nonce.
+  const [pages, setPages] = useState<TransactionsPageResult[]>([initialPage]);
+  const [pagesKey, setPagesKey] = useState(`${initialRequestKey}#0`);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [scopeError, setScopeError] = useState<{ key: string; kind: FetchErrorKind } | null>(null);
+  const [scopeRetry, setScopeRetry] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<FetchErrorKind | null>(null);
+  const [announcements, setAnnouncements] = useState<Record<Tree, string>>({
+    desktop: '',
+    mobile: '',
+  });
+  const pagesKeyRef = useRef(pagesKey);
+  const desktopListRef = useRef<HTMLDivElement>(null);
+  const mobileListRef = useRef<HTMLDivElement>(null);
+  const desktopStatusRef = useRef<HTMLParagraphElement>(null);
+  const mobileStatusRef = useRef<HTMLParagraphElement>(null);
+  const desktopLoadMoreRef = useRef<HTMLDivElement>(null);
+  const mobileLoadMoreRef = useRef<HTMLDivElement>(null);
+
+  // The SSR page is adopted on mount; the client fetches after that. A server
+  // re-render with the same scope but a changed page 1 means a mutation elsewhere
+  // called `router.refresh()`, so refetch. Identical or new-scope re-renders are ignored.
+  const [ssrSeen, setSsrSeen] = useState(() => ({
+    page: initialPage,
+    key: initialRequestKey,
+    signature: JSON.stringify(initialPage),
+  }));
+  if (initialPage !== ssrSeen.page) {
+    const signature = JSON.stringify(initialPage);
+    setSsrSeen({ page: initialPage, key: initialRequestKey, signature });
+    if (initialRequestKey === ssrSeen.key && signature !== ssrSeen.signature) {
+      setReloadNonce((n) => n + 1);
+    }
+  }
+
   // The URL is the source of truth for every filter except the payee search
   // box (below) — re-derived on every searchParams change rather than
   // mirrored into separate component state, so there's one place filter
@@ -104,39 +176,36 @@ export const TransactionsView = ({
   const filters = useMemo(() => parseTransactionFilters(searchParams), [searchParams]);
   const activeFilterCount = countActiveFilterGroups(filters);
 
-  // Local, undebounced-to-the-list-but-debounced-to-the-URL: the list must
-  // filter on every keystroke ("no Apply needed" per the feature's search
-  // box), but writing to the URL on every keystroke would spam the router
-  // and fight the user's own typing. `payeeDraft` drives filtering
-  // immediately; the effect below only pushes it to the URL once typing
-  // pauses.
+  // Payee search settles after 300ms, then goes into the request and the URL.
   const [payeeDraft, setPayeeDraft] = useState(filters.payee);
+  const [settledPayee, setSettledPayee] = useState(filters.payee);
   // Re-seeds `payeeDraft` when `filters.payee` changes from outside this
   // input (the filters dialog's "Reset", browser back/forward, a pasted
   // URL) — adjusted during render, React's documented pattern for syncing
   // state to a prop change, rather than in an effect (which would commit
   // the stale draft for one extra frame first).
   const [payeeSyncedFrom, setPayeeSyncedFrom] = useState(filters.payee);
-  // The value we last pushed to the URL ourselves — when the URL's payee
-  // catches up to exactly this, it's the echo of our own debounced push
-  // completing, not an external change, and must not stomp on whatever the
-  // user has kept typing in the meantime (this used to happen: the URL
-  // round-trip for one keystroke could land after the user had already typed
-  // several more, snapping the input back to the older value mid-word).
-  const [lastPushedPayee, setLastPushedPayee] = useState(filters.payee);
+  // Payee values we pushed to the URL that it hasn't reflected yet. Their echo
+  // must not overwrite what the user has typed since. A queue, since several can be in flight.
+  const [pendingPayeePushes, setPendingPayeePushes] = useState<string[]>([]);
   if (filters.payee !== payeeSyncedFrom) {
     setPayeeSyncedFrom(filters.payee);
-    if (filters.payee !== lastPushedPayee) {
+    const echoAt = pendingPayeePushes.indexOf(filters.payee);
+    if (echoAt >= 0) {
+      setPendingPayeePushes(pendingPayeePushes.slice(echoAt + 1));
+    } else {
       setPayeeDraft(filters.payee);
+      setSettledPayee(filters.payee);
+      setPendingPayeePushes([]);
     }
   }
+  // The URL's payee once our pending pushes land; the debounce compares against this.
+  const payeeUrlTargetRef = useRef(filters.payee);
+  useEffect(() => {
+    if (pendingPayeePushes.length === 0) payeeUrlTargetRef.current = filters.payee;
+  }, [filters.payee, pendingPayeePushes]);
 
-  // The native History API, not `router.replace`: every filter here runs on
-  // the client against `initialTransactions`, so a server round trip per
-  // change only re-sent the whole ledger. With router.replace each debounced
-  // search keystroke refetched the page, and the re-render when it landed
-  // froze the search box mid-typing on a slow connection. Next keeps
-  // `useSearchParams` in sync with replaceState.
+  // History API, not `router.replace`: the view fetches its own page, so a server render is wasted.
   const pushFilters = useCallback(
     (next: TransactionFilters): void => {
       const query = transactionFiltersToSearchParams(next).toString();
@@ -146,23 +215,26 @@ export const TransactionsView = ({
   );
 
   useEffect(() => {
-    if (payeeDraft === filters.payee) return;
+    if (payeeDraft === settledPayee) return;
     const timeout = setTimeout(() => {
-      setLastPushedPayee(payeeDraft);
+      setSettledPayee(payeeDraft);
+      if (payeeDraft === payeeUrlTargetRef.current) return;
+      payeeUrlTargetRef.current = payeeDraft;
+      setPendingPayeePushes((pushes) => [...pushes, payeeDraft]);
       pushFilters({ ...filters, payee: payeeDraft });
     }, 300);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on payeeDraft changes; `filters`/`pushFilters` reacting here would restart the debounce on every unrelated filter change
   }, [payeeDraft]);
 
-  const effectiveFilters = useMemo<TransactionFilters>(
-    () => ({ ...filters, payee: payeeDraft }),
-    [filters, payeeDraft],
-  );
-  // The inputs render from the live values; the (possibly long) list filters
-  // on deferred copies, so a keystroke never waits on re-rendering every row.
-  const listFilters = useDeferredValue(effectiveFilters);
-  const deferredMobileSearch = useDeferredValue(mobileSearch);
+  // Same 300ms settle for mobile search.
+  const [settledMobileSearch, setSettledMobileSearch] = useState('');
+  useEffect(() => {
+    if (mobileSearch === settledMobileSearch) return;
+    const timeout = setTimeout(() => setSettledMobileSearch(mobileSearch), 300);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce keystrokes only; the settled value changing must not restart it
+  }, [mobileSearch]);
 
   const selectedAccountId = filters.accountIds.length === 1 ? filters.accountIds[0] : null;
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
@@ -196,10 +268,11 @@ export const TransactionsView = ({
 
   const handleDelete = async (id: string): Promise<void> => {
     setDeletePending(true);
-    await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    await deleteJSON(`/api/transactions/${id}`);
     setDeletePending(false);
     setConfirmDeleteId(null);
     closeDetail();
+    setReloadNonce((n) => n + 1);
     router.refresh();
   };
 
@@ -211,61 +284,194 @@ export const TransactionsView = ({
   const handleMatchTransfers = async (range: { from: Date; to: Date }): Promise<void> => {
     setMatchPending(true);
     setMatchResult(null);
-    const res = await fetch('/api/transactions/match-transfers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(range),
-    });
+    const res = await postJSON<{ matched: number }>('/api/transactions/match-transfers', range);
     setMatchPending(false);
     if (!res.ok) {
       setMatchResult('Could not match transfers. Try again.');
       return;
     }
     setMatchDialogOpen(false);
-    const data: { matched: number } = await res.json();
+    const data = res.data;
     setMatchResult(
       data.matched === 0
         ? 'No new transfer pairs found.'
         : `Matched ${data.matched} transfer pair${data.matched === 1 ? '' : 's'}.`,
     );
+    setReloadNonce((n) => n + 1);
     router.refresh();
   };
 
-  const filtered = initialTransactions.filter((t) => matchesTransactionFilters(t, listFilters));
-
-  const summary = summarizeTransactions(filtered);
-
-  // Sorted oldest-first so a running balance across the filtered set reads
-  // naturally top-to-bottom; the day groups below reverse this for display
-  // (newest day first, per the design), but each day's own rows stay in
-  // the ascending order the balance was computed in.
-  const sortedAsc = [...filtered].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  const scopeKey = useMemo(
+    () =>
+      transactionsPageSearchParams({
+        filters: { ...filters, payee: settledPayee },
+        mobileSearch: settledMobileSearch,
+      }).toString(),
+    [filters, settledPayee, settledMobileSearch],
   );
-  const runningBalance = new Map<string, number>();
-  let balance = 0;
-  for (const t of sortedAsc) {
-    balance += t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount);
-    runningBalance.set(t.id, balance);
-  }
+  const requestKey = `${scopeKey}#${reloadNonce}`;
+  // Page 1 for the current key is loading; old rows stay, dimmed.
+  const pending = requestKey !== pagesKey && scopeError?.key !== requestKey;
+  const currentScopeError = scopeError?.key === requestKey ? scopeError.kind : null;
 
-  const days = groupByDay(filtered);
+  useEffect(() => {
+    pagesKeyRef.current = pagesKey;
+  }, [pagesKey]);
 
-  // Counted without the pill-controlled filters, so the badge doesn't drop
-  // to its own subset (or to zero) when Spending/Income is selected.
-  const uncategorizedCount = initialTransactions.filter(
-    (t) => !t.categoryId && matchesTransactionFilters(t, { ...listFilters, ...QUICK_FILTERS.all }),
-  ).length;
-  const searchLower = deferredMobileSearch.trim().toLowerCase();
-  const mobileFiltered = filtered.filter((t) => {
-    if (!searchLower) return true;
-    return (
-      (t.payee ?? '').toLowerCase().includes(searchLower) ||
-      Number(t.amount).toFixed(2).includes(searchLower)
-    );
-  });
-  const mobileDays = groupByDay(mobileFiltered);
+  // A new request key fetches page 1 and replaces `pages`; stale responses are dropped.
+  useEffect(() => {
+    if (requestKey === pagesKey) return;
+    const key = requestKey;
+    const scopeChanged = scopeOf(key) !== scopeOf(pagesKey);
+    const controller = new AbortController();
+    void getJSON<TransactionsPageResult>(transactionsPageUrl(scopeOf(key)), {
+      signal: controller.signal,
+    }).then((res) => {
+      if (controller.signal.aborted) return;
+      if (!res.ok) {
+        setScopeError({ key, kind: classifyFailure(res) });
+        return;
+      }
+      const page = res.data;
+      setPages([page]);
+      setPagesKey(key);
+      setScopeError(null);
+      setMoreError(null);
+      setAnnouncements({
+        desktop: `${page.rows.length} of ${page.desktopCount} shown.`,
+        mobile: `${page.rows.length} of ${page.totalCount} shown.`,
+      });
+      if (scopeChanged) {
+        // scroll to the top only if it's already scrolled past
+        for (const el of [desktopListRef.current, mobileListRef.current]) {
+          if (el && el.offsetParent !== null && el.getBoundingClientRect().top < 0) {
+            el.scrollIntoView({ block: 'start' });
+          }
+        }
+      }
+    });
+    return () => controller.abort();
+    // `scopeRetry` lets "Try again" re-run the same key
+  }, [requestKey, pagesKey, scopeRetry]);
 
+  const retryScope = (): void => {
+    setScopeError(null);
+    setScopeRetry((n) => n + 1);
+  };
+
+  const lastPage = pages[pages.length - 1];
+  const canLoadMore = !pending && requestKey === pagesKey && lastPage.hasMore;
+
+  const loadMore = async (tree: Tree): Promise<void> => {
+    if (moreError === 'invalid-request') {
+      // cursor rejected: restart from page 1
+      setMoreError(null);
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    const key = pagesKey;
+    const cursor = lastPage.nextCursor;
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setMoreError(null);
+    const res = await getJSON<TransactionsPageResult>(transactionsPageUrl(scopeOf(key), cursor));
+    setLoadingMore(false);
+    if (pagesKeyRef.current !== key) return; // the scope moved on while this was in flight
+    if (!res.ok) {
+      setMoreError(classifyFailure(res));
+      return;
+    }
+    const page = res.data;
+    const rendered = pages.reduce((n, p) => n + p.rows.length, 0) + page.rows.length;
+    setPages((prev) => [...prev, page]);
+    const message = (count: number): string =>
+      `Loaded ${page.rows.length} more transaction${plural(page.rows.length)}. ${rendered} of ${count} shown.`;
+    setAnnouncements({
+      desktop: message(pages[0].desktopCount),
+      mobile: message(pages[0].totalCount),
+    });
+    // When the button unmounts, move focus to the status line instead of <body>.
+    requestAnimationFrame(() => {
+      const row = tree === 'desktop' ? desktopLoadMoreRef.current : mobileLoadMoreRef.current;
+      const status = tree === 'desktop' ? desktopStatusRef.current : mobileStatusRef.current;
+      if (page.hasMore) row?.querySelector('button')?.focus();
+      else status?.focus();
+    });
+  };
+
+  const { summary, mobileSummary, desktopCount, totalCount, uncategorizedCount } = pages[0];
+
+  // Only depends on `pages`, so typing doesn't rebuild it.
+  const { rows, dayTotals, runningBalance, days } = useMemo(() => {
+    // Each page's day totals are full-day, so later pages overwrite.
+    const dayTotals = new Map<string, number>();
+    for (const page of pages) {
+      for (const d of page.dayTotals) dayTotals.set(d.day, Number(d.total));
+    }
+
+    // Walk each page oldest-first from its server opening balance, in cents.
+    const runningBalance = new Map<string, number>();
+    for (const page of pages) {
+      let cents = toCents(page.runningBalanceStart);
+      for (let i = page.rows.length - 1; i >= 0; i--) {
+        const t = page.rows[i];
+        cents += t.type === 'INCOME' ? toCents(t.amount) : -toCents(t.amount);
+        runningBalance.set(t.id, cents / 100);
+      }
+    }
+
+    const rows = pages.flatMap((p) => p.rows);
+    return { rows, dayTotals, runningBalance, days: groupByDay(rows) };
+  }, [pages]);
+
+  const renderLoadMore = (tree: Tree): React.ReactElement => (
+    <div
+      ref={tree === 'desktop' ? desktopLoadMoreRef : mobileLoadMoreRef}
+      className={tree === 'desktop' ? 'mt-5.5 flex flex-col items-center gap-2' : 'mt-5'}
+    >
+      {canLoadMore && (
+        <>
+          <Button
+            type="button"
+            variant="secondary"
+            loading={loadingMore}
+            onClick={() => void loadMore(tree)}
+            className={tree === 'mobile' ? 'w-full py-3' : undefined}
+          >
+            {moreError ? 'Try again' : 'Load more'}
+          </Button>
+          {moreError && (
+            <p role="alert" className="text-rose mt-2 text-center text-[13px]">
+              Couldn&apos;t load more transactions. Try again.
+            </p>
+          )}
+        </>
+      )}
+      <p
+        ref={tree === 'desktop' ? desktopStatusRef : mobileStatusRef}
+        tabIndex={-1}
+        role="status"
+        aria-live="polite"
+        data-testid={`transactions-load-status-${tree}`}
+        className="sr-only"
+      >
+        {announcements[tree]}
+      </p>
+    </div>
+  );
+
+  const renderScopeError = (): React.ReactElement | null =>
+    currentScopeError ? (
+      <div role="alert" className="text-rose mt-3 flex items-center gap-3 text-[13px]">
+        <span>Couldn&apos;t load transactions. Try again.</span>
+        <Button type="button" variant="secondary" onClick={retryScope} className="px-3 py-1">
+          Try again
+        </Button>
+      </div>
+    ) : null;
+
+  const SearchIcon = pending ? Loader2 : Search;
+  const searchIconClass = cn('text-ink-muted shrink-0', pending && 'animate-spin');
   return (
     <div className="mt-6.5 pb-20 lg:pb-0">
       {/* Desktop-only filter row; the mobile screen gets its own search +
@@ -274,8 +480,12 @@ export const TransactionsView = ({
         data-testid="transaction-filters-desktop"
         className="hidden items-center gap-2 lg:flex lg:flex-wrap"
       >
-        <div className="border-line bg-paper-raised flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2">
-          <Search size={15} className="text-ink-muted shrink-0" />
+        <div
+          data-testid="transactions-search-desktop"
+          data-pending={pending ? 'true' : 'false'}
+          className="border-line bg-paper-raised flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2"
+        >
+          <SearchIcon size={15} className={searchIconClass} aria-hidden="true" />
           <input
             type="text"
             value={payeeDraft}
@@ -350,29 +560,41 @@ export const TransactionsView = ({
         </div>
       )}
 
-      <div className="mt-3.5 hidden lg:block">
-        <TransactionTotals summary={summary} />
+      <div
+        data-testid="transactions-summary"
+        aria-busy={pending}
+        className={cn('mt-3.5 hidden transition-opacity lg:block', pending && 'opacity-60')}
+      >
+        <TransactionTotals summary={toTotals(summary, desktopCount)} />
       </div>
 
-      <div className="hidden lg:block">
-        {filtered.length === 0 ? (
+      <div className="hidden lg:block">{renderScopeError()}</div>
+
+      <div
+        ref={desktopListRef}
+        data-testid="transactions-list-desktop"
+        aria-busy={pending}
+        className={cn(
+          'hidden transition-opacity lg:block',
+          pending && 'pointer-events-none opacity-60',
+        )}
+      >
+        {rows.length === 0 ? (
           <p className="text-ink-muted mt-6 text-sm">
             No transactions match. Log one to get started.
           </p>
         ) : (
-          days.map(([dateLabel, rows]) => {
-            const dayTotal = rows.reduce(
-              (sum, t) => sum + (t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount)),
-              0,
-            );
+          days.map(([day, dayRows]) => {
+            const dayTotal = dayTotals.get(day) ?? 0;
             return (
-              <div key={dateLabel} className="mt-5.5">
+              <div key={day} className="mt-5.5" data-testid="transaction-day-desktop">
                 <div className="flex items-baseline gap-3 px-0.5 pb-2">
                   <span className="text-ink-muted font-mono text-xs tracking-[0.06em]">
-                    {dateLabel}
+                    {formatDate(day)}
                   </span>
                   <span className="bg-line h-px flex-1" />
                   <span
+                    data-testid="transaction-day-total"
                     className={cn('font-mono text-xs', dayTotal >= 0 ? 'text-sky' : 'text-rose')}
                   >
                     {dayTotal >= 0 ? '+' : '−'}
@@ -380,7 +602,7 @@ export const TransactionsView = ({
                   </span>
                 </div>
                 <div className="border-line bg-paper-raised rounded-[14px] border px-6">
-                  {[...rows].reverse().map((t) => (
+                  {dayRows.map((t) => (
                     <div
                       key={t.id}
                       onClick={() => openDetail(t)}
@@ -440,7 +662,10 @@ export const TransactionsView = ({
                       </span>
                       {/* Running balance is a desktop-only column: at 402px it squeezed
                         the payee cell to zero width. */}
-                      <span className="text-ink-muted hidden w-[86px] shrink-0 text-right font-mono text-xs tabular-nums lg:block">
+                      <span
+                        data-testid="running-balance"
+                        className="text-ink-muted hidden w-[86px] shrink-0 text-right font-mono text-xs tabular-nums lg:block"
+                      >
                         {(runningBalance.get(t.id) ?? 0).toFixed(2)}
                       </span>
                     </div>
@@ -450,12 +675,17 @@ export const TransactionsView = ({
             );
           })
         )}
+        {renderLoadMore('desktop')}
       </div>
 
       <div className="lg:hidden">
         <div className="flex items-center gap-2">
-          <div className="border-line bg-paper-raised flex flex-1 items-center gap-2.25 rounded-full border px-3.75 py-0">
-            <Search size={15} className="text-ink-muted shrink-0" />
+          <div
+            data-testid="transactions-search-mobile"
+            data-pending={pending ? 'true' : 'false'}
+            className="border-line bg-paper-raised flex flex-1 items-center gap-2.25 rounded-full border px-3.75 py-0"
+          >
+            <SearchIcon size={15} className={searchIconClass} aria-hidden="true" />
             <input
               type="text"
               value={mobileSearch}
@@ -508,75 +738,85 @@ export const TransactionsView = ({
           ))}
         </div>
 
-        <TransactionTotals summary={summarizeTransactions(mobileFiltered)} className="mt-3.5" />
+        <TransactionTotals
+          summary={toTotals(mobileSummary, totalCount)}
+          className={cn('mt-3.5 transition-opacity', pending && 'opacity-60')}
+        />
 
-        {mobileFiltered.length === 0 ? (
-          <p className="text-ink-muted mt-6 text-sm">
-            No transactions match. Log one to get started.
-          </p>
-        ) : (
-          mobileDays.map(([dateLabel, rows]) => {
-            const dayTotal = rows.reduce(
-              (sum, t) => sum + (t.type === 'INCOME' ? Number(t.amount) : -Number(t.amount)),
-              0,
-            );
-            return (
-              <div key={dateLabel} className="mt-5">
-                <div className="flex items-baseline justify-between gap-2.5 px-0.5 pb-2">
-                  <span className="text-ink-muted text-[11px] font-semibold tracking-[0.06em] uppercase">
-                    {dateLabel}
-                  </span>
-                  <Money
-                    value={dayTotal}
-                    tone={dayTotal >= 0 ? 'income' : 'expense'}
-                    className="text-[11.5px]"
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  {[...rows].reverse().map((t) => (
-                    <div
-                      key={t.id}
-                      data-testid="transaction-row-mobile"
-                      onClick={() => openDetail(t)}
-                      className="border-line bg-paper-raised cursor-pointer rounded-2xl border p-3.5"
-                    >
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="truncate text-[15.5px] font-semibold tracking-[-0.01em]">
-                          {t.payee || t.categoryName || 'Transaction'}
-                        </span>
-                        <Money
-                          value={t.amount}
-                          tone={t.type === 'INCOME' ? 'income' : 'expense'}
-                          className="shrink-0 text-[15.5px]"
-                        />
-                      </div>
-                      <div className="mt-2.5 flex items-center justify-between gap-2.5">
-                        <span className="text-ink-muted min-w-0 truncate text-xs">
-                          {t.accountName}
-                        </span>
-                        {t.categoryName ? (
-                          <span
-                            className="shrink-0 rounded-full px-2.75 py-1 text-xs font-medium"
-                            style={{
-                              background: `color-mix(in srgb, ${categoryColorVar(t.categoryName)} 20%, var(--paper-raised))`,
-                              color: categoryColorVar(t.categoryName),
-                            }}
-                          >
-                            {t.categoryName}
+        {renderScopeError()}
+
+        <div
+          ref={mobileListRef}
+          data-testid="transactions-list-mobile"
+          aria-busy={pending}
+          className={cn('transition-opacity', pending && 'pointer-events-none opacity-60')}
+        >
+          {rows.length === 0 ? (
+            <p className="text-ink-muted mt-6 text-sm">
+              No transactions match. Log one to get started.
+            </p>
+          ) : (
+            days.map(([day, dayRows]) => {
+              const dayTotal = dayTotals.get(day) ?? 0;
+              return (
+                <div key={day} className="mt-5">
+                  <div className="flex items-baseline justify-between gap-2.5 px-0.5 pb-2">
+                    <span className="text-ink-muted text-[11px] font-semibold tracking-[0.06em] uppercase">
+                      {formatDate(day)}
+                    </span>
+                    <Money
+                      value={dayTotal}
+                      tone={dayTotal >= 0 ? 'income' : 'expense'}
+                      className="text-[11.5px]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {dayRows.map((t) => (
+                      <div
+                        key={t.id}
+                        data-testid="transaction-row-mobile"
+                        onClick={() => openDetail(t)}
+                        className="border-line bg-paper-raised cursor-pointer rounded-2xl border p-3.5"
+                      >
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="truncate text-[15.5px] font-semibold tracking-[-0.01em]">
+                            {t.payee || t.categoryName || 'Transaction'}
                           </span>
-                        ) : (
-                          <span className="border-line bg-paper text-ink-muted shrink-0 rounded-full border border-dashed px-2.75 py-1.5 text-xs font-medium">
-                            Uncategorized
+                          <Money
+                            value={t.amount}
+                            tone={t.type === 'INCOME' ? 'income' : 'expense'}
+                            className="shrink-0 text-[15.5px]"
+                          />
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between gap-2.5">
+                          <span className="text-ink-muted min-w-0 truncate text-xs">
+                            {t.accountName}
                           </span>
-                        )}
+                          {t.categoryName ? (
+                            <span
+                              className="shrink-0 rounded-full px-2.75 py-1 text-xs font-medium"
+                              style={{
+                                background: `color-mix(in srgb, ${categoryColorVar(t.categoryName)} 20%, var(--paper-raised))`,
+                                color: categoryColorVar(t.categoryName),
+                              }}
+                            >
+                              {t.categoryName}
+                            </span>
+                          ) : (
+                            <span className="border-line bg-paper text-ink-muted shrink-0 rounded-full border border-dashed px-2.75 py-1.5 text-xs font-medium">
+                              Uncategorized
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
+          {renderLoadMore('mobile')}
+        </div>
       </div>
 
       <Drawer
@@ -603,7 +843,11 @@ export const TransactionsView = ({
                 transaction={detail}
                 accounts={accounts}
                 categories={categories}
-                onDone={closeDetail}
+                onDone={() => {
+                  closeDetail();
+                  // an edit past page 1 may not change SSR page 1, so reload explicitly
+                  setReloadNonce((n) => n + 1);
+                }}
               />
             </div>
             {detail.importBatchFilename && detail.importBatchId && (
@@ -660,12 +904,9 @@ export const TransactionsView = ({
         >
           Import CSV
         </Link>
-        <Link
-          href="?overlay=add"
-          className="bg-iris text-paper-raised focus-visible:outline-paper-raised flex flex-[1.3] items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
+        <AddTransactionLink className="bg-iris text-paper-raised focus-visible:outline-paper-raised flex flex-[1.3] items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
           <Plus size={16} /> Log a spend
-        </Link>
+        </AddTransactionLink>
       </div>
     </div>
   );
