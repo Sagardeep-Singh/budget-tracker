@@ -30,7 +30,7 @@ window with no open PRs, or as few as possible.
 | `package.json` / `package-lock.json` | `"name": "budget-tracker"`                     | `"name": "track-a-loonie"` (regenerate lock with `npm install`, never by hand)                        |
 | `SOURCE_CODE_URL` in Vercel          | set? (check)                                   | update if it's set to the old URL                                                                     |
 | Vercel project                       | Git connection to budget-tracker               | rename the project to `track-a-loonie`; confirm the Git link follows the repo rename (re-link if not) |
-| Marketing site plan                  | `SOURCE_URL` example                           | the new repo URL                                                                                      |
+| Marketing site (separate repo)       | `SOURCE_URL` env var                           | the new repo URL                                                                                      |
 | Local clones                         | `origin` → budget-tracker                      | `git remote set-url origin https://github.com/Sagardeep-Singh/track-a-loonie.git`                     |
 
 Out of scope (leave as is):
