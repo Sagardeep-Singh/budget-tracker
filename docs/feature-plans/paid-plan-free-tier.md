@@ -22,6 +22,8 @@ Locked by the product owner:
 5. **Trends:** free tier gets the 3-month view only. 6 and 12 months are paid.
 6. **Canada only:** non-Canadian users are blocked at signup and at checkout.
 7. **Payments:** Stripe.
+8. **One trial per person:** deleting an account and signing up again does
+   not give a second trial. The trial starts only once the email is verified.
 
 ## Pricing
 
@@ -80,8 +82,10 @@ Principles:
 
 ## Trial
 
-- App-side trial with no card required. Trial end is `User.createdAt + 30 days`,
-  so no schema field is needed for it.
+- App-side trial with no card required. It lasts 30 days from when it starts.
+- The trial starts when the email is verified: when a credentials user clicks
+  the verify link, or at signup for Google users (Google already verified the
+  address). Until then the user is on the free tier.
 - During the trial the user has every paid feature.
 - Upgrading during the trial creates the Stripe subscription with
   `subscription_data.trial_end` set to the app trial end, so the user isn't
@@ -90,6 +94,39 @@ Principles:
   via Brevo. One reminder only.
 - When the trial ends without a subscription, the user drops to free with all
   data kept.
+
+## One trial per person
+
+Account deletion removes the `User` row, and data export/import makes
+"export, delete, sign up again, import" quick. To stop repeat trials:
+
+- **`TrialClaim` table** with no relation to `User`, so it survives account
+  deletion. Stores `emailHash`, an optional `googleSubHash` and `claimedAt`.
+- **Keyed hash, never the email.** HMAC-SHA256 with a server secret
+  (`TRIAL_HASH_KEY`). A plain SHA-256 of an email can be reversed by guessing
+  addresses; an HMAC can only be checked against an address we already have.
+  The check is off when the key is unset (self-hosting).
+- **Normalize before hashing** so aliases match: lowercase, trim, strip a
+  `+tag` from the local part, and drop dots in the local part for gmail.com
+  and googlemail.com (treated as the same domain).
+- **Google signups** also hash Google's stable account id (`sub`), since the
+  email on a Google account can change.
+- **When the trial starts,** write the claim in the same transaction. If the
+  email or Google id already has a claim, the user gets no trial and starts on
+  the free tier.
+- **Verified email required** for the trial (see Trial). Without this, fake
+  addresses would give unlimited trials, since verification doesn't gate
+  access today.
+- **Optional:** block disposable email domains for trial eligibility only (not
+  signup), using a maintained blocklist package. Tradeoff: one more dependency
+  and occasional false positives.
+- **Not used:** IP, device or card fingerprints. Households share IPs,
+  fingerprinting adds privacy risk, the trial needs no card, and the most
+  anyone can gain is C$4 a month.
+- **Privacy:** a hash kept after deletion is still personal information.
+  State it in the privacy policy (purpose: fraud prevention), mention it on
+  the account deletion confirmation, and delete `TrialClaim` rows older than 2
+  years from the daily cron.
 
 ## Canada-only enforcement
 
@@ -117,7 +154,7 @@ signups and make sure every payment comes from a Canadian card.
 ## User stories
 
 1. As a new Canadian user, I can sign up with no card and get every paid
-   feature for my first month.
+   feature for a month once I verify my email.
 2. As a visitor outside Canada, I see that Ledger is only available in Canada
    and can't create an account.
 3. As a trial user, I get an email 5 days before my trial ends, and I can
@@ -135,7 +172,14 @@ signups and make sure every payment comes from a Canadian card.
 
 ## Acceptance criteria
 
-- [ ] New users have paid features for 30 days from signup with no card.
+- [ ] New users have paid features for 30 days from email verification (or
+      Google signup) with no card. Unverified users are on the free tier.
+- [ ] A user whose normalized email or Google id already claimed a trial,
+      including on a deleted account, starts on the free tier.
+- [ ] Deleting an account keeps its `TrialClaim` row, and the deletion
+      confirmation says a one-way hash is kept for fraud prevention.
+- [ ] `TrialClaim` stores only HMAC hashes, never a plain email or Google id.
+- [ ] The daily cron deletes `TrialClaim` rows older than 2 years.
 - [ ] Signup (credentials and new Google users) is refused when the request
       country isn't Canada and the check is enabled. Login is never
       geo-checked.
@@ -172,13 +216,21 @@ Follows the existing flow: route handler -> Zod validator -> service -> Prisma.
 - `StripeEvent`: `id` (Stripe event id, primary key), `type`, `processedAt`.
   Used to make webhook handling idempotent.
 - `User.trialReminderSentAt` (nullable) so the trial email goes out once.
+- `User.trialStartedAt` (nullable), set when the trial starts. Null means no
+  trial (unverified, or already claimed).
+- `TrialClaim`: `emailHash` (primary key), `googleSubHash` (nullable, unique),
+  `claimedAt` (indexed for the retention sweep). No relation to `User`.
 
 ### Services
 
 - `lib/services/entitlements.ts`
   - `getPlan(userId): Promise<'free' | 'trial' | 'paid'>`. Paid when the
     subscription status is active, trialing or past_due (grace). Trial when
-    within 30 days of `createdAt`. Paid for everyone when billing is disabled.
+    within 30 days of `trialStartedAt`. Paid for everyone when billing is
+    disabled.
+- `lib/services/trialClaims.ts`: `normalizeEmail`, `hashTrialIdentity`,
+  `startTrialIfEligible(userId)` (called from email verification and new
+  Google signups), `purgeExpiredTrialClaims()`.
   - `assertFeature(userId, feature)` for reimbursements, statement cycles,
     push reminders and long Trends ranges.
   - `assertAccountLimit(userId)` for the 2-account cap.
@@ -208,7 +260,7 @@ Follows the existing flow: route handler -> Zod validator -> service -> Prisma.
 ### Env vars
 
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`,
-`STRIPE_PRICE_YEARLY`, `ALLOWED_SIGNUP_COUNTRIES`. Add to `.env.example` with
+`STRIPE_PRICE_YEARLY`, `ALLOWED_SIGNUP_COUNTRIES`, `TRIAL_HASH_KEY`. Add to `.env.example` with
 comments.
 
 ### UI
@@ -248,10 +300,17 @@ Not legal or tax advice. Confirm with an accountant before launch.
     is cancelled and refunded, checkout carries the trial end.
   - Country check: allowed, blocked, header missing, check disabled; new vs
     existing Google user.
+  - `trialClaims.test.ts`: normalization cases (case, whitespace, `+tag`,
+    Gmail dots, googlemail.com), HMAC stability, trial starts only once per
+    identity, claim survives account deletion, no trial when key is unset,
+    retention purge.
   - Gate tests added to the existing service tests for accounts,
     reimbursements, trends and reminders, plus the one-time trial email.
 - E2E (`tests/e2e/`):
-  - New user sees trial status and can use paid features.
+  - New user verifies email, then sees trial status and can use paid
+    features.
+  - User deletes their account and signs up again with the same email (or a
+    `+tag` alias) and gets no trial.
   - Signup from a non-Canadian country is refused.
   - Free user hits the account limit and sees the upgrade prompt.
   - Free user sees 6 and 12 month Trends locked.
@@ -269,6 +328,9 @@ Not legal or tax advice. Confirm with an accountant before launch.
       `User.trialReminderSentAt`
 - [ ] `entitlements.ts` + `PlanRequiredError` with tests
 - [ ] Signup country check with tests
+- [ ] `TrialClaim` + trial start on verification with tests
+- [ ] Deletion confirmation copy about the kept hash
+- [ ] `TrialClaim` retention sweep in the daily cron
 - [ ] Gates in existing services with tests
 - [ ] `billing.ts` + checkout, portal and webhook routes with tests
 - [ ] Trial-ending email in the daily cron
