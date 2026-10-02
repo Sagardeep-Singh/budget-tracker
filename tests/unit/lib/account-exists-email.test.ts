@@ -9,7 +9,7 @@ describe('buildAccountExistsEmail', () => {
     const { html } = build();
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
     expect(hrefs).toEqual(['https://ledger.test/login']);
-    expect(html).toContain('Sign in to Ledger');
+    expect(html).toContain('Sign in to Track a Loonie');
   });
 
   it('loads the PNG logo from the app origin, without a double slash', () => {
@@ -23,7 +23,7 @@ describe('buildAccountExistsEmail', () => {
 
   it('carries the raw link in the plain-text part and never says how the account signs in', () => {
     const { subject, text } = build();
-    expect(subject).toBe('You already have a Ledger account');
+    expect(subject).toBe('You already have a Track a Loonie account');
     expect(text).toContain('Sign in: https://ledger.test/login');
     expect(text).toContain('or with Google if that is how you signed up');
   });

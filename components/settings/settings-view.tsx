@@ -81,7 +81,9 @@ export const SettingsView = ({
         <div className="ledger-row flex items-center gap-5 py-3.5">
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">Accent</div>
-            <div className="text-ink-muted mt-0.5 text-[12.5px]">Ledger&rsquo;s color palette</div>
+            <div className="text-ink-muted mt-0.5 text-[12.5px]">
+              Track a Loonie&rsquo;s color palette
+            </div>
           </div>
           <div className={pillGroup}>
             {PALETTES.map((p) => (

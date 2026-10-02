@@ -198,13 +198,13 @@ That round-trip is a stated acceptance criterion.
 
 ### Envelope
 
-| field           | type                | notes                                                                                                  |
-| --------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `formatVersion` | number, literal `1` | version gate; import rejects anything else with "This file was made by a different version of Ledger." |
-| `exportedAt`    | ISO-8601 UTC string | metadata only, ignored on import                                                                       |
-| `user.email`    | string              | read-only metadata, ignored on import                                                                  |
-| `user.name`     | string or null      | read-only metadata, ignored on import                                                                  |
-| `data`          | object              | the 7 model arrays below                                                                               |
+| field           | type                | notes                                                                                                          |
+| --------------- | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `formatVersion` | number, literal `1` | version gate; import rejects anything else with "This file was made by a different version of Track a Loonie." |
+| `exportedAt`    | ISO-8601 UTC string | metadata only, ignored on import                                                                               |
+| `user.email`    | string              | read-only metadata, ignored on import                                                                          |
+| `user.name`     | string or null      | read-only metadata, ignored on import                                                                          |
+| `data`          | object              | the 7 model arrays below                                                                                       |
 
 `passwordHash` is never exported. **No model array carries `userId`** — it is
 meaningless in the file (import always writes the session's `userId`) and its presence
@@ -354,7 +354,7 @@ message rendered verbatim, exactly as `app/api/settings/password/route.ts` alrea
 
 ## Route contracts
 
-- **`GET /api/settings/export`** — 401 when unauthenticated. 200 with `Content-Type: application/json`, `Content-Disposition: attachment; filename="ledger-data-<YYYY-MM-DD>.json"`, body `JSON.stringify(file, null, 2)`. Modeled on the existing `app/api/rules/export/route.ts`. `export const maxDuration = 60`.
+- **`GET /api/settings/export`** — 401 when unauthenticated. 200 with `Content-Type: application/json`, `Content-Disposition: attachment; filename="trackaloonie-data-YYYY-MM-DD>.json"`, body `JSON.stringify(file, null, 2)`. Modeled on the existing `app/api/rules/export/route.ts`. `export const maxDuration = 60`.
 - **`POST /api/settings/import`** — 401 when unauthenticated. Read `Content-Length`; if present and > `MAX_IMPORT_BYTES` → 413. `const text = await request.text()`; re-check byte length → 413. `JSON.parse` in a try/catch → 400 "That file isn't valid JSON." `userDataFileSchema.safeParse` → 400 with `parsed.error.issues[0].message` (single string, matching the password route's comment and the client's verbatim rendering). Then `importUserData`; `ServiceValidationError` → 400, otherwise rethrow. 200 `{ ok: true, counts }`. `export const maxDuration = 60`.
 - **`DELETE /api/settings/account`** — 401 when unauthenticated. `deleteAccountSchema.safeParse(await request.json())` → 400. Read `session.user.reauthenticatedAt` from the session (never from the request body — decision 7) and pass it as `deleteUserAccount`'s third argument. `deleteUserAccount` → 200 `{ ok: true }`; `ServiceValidationError` → 400; `GoogleReauthRequiredError` → 428 (Precondition Required — the closest standard status for "prove your identity again before I'll process this") with `{ error: string, requiresGoogleReauth: true }` so the client branches on `requiresGoogleReauth` rather than string-matching the message. No business logic in the handler.
 
@@ -421,7 +421,7 @@ in-page, so the loading/error states the brief requires would be fake. Use `fetc
 1. `onClick`: `setStatus('loading'); setError(null); setSuccessMessage(null)`.
 2. `fetch('/api/settings/export')`. Network throw → `setStatus('error'); setError('Could not reach the server. Check your connection and try again.')`.
 3. `!res.ok` → `setStatus('error'); setError('Could not export your data. Try again.')` (generic — an authenticated GET against your own data has no user-actionable failure mode short of the session having gone stale, in which case the page-level 401 redirect already fires).
-4. Success: read filename from the `Content-Disposition` response header (parse the `filename="..."` value); if absent, fall back to `ledger-data-<YYYY-MM-DD>.json` built client-side from `new Date()`. `const blob = await res.blob()`, create `URL.createObjectURL(blob)`, create a detached `<a>` with that `href` and the resolved `download` filename, `.click()` it, then `URL.revokeObjectURL(url)`, `setStatus('idle')`, and `setSuccessMessage('Export downloaded.')` — a screen-reader-only announcement (sighted users already see the browser's download indicator, so this text is not also shown as a visible banner).
+4. Success: read filename from the `Content-Disposition` response header (parse the `filename="..."` value); if absent, fall back to `trackaloonie-data-YYYY-MM-DD>.json` built client-side from `new Date()`. `const blob = await res.blob()`, create `URL.createObjectURL(blob)`, create a detached `<a>` with that `href` and the resolved `download` filename, `.click()` it, then `URL.revokeObjectURL(url)`, `setStatus('idle')`, and `setSuccessMessage('Export downloaded.')` — a screen-reader-only announcement (sighted users already see the browser's download indicator, so this text is not also shown as a visible banner).
 
 **Interaction states:**
 
@@ -475,7 +475,7 @@ const [message, setMessage] = useState<string | null>(null); // error or success
 7. Network throw → `setConfirmOpen(false); setStatus('error'); setMessage('Could not reach the server. Check your connection and try again.')`.
 8. Non-OK response → `setConfirmOpen(false)`, then branch on status, since a `413` may arrive without a JSON body while `400` always carries `{ error: string }` per the route contract:
    - `413` → `` `That file is larger than the ${MAX_IMPORT_BYTES / (1024 * 1024)} MB import limit.` `` (derived from the constant, not a hardcoded "10").
-   - `400` → parse body, `typeof body?.error === 'string' ? body.error : "That file couldn't be imported. Check that it's an unedited Ledger export and try again."` (the `body.error` string is service/validator-owned — e.g. `"This file was made by a different version of Ledger."` or a Zod issue message — render it verbatim, do not restate or rephrase it client-side).
+   - `400` → parse body, `typeof body?.error === 'string' ? body.error : "That file couldn't be imported. Check that it's an unedited Track a Loonie export and try again."` (the `body.error` string is service/validator-owned — e.g. `"This file was made by a different version of Track a Loonie."` or a Zod issue message — render it verbatim, do not restate or rephrase it client-side).
    - anything else (`500`) → `'Something went wrong on our end. Try again.'`
      `setStatus('error')`, keep `file` selected (so the user doesn't have to re-pick to retry the same file after fixing something server-side, though in practice a rejected file usually needs editing outside the app).
 9. `200 { ok: true, counts }` → `setConfirmOpen(false); setStatus('success')`, build the message from `counts`, e.g. `"Import complete — replaced your data with 12 accounts, 340 transactions, 8 categories, 5 budgets, 3 rules, 2 import batches, 1 reimbursement link."` Reset the file input (`inputRef.current.value = ''`, `setFile(null)`) so a stale selection can't be re-submitted. **Call `router.refresh()`** (from `next/navigation`, already the codebase's post-mutation pattern — see `docs/feature-plans/confirm-dialogs.md`'s call-site description) so every other server-rendered surface (dashboard, accounts, transactions, budgets — all now showing deleted-then-replaced data) picks up the new state on next navigation. This is not optional: full-replace invalidates the whole app's server-rendered data, not just this card.

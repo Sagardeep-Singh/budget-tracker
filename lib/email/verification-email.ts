@@ -23,7 +23,7 @@ export const buildVerificationEmail = ({
   verifyUrl: string;
   hoursValid: number;
 }): VerificationEmail => {
-  const subject = 'Verify your Ledger email address';
+  const subject = 'Verify your Track a Loonie email address';
   const href = escapeHtml(verifyUrl);
 
   const html = renderEmailHtml({
@@ -38,19 +38,19 @@ export const buildVerificationEmail = ({
             <p class="l-muted" style="margin:28px 0 8px;font-family:${BODY_FONT};font-size:13px;line-height:1.5;color:${COLORS.inkMuted};">The link expires in ${hoursValid} hours. If the button doesn't work, paste this into your browser:</p>
             <p class="l-code" style="margin:0;padding:10px 12px;border-radius:10px;background-color:${COLORS.paperSunk};font-family:${MONO_FONT};font-size:12px;line-height:1.5;word-break:break-all;color:${COLORS.inkMuted};"><a class="l-link" href="${href}" target="_blank" style="color:${COLORS.accent};text-decoration:none;">${href}</a></p>`,
     footer:
-      "If you didn't create a Ledger account, you can ignore this email. Nothing happens until the link is clicked.",
+      "If you didn't create a Track a Loonie account, you can ignore this email. Nothing happens until the link is clicked.",
   });
 
   const text = [
     'Confirm your email',
     '',
-    'Thanks for signing up for Ledger. One click confirms this address belongs to you.',
+    'Thanks for signing up for Track a Loonie. One click confirms this address belongs to you.',
     '',
     `Verify your email: ${verifyUrl}`,
     '',
     `The link expires in ${hoursValid} hours.`,
     '',
-    "If you didn't create a Ledger account, you can ignore this email.",
+    "If you didn't create a Track a Loonie account, you can ignore this email.",
   ].join('\n');
 
   return { subject, html, text };

@@ -125,7 +125,7 @@ export const userDataFileSchema = z
     // Checked first and given its own message so a version mismatch reads
     // as "wrong version", not as a wall of unrelated shape errors.
     formatVersion: z.number().refine((v) => v === USER_DATA_FORMAT_VERSION, {
-      message: 'This file was made by a different version of Ledger.',
+      message: 'This file was made by a different version of Track a Loonie.',
     }),
     exportedAt: z.string(), // metadata only, ignored on import
     user: z.strictObject({ email: z.string(), name: z.string().nullable() }),

@@ -1,14 +1,14 @@
 /*
- * Ledger service worker. Plain JS at the origin root because a worker's scope is
+ * Track a Loonie service worker. Plain JS at the origin root because a worker's scope is
  * capped by the path it's served from, and this one needs scope '/'.
  *
  * SECURITY: this worker caches exactly two static, unauthenticated assets — the
  * /offline fallback page and one icon. It never caches API responses or
- * authenticated HTML. Ledger is a multi-user app and browser profiles get shared;
+ * authenticated HTML. Track a Loonie is a multi-user app and browser profiles get shared;
  * a cached dashboard would hand one user's balances to whoever signs in next.
  */
 
-const CACHE_VERSION = 'ledger-v1';
+const CACHE_VERSION = 'trackaloonie-v1';
 const OFFLINE_URL = '/offline';
 const PRECACHE_URLS = [OFFLINE_URL, '/icons/icon-192.png'];
 
@@ -77,7 +77,7 @@ self.addEventListener('push', (event) => {
     payload = {};
   }
 
-  const title = payload.title || 'Ledger';
+  const title = payload.title || 'Track a Loonie';
   const body = payload.body || 'No spending logged lately — want to catch up?';
   const url = payload.url || '/dashboard?overlay=add';
 
@@ -88,7 +88,7 @@ self.addEventListener('push', (event) => {
       badge: '/icons/icon-192.png',
       // A stable tag collapses a backlog of missed reminders into one — nobody
       // wants four identical nudges after a week with the phone off.
-      tag: 'ledger-reminder',
+      tag: 'trackaloonie-reminder',
       data: { url },
     }),
   );
@@ -105,7 +105,7 @@ self.addEventListener('notificationclick', (event) => {
         includeUncontrolled: true,
       });
 
-      // Focus an already-open Ledger tab and steer it, rather than piling up a
+      // Focus an already-open Track a Loonie tab and steer it, rather than piling up a
       // second window every time a reminder is tapped.
       for (const client of allClients) {
         if (new URL(client.url).origin === self.location.origin) {

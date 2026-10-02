@@ -35,7 +35,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Ledger',
+  title: 'Track a Loonie',
   description: 'A small, honest budget tracker.',
 };
 

@@ -2,7 +2,7 @@
 
 ## Goals / acceptance criteria
 
-- No code path uses the browser's native `confirm()`/`alert()`. All confirmations render as an in-app, centered dialog matching the app's visual language (Ledger's `Modal`/dialog styling, not the OS chrome).
+- No code path uses the browser's native `confirm()`/`alert()`. All confirmations render as an in-app, centered dialog matching the app's visual language (Track a Loonie's `Modal`/dialog styling, not the OS chrome).
 - Every destructive, irreversible action (a delete with no undo) requires explicit user confirmation before the request fires — including the two spots below that currently have **none**.
 - The confirm dialog is reusable: one component + one call pattern, not a bespoke implementation per screen.
 - Cancelling (Escape, backdrop click, or explicit Cancel button) performs no action and closes cleanly.

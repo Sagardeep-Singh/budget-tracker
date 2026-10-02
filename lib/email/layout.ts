@@ -1,5 +1,5 @@
 /**
- * Shared chrome for Ledger's transactional emails, in the default "clay"
+ * Shared chrome for Track a Loonie's transactional emails, in the default "clay"
  * palette (the light values from `app/globals.css`, frozen as hex because
  * email clients don't support CSS variables).
  *
@@ -103,7 +103,7 @@ export const renderEmailHtml = ({
                 <td style="vertical-align:middle;padding-right:10px;">
                   <img src="${logo}" width="32" height="32" alt="" style="display:block;border:0;border-radius:8px;">
                 </td>
-                <td class="l-ink" style="vertical-align:middle;font-family:${DISPLAY_FONT};font-size:19px;font-weight:600;letter-spacing:-0.02em;color:${COLORS.ink};">Ledger</td>
+                <td class="l-ink" style="vertical-align:middle;font-family:${DISPLAY_FONT};font-size:19px;font-weight:600;letter-spacing:-0.02em;color:${COLORS.ink};">trackaloonie</td>
               </tr>
             </table>
           </td>

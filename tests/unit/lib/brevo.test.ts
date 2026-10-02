@@ -7,7 +7,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   vi.stubEnv('BREVO_API_KEY', 'key-123');
   vi.stubEnv('BREVO_SENDER_EMAIL', 'noreply@example.com');
-  vi.stubEnv('BREVO_SENDER_NAME', 'Ledger');
+  vi.stubEnv('BREVO_SENDER_NAME', 'Track a Loonie');
 });
 
 afterEach(() => {
@@ -55,7 +55,7 @@ describe('sendEmail', () => {
     );
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
     expect(body).toEqual({
-      sender: { name: 'Ledger', email: 'noreply@example.com' },
+      sender: { name: 'Track a Loonie', email: 'noreply@example.com' },
       to: [{ email: 'a@b.com' }],
       subject: 'Verify',
       htmlContent: '<p>link</p>',

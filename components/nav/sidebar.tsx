@@ -23,7 +23,7 @@ export const Sidebar = ({
     >
       <div className="font-display text-ink mb-5.5 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight">
         <LogoMark size={22} />
-        Ledger
+        trackaloonie
       </div>
       <AddTransactionLink className="bg-iris text-paper-raised mb-5 flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold">
         <Plus size={16} /> Log a transaction

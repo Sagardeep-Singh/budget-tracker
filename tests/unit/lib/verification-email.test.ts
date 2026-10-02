@@ -33,7 +33,7 @@ describe('buildVerificationEmail', () => {
 
   it('carries the raw link in the plain-text part', () => {
     const { subject, text } = build();
-    expect(subject).toBe('Verify your Ledger email address');
+    expect(subject).toBe('Verify your Track a Loonie email address');
     expect(text).toContain('Verify your email: https://ledger.test/api/auth/verify?token=abc123');
   });
 });

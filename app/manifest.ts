@@ -14,8 +14,8 @@ import type { MetadataRoute } from 'next';
  * literally here.
  */
 const manifest = (): MetadataRoute.Manifest => ({
-  name: 'Ledger',
-  short_name: 'Ledger',
+  name: 'Track a Loonie',
+  short_name: 'trackaloonie',
   description: 'A small, honest budget tracker.',
   start_url: '/dashboard',
   scope: '/',

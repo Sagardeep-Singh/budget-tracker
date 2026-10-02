@@ -55,7 +55,7 @@ test('a taken email gets the same response as a new one, and the owner is emaile
   await expect(page).toHaveURL(/\/login\?signup=check-email/);
   expect(await page.getByRole('status').innerText()).toBe(firstBanner);
   await expect(page.locator('form').getByRole('alert')).toHaveCount(0);
-  expect((await lastEmailTo(email)).subject).toBe('You already have a Ledger account');
+  expect((await lastEmailTo(email)).subject).toBe('You already have a Track a Loonie account');
 
   // The second attempt didn't touch the account: the original password still works.
   await page.getByLabel('Email').fill(email);

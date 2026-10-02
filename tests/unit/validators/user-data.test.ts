@@ -89,7 +89,7 @@ describe('userDataFileSchema', () => {
     const result = userDataFileSchema.safeParse(file);
     expect(result.success).toBe(false);
     expect(result.error?.issues[0].message).toBe(
-      'This file was made by a different version of Ledger.',
+      'This file was made by a different version of Track a Loonie.',
     );
   });
 

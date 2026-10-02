@@ -18,7 +18,7 @@ const SignUpPage = (): React.ReactElement => {
       <div className="bg-iris-soft flex flex-col justify-between p-14">
         <div className="font-display flex items-center gap-2 text-[19px] font-semibold">
           <LogoMark size={24} variant="bare" />
-          Ledger
+          trackaloonie
         </div>
         <div>
           <Ring size="hero" fraction={0.56} />
@@ -26,8 +26,8 @@ const SignUpPage = (): React.ReactElement => {
             Know what&rsquo;s left, not just what&rsquo;s gone.
           </h1>
           <p className="text-ink/75 mt-3.5 max-w-[420px] text-[15px] leading-snug">
-            Import a statement, confirm a few categories, and Ledger keeps the rest of the month
-            honest.
+            Import a statement, confirm a few categories, and Track a Loonie keeps the rest of the
+            month honest.
           </p>
         </div>
         <div className="text-ink/60 text-[12.5px]">

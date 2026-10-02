@@ -327,7 +327,7 @@ describe('sendDueReminders', () => {
 
     expect(webPushMock.sendPush).toHaveBeenCalledTimes(2);
     expect(webPushMock.sendPush.mock.calls[0][1]).toEqual({
-      title: 'Ledger',
+      title: 'Track a Loonie',
       body: expect.any(String),
       url: '/dashboard?overlay=add',
     });

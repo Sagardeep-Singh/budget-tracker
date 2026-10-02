@@ -100,7 +100,7 @@ describe('sendAccountExistsEmail', () => {
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     const [arg] = sendEmailMock.mock.calls[0];
     expect(arg.to).toBe('Jane@Example.com');
-    expect(arg.subject).toBe('You already have a Ledger account');
+    expect(arg.subject).toBe('You already have a Track a Loonie account');
     expect(arg.text).toMatch(/Sign in: https?:\/\/[^\s]+\/login/);
     expect(prismaMock.emailVerificationToken.upsert).not.toHaveBeenCalled();
   });

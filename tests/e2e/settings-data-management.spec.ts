@@ -47,7 +47,7 @@ test('exporting downloads a JSON file containing the account data', async ({ pag
   await page.getByRole('button', { name: 'Export my data' }).click();
   const download = await downloadPromise;
 
-  expect(download.suggestedFilename()).toMatch(/^ledger-data-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^trackaloonie-data-\d{4}-\d{2}-\d{2}\.json$/);
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(chunk as Buffer);

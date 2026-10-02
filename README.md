@@ -1,11 +1,11 @@
-# Ledger
+# Track a Loonie
 
 A small, honest personal budget tracker. Track accounts, log transactions (manually or via CSV
 import), auto-categorize spend with your own rules, set monthly budgets per category, and see
 where things stand.
 
 Free to use — anyone can sign up with Google or an email/password/name and gets their own
-isolated Ledger. Every service scopes its data by user, so accounts stay fully separate.
+isolated space. Every service scopes its data by user, so accounts stay fully separate.
 
 ## Stack
 

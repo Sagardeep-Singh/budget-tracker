@@ -15,7 +15,7 @@ export const buildAccountExistsEmail = ({
   appUrl: string;
   loginUrl: string;
 }): TransactionalEmail => {
-  const subject = 'You already have a Ledger account';
+  const subject = 'You already have a Track a Loonie account';
 
   const html = renderEmailHtml({
     appUrl,
@@ -23,8 +23,8 @@ export const buildAccountExistsEmail = ({
     preheader: 'Someone tried to sign up with this address. Sign in instead.',
     heading: 'You already have an account',
     intro:
-      'Someone just tried to create a Ledger account with this email address. It already has one, so nothing was changed. Sign in with your password, or with Google if that is how you signed up.',
-    buttonLabel: 'Sign in to Ledger',
+      'Someone just tried to create a Track a Loonie account with this email address. It already has one, so nothing was changed. Sign in with your password, or with Google if that is how you signed up.',
+    buttonLabel: 'Sign in to Track a Loonie',
     buttonUrl: loginUrl,
     footer: "If this wasn't you, you can ignore this email. Your account is unchanged.",
   });
@@ -32,7 +32,7 @@ export const buildAccountExistsEmail = ({
   const text = [
     'You already have an account',
     '',
-    'Someone just tried to create a Ledger account with this email address. It already has one, so nothing was changed.',
+    'Someone just tried to create a Track a Loonie account with this email address. It already has one, so nothing was changed.',
     'Sign in with your password, or with Google if that is how you signed up.',
     '',
     `Sign in: ${loginUrl}`,
