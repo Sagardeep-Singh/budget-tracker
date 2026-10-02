@@ -2,7 +2,7 @@
 
 ## Goal
 
-Minimal personal budgeting app: track accounts, log transactions (manual or CSV import), auto-categorize spend, set monthly category budgets, see budget-vs-actual at a glance. Single user. Public repo, GPLv3.
+Minimal personal budgeting app: track accounts, log transactions (manual or CSV import), auto-categorize spend, set monthly category budgets, see budget-vs-actual at a glance. Single user. Public repo, GPLv3 (since relicensed to AGPLv3).
 
 ## Assumptions
 
@@ -65,5 +65,5 @@ Next.js App Router, TypeScript, Prisma + Postgres, NextAuth (credentials, single
 - [x] Dashboard page: income/expense/net summary + budget progress + recent transactions
 - [x] Unit tests for all services (Prisma mocked), incl. categorization rule matching and CSV import parsing/dedupe
 - [x] README: setup, scripts
-- [x] LICENSE (GPLv3)
+- [x] LICENSE (GPLv3, since relicensed to AGPLv3)
 - [x] CI: lint + test on push (GitHub Actions)

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SourceLink } from '@/components/nav/source-link';
 import { LoginForm } from '@/components/auth/login-form';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { LogoMark } from '@/components/ui/logo-mark';
@@ -82,6 +83,7 @@ const LoginPage = async ({
               Create an account
             </Link>
           </p>
+          <SourceLink className="mt-8 text-center" />
         </div>
       </div>
       <p className="text-ink-muted px-6 pb-8 text-center text-[12.5px] lg:hidden">
