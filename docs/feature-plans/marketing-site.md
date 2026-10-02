@@ -28,7 +28,7 @@ them once and checking for drift (see "Design tokens").
 
 | Area      | Decision                                                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Repo      | New repo, working name `trackaloonie-site` under the same GitHub owner                                                       |
+| Repo      | New repo, working name `track-a-loonie-site` under the same GitHub owner                                                     |
 | License   | Code under MIT. Copy, logo and brand assets "all rights reserved" via a `NOTICE`/README section (open question 1)            |
 | Framework | Next.js (App Router) with `output: 'export'`, TypeScript, Tailwind CSS v4. Same stack as the app, so no new tooling to learn |
 | Hosting   | Vercel, static. Apex domain for the site, `app.` subdomain for the app (open question 2)                                     |
@@ -124,7 +124,7 @@ uses the user's own key.
 - Shared visual pieces rebuilt in the site: logo mark, ring SVG, pill button,
   card, chip and Plus tag. Copy the logic from `components/ui/logo-mark.tsx`
   and `components/ui/ring.tsx` instead of importing it.
-- If the two drift often, extract a tiny `@trackaloonie/tokens` package later. Not
+- If the two drift often, extract a tiny `@track-a-loonie/tokens` package later. Not
   needed for v1.
 
 ## Component breakdown (site repo)
@@ -191,7 +191,7 @@ Until those land, the site launches with one of these (open question 6):
 ## Checklist
 
 - [ ] **Stage 0: decisions.** Answer the open questions below.
-- [ ] **Stage 1: repo setup.** Create `trackaloonie-site`, add the license and brand
+- [ ] **Stage 1: repo setup.** Create `track-a-loonie-site`, add the license and brand
       notice, Next.js static export, Tailwind v4, ESLint, Prettier, Vitest,
       Playwright, a `CLAUDE.md` mirroring this repo's conventions, and a CI
       workflow (format check, lint, build, Playwright).
