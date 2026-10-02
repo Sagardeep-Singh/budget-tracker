@@ -76,7 +76,7 @@ export const ImportDataCard = (): React.ReactElement => {
       } else if (res.status === 400) {
         setMessage(
           res.error ??
-            "That file couldn't be imported. Check that it's an unedited Ledger export and try again.",
+            "That file couldn't be imported. Check that it's an unedited Track a Loonie export and try again.",
         );
       } else {
         setMessage('Something went wrong on our end. Try again.');
@@ -98,11 +98,11 @@ export const ImportDataCard = (): React.ReactElement => {
     <div className="border-line bg-paper-raised rounded-2xl border p-5">
       <h2 className="font-display text-[15px] font-semibold">Import data</h2>
       <p className="text-ink-muted mt-1 text-[13.5px]">
-        Replace everything in your account with the contents of a Ledger export file.
+        Replace everything in your account with the contents of a Track a Loonie export file.
       </p>
 
       <div className="mt-3.5">
-        <Label htmlFor="import-file">Ledger export file</Label>
+        <Label htmlFor="import-file">Track a Loonie export file</Label>
         <input
           ref={inputRef}
           id="import-file"

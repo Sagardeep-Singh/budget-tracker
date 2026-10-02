@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 
 type ExportStatus = 'idle' | 'loading' | 'error';
 
-const defaultFilename = (): string => `ledger-data-${new Date().toISOString().slice(0, 10)}.json`;
+const defaultFilename = (): string =>
+  `trackaloonie-data-${new Date().toISOString().slice(0, 10)}.json`;
 
 const filenameFromContentDisposition = (header: string | null): string | null => {
   if (!header) return null;

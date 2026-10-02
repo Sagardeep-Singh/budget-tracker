@@ -181,8 +181,8 @@ const DashboardPage = async ({
             <div className="border-paper-sunk mx-auto h-24 w-24 rounded-full border-[10px]" />
             <h2 className="font-display mt-6.5 text-xl font-semibold">Nothing to chart yet</h2>
             <p className="text-ink-muted mx-auto mt-2 max-w-[420px] text-sm leading-relaxed text-pretty">
-              Import a statement or add your first transaction. Ledger builds budgets from the
-              categories it finds, so the rings fill in as soon as there is data.
+              Import a statement or add your first transaction. Track a Loonie builds budgets from
+              the categories it finds, so the rings fill in as soon as there is data.
             </p>
             <div className="mt-6 flex justify-center gap-2.5">
               <Link
@@ -358,8 +358,8 @@ const DashboardPage = async ({
                     </Link>
                   </div>
                   <p className="text-ink/80 mt-2 text-[13px] leading-snug">
-                    Rules matched {triage.matched} of them. Confirm in a batch, and Ledger will
-                    write the rule for next time.
+                    Rules matched {triage.matched} of them. Confirm in a batch, and Track a Loonie
+                    will write the rule for next time.
                   </p>
                   {/* One segment per item to triage: at mobile width the inter-segment
                     gaps alone can exceed the card, so they tighten and clip. */}
@@ -459,8 +459,8 @@ const DashboardPage = async ({
                   {triage.total === 1 ? 's' : ''} a category
                 </div>
                 <p className="text-ink/80 mt-1.5 text-[12.5px] leading-relaxed">
-                  Rules matched {triage.matched} of them. Confirm in a batch, and Ledger will write
-                  the rule for next time.
+                  Rules matched {triage.matched} of them. Confirm in a batch, and Track a Loonie
+                  will write the rule for next time.
                 </p>
                 <Link
                   href="/categorize"

@@ -29,7 +29,7 @@ const LoginPage = async ({
       <div className="bg-iris-soft mx-5 mt-5 flex flex-col justify-between rounded-3xl p-6 lg:mx-0 lg:mt-0 lg:rounded-none lg:p-14">
         <div className="font-display flex items-center gap-2.5 text-[20px] font-semibold">
           <LogoMark size={30} variant="spiral" />
-          Ledger
+          trackaloonie
         </div>
         <div>
           <div className="hidden lg:block">
@@ -39,8 +39,8 @@ const LoginPage = async ({
             Know what&rsquo;s left, not just what&rsquo;s gone.
           </h1>
           <p className="text-ink/75 mt-2.5 max-w-[420px] text-[13.5px] leading-snug lg:mt-3.5 lg:text-[15px]">
-            Import a statement, confirm a few categories, and Ledger keeps the rest of the month
-            honest.
+            Import a statement, confirm a few categories, and Track a Loonie keeps the rest of the
+            month honest.
           </p>
         </div>
         <div className="text-ink/60 mt-6 hidden text-[12.5px] lg:block">

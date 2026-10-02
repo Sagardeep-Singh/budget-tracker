@@ -11,7 +11,7 @@ export const GET = async (): Promise<Response> => {
   }
 
   const file = await exportUserData(userId);
-  const filename = `ledger-data-${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = `trackaloonie-data-${new Date().toISOString().slice(0, 10)}.json`;
 
   return new Response(JSON.stringify(file, null, 2), {
     status: 200,

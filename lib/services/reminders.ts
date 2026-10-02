@@ -10,7 +10,7 @@ import type { ReminderCadence, UpdateReminderPreferenceInput } from '@/lib/valid
 /** Where a tapped notification lands: the add-transaction overlay on the dashboard. */
 export const REMINDER_TARGET_URL = '/dashboard?overlay=add';
 
-const REMINDER_TITLE = 'Ledger';
+const REMINDER_TITLE = 'Track a Loonie';
 const REMINDER_BODY = 'No spending logged lately — want to catch up?';
 
 /**

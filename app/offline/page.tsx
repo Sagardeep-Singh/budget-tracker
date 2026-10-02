@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { WifiOff } from 'lucide-react';
 
-export const metadata: Metadata = { title: 'Offline — Ledger' };
+export const metadata: Metadata = { title: 'Offline — Track a Loonie' };
 
 /**
  * The service worker's navigation fallback. Lives outside `(protected)` on
@@ -14,8 +14,8 @@ const OfflinePage = (): React.ReactElement => (
     <WifiOff className="text-ink-muted size-8" aria-hidden />
     <h1 className="font-display text-xl font-semibold">You&rsquo;re offline</h1>
     <p className="text-ink-muted max-w-sm text-[13.5px]">
-      Ledger needs a connection to show your accounts and transactions. Reconnect and try again —
-      nothing you&rsquo;ve already saved is lost.
+      Track a Loonie needs a connection to show your accounts and transactions. Reconnect and try
+      again — nothing you&rsquo;ve already saved is lost.
     </p>
     <Link
       href="/dashboard"

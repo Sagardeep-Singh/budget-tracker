@@ -10,7 +10,7 @@ const BASE_URL = process.env.BREVO_BASE_URL ?? 'https://api.brevo.com';
 
 const apiKey = (): string | undefined => process.env.BREVO_API_KEY;
 const senderEmail = (): string | undefined => process.env.BREVO_SENDER_EMAIL;
-const senderName = (): string => process.env.BREVO_SENDER_NAME ?? 'Ledger';
+const senderName = (): string => process.env.BREVO_SENDER_NAME ?? 'Track a Loonie';
 
 /** The Brevo integration has no API key/sender configured — the feature is off, not broken. */
 export class EmailUnavailableError extends Error {

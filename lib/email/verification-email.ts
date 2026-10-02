@@ -1,5 +1,5 @@
 /**
- * The verification email, in Ledger's default "clay" palette (the light
+ * The verification email, in Track a Loonie's default "clay" palette (the light
  * values from `app/globals.css`, frozen as hex because email clients don't
  * support CSS variables).
  *
@@ -50,7 +50,7 @@ export const buildVerificationEmail = ({
   verifyUrl: string;
   hoursValid: number;
 }): VerificationEmail => {
-  const subject = 'Verify your Ledger email address';
+  const subject = 'Verify your Track a Loonie email address';
   const href = escapeHtml(verifyUrl);
   const logo = escapeHtml(`${appUrl.replace(/\/$/, '')}/icons/icon-192.png`);
   const preheader = `One click confirms this address belongs to you. The link expires in ${hoursValid} hours.`;
@@ -93,7 +93,7 @@ export const buildVerificationEmail = ({
                 <td style="vertical-align:middle;padding-right:10px;">
                   <img src="${logo}" width="32" height="32" alt="" style="display:block;border:0;border-radius:8px;">
                 </td>
-                <td class="l-ink" style="vertical-align:middle;font-family:${DISPLAY_FONT};font-size:19px;font-weight:600;letter-spacing:-0.02em;color:${COLORS.ink};">Ledger</td>
+                <td class="l-ink" style="vertical-align:middle;font-family:${DISPLAY_FONT};font-size:19px;font-weight:600;letter-spacing:-0.02em;color:${COLORS.ink};">trackaloonie</td>
               </tr>
             </table>
           </td>
@@ -114,7 +114,7 @@ export const buildVerificationEmail = ({
           </td>
         </tr>
         <tr>
-          <td class="l-muted" style="padding:20px 8px 0;font-family:${BODY_FONT};font-size:12px;line-height:1.6;color:${COLORS.inkMuted};text-align:center;">If you didn't create a Ledger account, you can ignore this email. Nothing happens until the link is clicked.</td>
+          <td class="l-muted" style="padding:20px 8px 0;font-family:${BODY_FONT};font-size:12px;line-height:1.6;color:${COLORS.inkMuted};text-align:center;">If you didn't create a Track a Loonie account, you can ignore this email. Nothing happens until the link is clicked.</td>
         </tr>
       </table>
     </td>
@@ -126,13 +126,13 @@ export const buildVerificationEmail = ({
   const text = [
     'Confirm your email',
     '',
-    'Thanks for signing up for Ledger. One click confirms this address belongs to you.',
+    'Thanks for signing up for Track a Loonie. One click confirms this address belongs to you.',
     '',
     `Verify your email: ${verifyUrl}`,
     '',
     `The link expires in ${hoursValid} hours.`,
     '',
-    "If you didn't create a Ledger account, you can ignore this email.",
+    "If you didn't create a Track a Loonie account, you can ignore this email.",
   ].join('\n');
 
   return { subject, html, text };

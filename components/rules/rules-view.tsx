@@ -192,7 +192,7 @@ export const RulesView = ({
       <div className="mb-4.5 flex justify-end gap-2">
         <a
           href="/api/rules/export"
-          download="ledger-rules.json"
+          download="trackaloonie-rules.json"
           className="border-line text-ink hover:border-iris inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150"
         >
           <Upload size={16} />

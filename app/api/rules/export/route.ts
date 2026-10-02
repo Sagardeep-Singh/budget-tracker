@@ -15,7 +15,7 @@ export const GET = async (): Promise<Response> => {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
-      'Content-Disposition': 'attachment; filename="ledger-rules.json"',
+      'Content-Disposition': 'attachment; filename="trackaloonie-rules.json"',
     },
   });
 };
