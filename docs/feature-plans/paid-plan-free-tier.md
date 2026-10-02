@@ -15,7 +15,7 @@ payments through Stripe directly (no merchant of record).
 
 Locked by the product owner:
 
-1. **Price:** C$3/month or C$30/year.
+1. **Price:** C$4/month or C$40/year.
 2. **No existing users** to migrate or grandfather.
 3. **Trial:** every new account gets 1 month of paid features for free.
 4. **History:** unlimited for every plan. No history window.
@@ -28,10 +28,10 @@ Locked by the product owner:
 | Plan    | Price | Net after Stripe (about 2.9% + C$0.30) |
 | ------- | ----- | -------------------------------------- |
 | Free    | C$0   | -                                      |
-| Monthly | C$3   | about C$2.61                           |
-| Yearly  | C$30  | about C$28.83 (2 months free)          |
+| Monthly | C$4   | about C$3.58                           |
+| Yearly  | C$40  | about C$38.54 (2 months free)          |
 
-The yearly plan is the one to push. Fees drop from about 13% to about 4%.
+The yearly plan is the one to push. Fees drop from about 10% to about 4%.
 
 ### Running costs and break-even
 
@@ -43,8 +43,8 @@ The yearly plan is the one to push. Fees drop from about 13% to about 4%.
 | Domain                               | about C$2              |
 | **Total**                            | **about C$35 to C$60** |
 
-Break-even is about 15 to 25 paying users. At a typical 2 to 5% free-to-paid
-conversion that means roughly 400 to 1,000 active free users. Marginal cost
+Break-even is about 10 to 17 paying users. At a typical 2 to 5% free-to-paid
+conversion that means roughly 200 to 850 active free users. Marginal cost
 per user is close to zero because AI categorization uses the user's own key.
 
 ## Free vs paid
