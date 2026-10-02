@@ -4,7 +4,7 @@ Source of truth for project conventions, commands, and architecture.
 
 ## Project Overview
 
-- Personal budget-tracking web app. Public GitHub repo, GPLv3 licensed.
+- Personal budget-tracking web app. Public GitHub repo, AGPLv3 licensed.
 - Track accounts, transactions, categories, and monthly budgets; free multi-user app, every service scopes by `userId`.
 - Strict TypeScript-safe changes; preserve established repo patterns.
 

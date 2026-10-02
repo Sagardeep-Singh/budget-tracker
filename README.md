@@ -49,4 +49,4 @@ See `CLAUDE.md` for the full command list and architecture notes.
 
 ## License
 
-GPLv3 — see [LICENSE](./LICENSE).
+AGPLv3, see [LICENSE](./LICENSE). If you run a modified version for others, set `SOURCE_CODE_URL` to your modified source so the in-app "Source code" link points to it.

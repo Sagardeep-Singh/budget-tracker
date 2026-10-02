@@ -9,6 +9,7 @@ import { listCategories } from '@/lib/services/categories';
 import { getNavCounts } from '@/lib/services/nav';
 import { getEmailVerificationStatus } from '@/lib/services/emailVerification';
 import { UnverifiedEmailBanner } from '@/components/nav/unverified-email-banner';
+import { SourceLink } from '@/components/nav/source-link';
 
 const ProtectedLayout = async ({
   children,
@@ -34,6 +35,7 @@ const ProtectedLayout = async ({
         <div className="mx-auto max-w-none lg:max-w-[1120px]">
           {emailVerification.configured && !emailVerification.verified && <UnverifiedEmailBanner />}
           {children}
+          <SourceLink className="mt-12 text-center" />
         </div>
       </main>
       <BottomNav counts={counts} />
