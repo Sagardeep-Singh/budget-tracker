@@ -1,15 +1,19 @@
 'use server';
 
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { signIn, signOut } from '@/auth';
 import { AuthError } from 'next-auth';
 import { createUser } from '@/lib/services/users';
 import { signUpSchema } from '@/lib/validators/signup';
-import { ServiceValidationError } from '@/lib/services/common';
 import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
 import { clientIpFromHeaders } from '@/lib/http/clientIp';
 import { AuthRateLimitedError } from '@/lib/auth/errors';
-import { issueAndSendVerificationEmail } from '@/lib/services/emailVerification';
+import {
+  isEmailVerificationConfigured,
+  issueAndSendVerificationEmail,
+  sendAccountExistsEmail,
+} from '@/lib/services/emailVerification';
 
 const TOO_MANY_ATTEMPTS = 'Too many attempts. Try again in a few minutes.';
 
@@ -99,35 +103,25 @@ export const signUpAction = async (
     }
   }
 
-  let userId: string;
-  try {
-    userId = (await createUser(parsed.data)).id;
-  } catch (error) {
-    if (error instanceof ServiceValidationError) {
-      return error.message;
-    }
-    throw error;
-  }
+  // New and already-registered emails get the exact same response, so the
+  // form can't be used to check whether an address has an account. The
+  // difference only shows up in the inbox: a verification link for a new
+  // account, a "you already have an account" notice otherwise. That's also
+  // why there's no auto sign-in here: landing on /dashboard would give it away.
+  const { id, created } = await createUser(parsed.data);
 
-  // Best-effort: the account is already created and usable — a Brevo outage
-  // shouldn't turn a successful signup into a form error. Verification can
+  // Best-effort: a Brevo outage shouldn't turn into a form error (and an
+  // error on only one path would leak which path ran). Verification can
   // always be retried from the unverified-email banner's resend button.
   try {
-    await issueAndSendVerificationEmail(userId, parsed.data.email);
+    if (created) {
+      await issueAndSendVerificationEmail(id, parsed.data.email);
+    } else {
+      await sendAccountExistsEmail(parsed.data.email);
+    }
   } catch {
-    // swallowed deliberately — see comment above
+    // swallowed deliberately, see comment above
   }
 
-  try {
-    await signIn('credentials', {
-      email: parsed.data.email,
-      password: parsed.data.password,
-      redirectTo: '/dashboard',
-    });
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return 'Account created — sign in from the login page.';
-    }
-    throw error;
-  }
+  redirect(`/login?signup=${isEmailVerificationConfigured() ? 'check-email' : 'done'}`);
 };

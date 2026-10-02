@@ -2,6 +2,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { prisma } from '@/lib/db/prisma';
 import { isEmailConfigured, sendEmail } from '@/lib/email/brevo';
 import { buildVerificationEmail } from '@/lib/email/verification-email';
+import { buildAccountExistsEmail } from '@/lib/email/account-exists-email';
 import { appBaseUrl } from '@/lib/http/appUrl';
 import { checkRateLimit, RateLimitedError } from '@/lib/services/rateLimit';
 
@@ -12,6 +13,10 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 // Brevo quota one account can burn.
 const RESEND_HOURLY_LIMIT = 5;
 const RESEND_WINDOW_MS = 60 * 60 * 1000;
+// Signup is IP-limited already, but the target of an "account exists" notice
+// is whatever address gets typed in, so cap it per address too.
+const ACCOUNT_EXISTS_HOURLY_LIMIT = 3;
+const ACCOUNT_EXISTS_WINDOW_MS = 60 * 60 * 1000;
 
 const hashToken = (rawToken: string): string => createHash('sha256').update(rawToken).digest('hex');
 
@@ -52,6 +57,37 @@ export const issueAndSendVerificationEmail = async (
       verifyUrl: verifyUrl(rawToken),
       hoursValid: TOKEN_TTL_MS / (60 * 60 * 1000),
     }),
+  });
+};
+
+/**
+ * Tells the owner of an existing account that someone tried to sign up with
+ * their address. Over the per-address limit it skips silently: the signup
+ * response is the same either way, and there's nobody to report it to.
+ * Send failures are thrown, same as {@link issueAndSendVerificationEmail}.
+ */
+export const sendAccountExistsEmail = async (email: string): Promise<void> => {
+  if (!isEmailVerificationConfigured()) {
+    return;
+  }
+
+  try {
+    await checkRateLimit(
+      'signup-exists:email',
+      email.toLowerCase(),
+      ACCOUNT_EXISTS_HOURLY_LIMIT,
+      ACCOUNT_EXISTS_WINDOW_MS,
+    );
+  } catch (error) {
+    if (error instanceof RateLimitedError) {
+      return;
+    }
+    throw error;
+  }
+
+  await sendEmail({
+    to: email,
+    ...buildAccountExistsEmail({ appUrl: appBaseUrl(), loginUrl: `${appBaseUrl()}/login` }),
   });
 };
 

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
@@ -24,7 +26,6 @@ vi.mock('@/lib/db/prisma', () => ({ prisma: prismaMock }));
 
 const { createUser, findOrCreateGoogleUser, userHasPassword } =
   await import('@/lib/services/users');
-const { ServiceValidationError } = await import('@/lib/services/common');
 const { DEFAULT_CATEGORIES } = await import('@/lib/services/defaults');
 
 beforeEach(() => {
@@ -35,26 +36,51 @@ beforeEach(() => {
 });
 
 describe('createUser', () => {
-  it('rejects a duplicate email', async () => {
+  const input = { name: 'Jane', email: 'jane@example.com', password: 'a-long-enough-password' };
+
+  it('returns the existing id with created: false for a duplicate email, writing nothing', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'existing' });
 
-    await expect(
-      createUser({ name: 'Jane', email: 'jane@example.com', password: 'a-long-enough-password' }),
-    ).rejects.toThrow(ServiceValidationError);
+    await expect(createUser(input)).resolves.toEqual({ id: 'existing', created: false });
     expect(prismaMock.user.create).not.toHaveBeenCalled();
+  });
+
+  it('still hashes the password for a duplicate email so timing matches a real signup', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'existing' });
+    const hashSpy = vi.spyOn(bcrypt, 'hash');
+
+    await createUser(input);
+
+    expect(hashSpy).toHaveBeenCalledWith('a-long-enough-password', 12);
+    hashSpy.mockRestore();
+  });
+
+  it('treats losing a concurrent create race (P2002) as an existing account', async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'winner' });
+    prismaMock.user.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(createUser(input)).resolves.toEqual({ id: 'winner', created: false });
+  });
+
+  it('rethrows other create errors', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    prismaMock.user.create.mockRejectedValue(new Error('db down'));
+
+    await expect(createUser(input)).rejects.toThrow('db down');
   });
 
   it('hashes the password and creates the user with no prepopulated data', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.create.mockResolvedValue({ id: 'user-1' });
 
-    const result = await createUser({
-      name: 'Jane',
-      email: 'jane@example.com',
-      password: 'a-long-enough-password',
-    });
+    const result = await createUser(input);
 
-    expect(result).toEqual({ id: 'user-1' });
+    expect(result).toEqual({ id: 'user-1', created: true });
 
     const [createArg] = prismaMock.user.create.mock.calls[0];
     expect(createArg.data.email).toBe('jane@example.com');
