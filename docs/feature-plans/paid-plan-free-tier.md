@@ -205,74 +205,10 @@ signups and make sure every payment comes from a Canadian card.
 
 ## Technical outline
 
-Follows the existing flow: route handler -> Zod validator -> service -> Prisma.
-
-### Schema (needs explicit approval)
-
-- `Subscription`: `userId` (unique), `stripeCustomerId`, `stripeSubscriptionId`,
-  `status` (mirrors Stripe: active, trialing, past_due, canceled, ...),
-  `interval` (month/year), `currentPeriodEnd`, `cancelAtPeriodEnd`,
-  timestamps.
-- `StripeEvent`: `id` (Stripe event id, primary key), `type`, `processedAt`.
-  Used to make webhook handling idempotent.
-- `User.trialReminderSentAt` (nullable) so the trial email goes out once.
-- `User.trialStartedAt` (nullable), set when the trial starts. Null means no
-  trial (unverified, or already claimed).
-- `TrialClaim`: `emailHash` (primary key), `googleSubHash` (nullable, unique),
-  `claimedAt` (indexed for the retention sweep). No relation to `User`.
-
-### Services
-
-- `lib/services/entitlements.ts`
-  - `getPlan(userId): Promise<'free' | 'trial' | 'paid'>`. Paid when the
-    subscription status is active, trialing or past_due (grace). Trial when
-    within 30 days of `trialStartedAt`. Paid for everyone when billing is
-    disabled.
-- `lib/services/trialClaims.ts`: `normalizeEmail`, `hashTrialIdentity`,
-  `startTrialIfEligible(userId)` (called from email verification and new
-  Google signups), `purgeExpiredTrialClaims()`.
-  - `assertFeature(userId, feature)` for reimbursements, statement cycles,
-    push reminders and long Trends ranges.
-  - `assertAccountLimit(userId)` for the 2-account cap.
-  - `PlanRequiredError extends ServiceValidationError` in
-    `lib/services/common.ts`. Routes map it to 402 with the feature name.
-- `lib/services/billing.ts`
-  - `createCheckoutSession(userId, interval)`: CAD price, billing address
-    required, `trial_end` carried over from the app trial.
-  - `createPortalSession(userId)`
-  - `handleStripeEvent(event)` covering `checkout.session.completed`,
-    `customer.subscription.created/updated/deleted`,
-    `invoice.payment_failed`, plus the card-country backstop.
-- `lib/http/clientCountry.ts` and a `isSignupCountryAllowed` check used by
-  `lib/auth/actions.ts` and `lib/services/users.ts`.
-- Gate calls added to existing services: `accounts.ts` (create, statementDay),
-  `reimbursements.ts` (link), `trends.ts` (range > 3),
-  `pushSubscriptions.ts` and `reminders.ts`.
-
-### Routes
-
-- `POST /api/billing/checkout` -> returns Checkout URL
-- `POST /api/billing/portal` -> returns Portal URL
-- `POST /api/billing/webhook` -> raw body, signature check with
-  `STRIPE_WEBHOOK_SECRET`, delegates to `handleStripeEvent`. Excluded from the
-  auth proxy.
-
-### Env vars
-
-`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`,
-`STRIPE_PRICE_YEARLY`, `ALLOWED_SIGNUP_COUNTRIES`, `TRIAL_HASH_KEY`. Add to `.env.example` with
-comments.
-
-### UI
-
-- Settings: new "Plan" section (free, trial with days left, or paid with
-  renewal date; upgrade or manage buttons).
-- Shared upgrade prompt component used at each gate.
-- Trends range picker shows 6 and 12 months as locked for free users.
-- Trial countdown in the sidebar during the last 7 days.
-- Public pricing page linked from login/signup.
-- "Only available in Canada" state on the signup page.
-- Payment failed banner in the protected layout.
+See `paid-plan-free-tier-architecture.md` for the full design: schema, file
+breakdown with gate placement, error contract, Stripe flow, entitlements
+truth table, country check, cron changes, env vars, risks and the
+implementation checklist.
 
 ## Canada specifics
 
@@ -320,10 +256,10 @@ Not legal or tax advice. Confirm with an accountant before launch.
 ## Rollout checklist
 
 - [x] Resolve open questions
-- [ ] software-architect: confirm schema and gate placement
+- [x] software-architect: confirm schema and gate placement
 - [ ] ui-designer: Plan section, upgrade prompt, locked Trends ranges, trial
       countdown, pricing page, Canada-only signup state, banner
-- [ ] tester: unit and e2e test plans
+- [ ] tester: unit and e2e test plans (`paid-plan-free-tier-test-plan.md`)
 - [ ] Schema migration for `Subscription`, `StripeEvent` and
       `User.trialReminderSentAt`
 - [ ] `entitlements.ts` + `PlanRequiredError` with tests
