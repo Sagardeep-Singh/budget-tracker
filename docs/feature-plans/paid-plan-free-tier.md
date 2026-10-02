@@ -2,14 +2,26 @@
 
 ## Status
 
-Draft. Scoped and outlined, waiting on the open questions below before
-architect/UI/test-plan work starts. Nothing here is implemented.
+Scoped, decisions locked (see below). Next: software-architect, ui-designer and
+tester test plans. Nothing here is implemented.
 
 ## Goal
 
 Keep Ledger free for everyday budgeting and add one paid plan that covers
-hosting costs. Users are in Canada only, so pricing is in CAD and billing goes
-through Stripe directly (no merchant of record).
+hosting costs. The app is for Canadian users only, priced in CAD, with
+payments through Stripe directly (no merchant of record).
+
+## Decisions
+
+Locked by the product owner:
+
+1. **Price:** C$3/month or C$30/year.
+2. **No existing users** to migrate or grandfather.
+3. **Trial:** every new account gets 1 month of paid features for free.
+4. **History:** unlimited for every plan. No history window.
+5. **Trends:** free tier gets the 3-month view only. 6 and 12 months are paid.
+6. **Canada only:** non-Canadian users are blocked at signup and at checkout.
+7. **Payments:** Stripe.
 
 ## Pricing
 
@@ -37,61 +49,113 @@ per user is close to zero because AI categorization uses the user's own key.
 
 ## Free vs paid
 
-| Feature                                                                | Free           | Paid      |
-| ---------------------------------------------------------------------- | -------------- | --------- |
-| Manual transactions, CSV import, import undo                           | Yes            | Yes       |
-| Bank CSV presets (RBC, TD, Scotia, BMO, CIBC, Tangerine, Wealthsimple) | Yes            | Yes       |
-| Categories, rules, Categorize queue                                    | Yes            | Yes       |
-| Monthly budgets, Overview, drilldowns                                  | Yes            | Yes       |
-| Transfer matching                                                      | Yes            | Yes       |
-| AI suggestions (BYOK)                                                  | Yes            | Yes       |
-| Data export, account deletion                                          | Yes, always    | Yes       |
-| Accounts                                                               | 2              | Unlimited |
-| Visible history                                                        | Last 12 months | All       |
-| Reimbursable expenses                                                  | No             | Yes       |
-| Credit card statement cycles                                           | No             | Yes       |
-| Spending trends                                                        | No             | Yes       |
-| Push reminders                                                         | No             | Yes       |
+| Feature                                                                | Free          | Paid (and trial) |
+| ---------------------------------------------------------------------- | ------------- | ---------------- |
+| Manual transactions, CSV import, import undo                           | Yes           | Yes              |
+| Bank CSV presets (RBC, TD, Scotia, BMO, CIBC, Tangerine, Wealthsimple) | Yes           | Yes              |
+| Categories, rules, Categorize queue                                    | Yes           | Yes              |
+| Monthly budgets, Overview, drilldowns                                  | Yes           | Yes              |
+| Transfer matching                                                      | Yes           | Yes              |
+| AI suggestions (BYOK)                                                  | Yes           | Yes              |
+| Full transaction history                                               | Yes           | Yes              |
+| Data export, account deletion                                          | Yes, always   | Yes              |
+| Accounts                                                               | 2             | Unlimited        |
+| Spending trends                                                        | 3-month range | 3, 6, 12 months  |
+| Reimbursable expenses                                                  | No            | Yes              |
+| Credit card statement cycles                                           | No            | Yes              |
+| Push reminders                                                         | No            | Yes              |
 
 Principles:
 
 - Never gate export or deletion. It's a trust signal, and AGPLv3 lets anyone
   self-host anyway. We sell hosting and convenience.
-- Never delete or hide data on downgrade beyond the history window. Over-limit
-  accounts stay visible and editable; only creating new ones is blocked.
+- Never delete or hide data when a trial or subscription ends. Anything made
+  while paid stays visible. Over-limit accounts stay usable; only creating new
+  ones is blocked. Existing reimbursement links and statement days stay
+  readable, but new ones can't be added.
 - Self-hosted installs get everything. Billing is off when `STRIPE_SECRET_KEY`
   is unset, the same way AI categorization disappears without
-  `SECRET_ENCRYPTION_KEY`.
+  `SECRET_ENCRYPTION_KEY`. The country check is off when
+  `ALLOWED_SIGNUP_COUNTRIES` is unset.
+
+## Trial
+
+- App-side trial with no card required. Trial end is `User.createdAt + 30 days`,
+  so no schema field is needed for it.
+- During the trial the user has every paid feature.
+- Upgrading during the trial creates the Stripe subscription with
+  `subscription_data.trial_end` set to the app trial end, so the user isn't
+  charged until their free month is over.
+- Email reminder 5 days before the trial ends, sent by the existing daily cron
+  via Brevo. One reminder only.
+- When the trial ends without a subscription, the user drops to free with all
+  data kept.
+
+## Canada-only enforcement
+
+No check is perfect (VPNs, travellers). The aim is to stop casual non-Canadian
+signups and make sure every payment comes from a Canadian card.
+
+- **Signup:** read the `x-vercel-ip-country` header (set by Vercel on every
+  request) in a new `lib/http/clientCountry.ts`, alongside
+  `lib/http/clientIp.ts`. Refuse new accounts when the country isn't in
+  `ALLOWED_SIGNUP_COUNTRIES` (`CA`). Applies to both
+  `signUpAction` (credentials) and `findOrCreateGoogleUser` (only when the
+  Google user is new). Show a clear "Ledger is only available in Canada"
+  message.
+- **Login:** not geo-checked. Existing users travelling abroad can still sign
+  in.
+- **Checkout:** require a billing address in Stripe Checkout and add a Stripe
+  Radar rule `Block if :card_country: != 'CA'`. Custom Radar rules may need
+  Radar for Fraud Teams (extra per-transaction fee), so confirm in the Stripe
+  dashboard. As a backstop, the webhook handler cancels and refunds any
+  subscription whose card country isn't `CA`.
+- **Local dev and e2e:** the header is missing outside Vercel. Treat a missing
+  header as allowed when `ALLOWED_SIGNUP_COUNTRIES` is unset, and let e2e set
+  it explicitly.
 
 ## User stories
 
-1. As a new user, I can sign up and use the core app with no card.
-2. As a free user, when I hit a paid feature or a limit, I see what the paid
+1. As a new Canadian user, I can sign up with no card and get every paid
+   feature for my first month.
+2. As a visitor outside Canada, I see that Ledger is only available in Canada
+   and can't create an account.
+3. As a trial user, I get an email 5 days before my trial ends, and I can
+   subscribe without losing the rest of my free month.
+4. As a free user, when I hit a paid feature or a limit, I see what the paid
    plan adds and a clear upgrade button, not an error.
-3. As a free user, I can upgrade from Settings and pay with Stripe Checkout,
+5. As a free user, I can upgrade from Settings and pay with Stripe Checkout,
    monthly or yearly.
-4. As a paid user, I can change plan, update my card, see invoices and cancel
+6. As a paid user, I can change plan, update my card, see invoices and cancel
    from the Stripe Customer Portal.
-5. As a paid user who cancels, I keep paid features until the period ends,
+7. As a paid user who cancels, I keep paid features until the period ends,
    then drop to free with my data intact.
-6. As a paid user whose payment fails, I see a banner asking me to update my
+8. As a paid user whose payment fails, I see a banner asking me to update my
    card and keep access during Stripe's retry window.
 
 ## Acceptance criteria
 
+- [ ] New users have paid features for 30 days from signup with no card.
+- [ ] Signup (credentials and new Google users) is refused when the request
+      country isn't Canada and the check is enabled. Login is never
+      geo-checked.
 - [ ] Free users can't create a 3rd account. The API returns a typed plan
       error and the UI shows an upgrade prompt.
-- [ ] Free users' transaction lists, Overview and budgets show only the last 12
-      months. Older rows stay in the database and come back on upgrade.
-- [ ] CSV export returns full history for every plan.
-- [ ] Reimbursement linking, statement-day settings, Trends and push reminder
-      setup are blocked for free users at the service layer, not just hidden in
-      the UI.
-- [ ] Existing reimbursement links and statement settings stay readable after
-      a downgrade.
-- [ ] The reminders cron skips users without an active paid plan.
+- [ ] Free users get Trends for the 3-month range. Asking for 6 or 12 months
+      returns a plan error at the service layer, and the UI shows the longer
+      ranges as locked.
+- [ ] Reimbursement linking, statement-day settings and push reminder setup
+      are blocked for free users at the service layer, not just hidden in the
+      UI.
+- [ ] Data created while paid or on trial stays readable after dropping to
+      free.
+- [ ] Transaction history and CSV export are complete for every plan.
+- [ ] The reminders cron skips push reminders for free users and sends the
+      trial-ending email once per user.
+- [ ] Upgrading during the trial doesn't charge until the trial ends.
 - [ ] Plan status updates only from verified Stripe webhooks, and each event is
       processed once (idempotent).
+- [ ] A subscription paid with a non-Canadian card is cancelled and refunded.
 - [ ] With Stripe env vars unset, every user is treated as paid and no billing
       UI renders.
 
@@ -107,26 +171,31 @@ Follows the existing flow: route handler -> Zod validator -> service -> Prisma.
   timestamps.
 - `StripeEvent`: `id` (Stripe event id, primary key), `type`, `processedAt`.
   Used to make webhook handling idempotent.
+- `User.trialReminderSentAt` (nullable) so the trial email goes out once.
 
 ### Services
 
 - `lib/services/entitlements.ts`
-  - `getPlan(userId): Promise<'free' | 'paid'>`. Paid when status is active,
-    trialing or past_due (grace), or when billing is disabled.
-  - `assertFeature(userId, feature)` and `assertAccountLimit(userId)`.
-  - `historyFloor(userId): Promise<Date | null>` for the 12-month window.
+  - `getPlan(userId): Promise<'free' | 'trial' | 'paid'>`. Paid when the
+    subscription status is active, trialing or past_due (grace). Trial when
+    within 30 days of `createdAt`. Paid for everyone when billing is disabled.
+  - `assertFeature(userId, feature)` for reimbursements, statement cycles,
+    push reminders and long Trends ranges.
+  - `assertAccountLimit(userId)` for the 2-account cap.
   - `PlanRequiredError extends ServiceValidationError` in
     `lib/services/common.ts`. Routes map it to 402 with the feature name.
 - `lib/services/billing.ts`
-  - `createCheckoutSession(userId, interval)`
+  - `createCheckoutSession(userId, interval)`: CAD price, billing address
+    required, `trial_end` carried over from the app trial.
   - `createPortalSession(userId)`
   - `handleStripeEvent(event)` covering `checkout.session.completed`,
     `customer.subscription.created/updated/deleted`,
-    `invoice.payment_failed`.
-- Gate calls added to existing services: `accounts.ts` (create),
-  `reimbursements.ts` (link), `accounts.ts` (statementDay),
-  `trends.ts`, `pushSubscriptions.ts` and `reminders.ts`, plus the history
-  floor in `transactionsPage.ts`, `overview.ts` and `budgets.ts`.
+    `invoice.payment_failed`, plus the card-country backstop.
+- `lib/http/clientCountry.ts` and a `isSignupCountryAllowed` check used by
+  `lib/auth/actions.ts` and `lib/services/users.ts`.
+- Gate calls added to existing services: `accounts.ts` (create, statementDay),
+  `reimbursements.ts` (link), `trends.ts` (range > 3),
+  `pushSubscriptions.ts` and `reminders.ts`.
 
 ### Routes
 
@@ -139,14 +208,18 @@ Follows the existing flow: route handler -> Zod validator -> service -> Prisma.
 ### Env vars
 
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`,
-`STRIPE_PRICE_YEARLY`. Add to `.env.example` with comments.
+`STRIPE_PRICE_YEARLY`, `ALLOWED_SIGNUP_COUNTRIES`. Add to `.env.example` with
+comments.
 
 ### UI
 
-- Settings: new "Plan" section (current plan, renewal date, upgrade or
-  manage buttons).
+- Settings: new "Plan" section (free, trial with days left, or paid with
+  renewal date; upgrade or manage buttons).
 - Shared upgrade prompt component used at each gate.
+- Trends range picker shows 6 and 12 months as locked for free users.
+- Trial countdown in the sidebar during the last 7 days.
 - Public pricing page linked from login/signup.
+- "Only available in Canada" state on the signup page.
 - Payment failed banner in the protected layout.
 
 ## Canada specifics
@@ -163,55 +236,48 @@ Not legal or tax advice. Confirm with an accountant before launch.
   leaves Quebec.
 - **Hosting:** move Postgres to a Canadian region (for example ca-central-1)
   before launch. Separate runbook in `docs/runbooks/`.
-- **Card country:** signup stays open. Optionally add a Stripe Radar rule to
-  block non-Canadian cards.
 
 ## Tests
 
 - Unit (`tests/unit/services/`):
-  - `entitlements.test.ts`: plan resolution per status, billing disabled,
-    account limit, history floor, each feature gate.
+  - `entitlements.test.ts`: free, trial (day 0, day 29, day 31) and paid per
+    subscription status, billing disabled, account limit, Trends range gate,
+    each feature gate.
   - `billing.test.ts`: each webhook event maps to the right subscription state,
-    duplicate events are no-ops, unknown events are ignored.
+    duplicate events are no-ops, unknown events are ignored, non-Canadian card
+    is cancelled and refunded, checkout carries the trial end.
+  - Country check: allowed, blocked, header missing, check disabled; new vs
+    existing Google user.
   - Gate tests added to the existing service tests for accounts,
-    reimbursements, trends and reminders.
+    reimbursements, trends and reminders, plus the one-time trial email.
 - E2E (`tests/e2e/`):
+  - New user sees trial status and can use paid features.
+  - Signup from a non-Canadian country is refused.
   - Free user hits the account limit and sees the upgrade prompt.
-  - Free user opens Trends and sees the upgrade prompt.
+  - Free user sees 6 and 12 month Trends locked.
   - Paid user (seeded) can use every gated feature.
   - Billing disabled shows no plan UI.
 
 ## Rollout checklist
 
-- [ ] Resolve open questions below
+- [x] Resolve open questions
 - [ ] software-architect: confirm schema and gate placement
-- [ ] ui-designer: Plan section, upgrade prompt, pricing page, banner
+- [ ] ui-designer: Plan section, upgrade prompt, locked Trends ranges, trial
+      countdown, pricing page, Canada-only signup state, banner
 - [ ] tester: unit and e2e test plans
-- [ ] Schema migration for `Subscription` and `StripeEvent`
+- [ ] Schema migration for `Subscription`, `StripeEvent` and
+      `User.trialReminderSentAt`
 - [ ] `entitlements.ts` + `PlanRequiredError` with tests
+- [ ] Signup country check with tests
 - [ ] Gates in existing services with tests
 - [ ] `billing.ts` + checkout, portal and webhook routes with tests
-- [ ] Settings Plan section and upgrade prompts
+- [ ] Trial-ending email in the daily cron
+- [ ] Settings Plan section, upgrade prompts and trial countdown
 - [ ] Pricing page
 - [ ] Payment failed banner
 - [ ] Reminders cron skips free users
 - [ ] Privacy policy, terms and refund policy pages
 - [ ] Move database to a Canadian region
 - [ ] Upgrade Vercel to Pro
-- [ ] Stripe products and prices in CAD, webhook endpoint in live mode
-- [ ] Announce to existing users with the grandfathering offer
-
-## Open questions
-
-1. **Price:** C$3/C$30, or C$4/C$36? Both are well under YNAB and Monarch
-   (about C$20/month).
-2. **Existing users:** today everyone has every feature. Options: lifetime
-   paid for current users, 6 months free, or straight to the free tier.
-3. **Free trial of paid:** offer 14 or 30 days of paid features on signup, or
-   none?
-4. **History window:** is 12 months right, and should old data imported by a
-   free user be stored but hidden (proposed) or rejected at import?
-5. **Gate list:** is Trends worth gating, or should it stay free to show off
-   the app?
-6. **Card country:** block non-Canadian cards, or just price in CAD and let
-   anyone pay?
+- [ ] Stripe products and prices in CAD, Radar card-country rule, webhook
+      endpoint in live mode
