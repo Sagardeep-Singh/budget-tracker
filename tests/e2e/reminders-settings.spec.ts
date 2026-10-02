@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { signUpThenSignIn } from './fixtures/auth';
 
 /**
  * Every test signs up its own user. The reminder preference is a single row per
@@ -7,12 +8,11 @@ import { test, expect, type Page } from '@playwright/test';
  */
 const signUpFreshUser = async (page: Page): Promise<void> => {
   const email = `reminders-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
-  await page.goto('/signup');
-  await page.getByLabel('Name').fill('Reminder Person');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('a-long-enough-password');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await signUpThenSignIn(page, {
+    name: 'Reminder Person',
+    email,
+    password: 'a-long-enough-password',
+  });
 };
 
 /**

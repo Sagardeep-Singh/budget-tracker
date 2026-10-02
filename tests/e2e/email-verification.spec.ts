@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { signUpThenSignIn } from './fixtures/auth';
 
 const BREVO_FIXTURE_URL = `http://127.0.0.1:${process.env.BREVO_FIXTURE_PORT ?? 4598}`;
 
@@ -23,12 +24,7 @@ test('shows the unverified-email banner after signup, and resend sends another l
 }) => {
   const email = uniqueEmail();
 
-  await page.goto('/signup');
-  await page.getByLabel('Name').fill('New Person');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('a-long-enough-password');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await signUpThenSignIn(page, { name: 'New Person', email, password: 'a-long-enough-password' });
 
   await expect(page.getByText('Verify your email to secure your account.')).toBeVisible();
 
@@ -44,12 +40,7 @@ test('shows the unverified-email banner after signup, and resend sends another l
 test('clicking the verification link clears the banner', async ({ page }) => {
   const email = uniqueEmail();
 
-  await page.goto('/signup');
-  await page.getByLabel('Name').fill('New Person');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('a-long-enough-password');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await signUpThenSignIn(page, { name: 'New Person', email, password: 'a-long-enough-password' });
 
   const sent = await lastEmailTo(email);
   const token = extractVerifyToken(sent.html);

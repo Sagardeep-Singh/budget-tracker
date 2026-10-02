@@ -16,13 +16,22 @@ const VERIFY_MESSAGES: Record<string, { text: string; tone: 'success' | 'error' 
   },
 };
 
+// Signup redirects here with the same `signup` value whether the email was
+// new or already registered (lib/auth/actions.ts), so this copy must never
+// imply one or the other.
+const SIGNUP_MESSAGES: Record<string, string> = {
+  'check-email': 'Thanks for signing up. Check your inbox for next steps, then sign in below.',
+  done: 'If this email is new, your account is ready. Sign in to continue.',
+};
+
 const LoginPage = async ({
   searchParams,
 }: {
-  searchParams: Promise<{ passwordChanged?: string; verify?: string }>;
+  searchParams: Promise<{ passwordChanged?: string; verify?: string; signup?: string }>;
 }): Promise<React.ReactElement> => {
-  const { passwordChanged, verify } = await searchParams;
+  const { passwordChanged, verify, signup } = await searchParams;
   const verifyMessage = verify ? VERIFY_MESSAGES[verify] : undefined;
+  const signupMessage = signup ? SIGNUP_MESSAGES[signup] : undefined;
 
   return (
     <>
@@ -54,6 +63,11 @@ const LoginPage = async ({
           {passwordChanged === '1' && (
             <p className="bg-sky-soft text-sky mb-4 rounded-lg px-3 py-2 text-sm" role="status">
               Password changed. Sign in with your new password.
+            </p>
+          )}
+          {signupMessage && (
+            <p className="bg-sky-soft text-sky mb-4 rounded-lg px-3 py-2 text-sm" role="status">
+              {signupMessage}
             </p>
           )}
           {verifyMessage && (
