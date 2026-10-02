@@ -7,7 +7,7 @@ original proposal, so it reflects current behavior rather than the initial plan.
 ## Decisions made (were open questions)
 
 1. **Single-user → multi-user pivot: went with (A), multi-user.** Any visitor can sign up
-   (Google or email/password/name) and gets their own isolated Ledger, free to use. Every
+   (Google or email/password/name) and gets their own isolated space, free to use. Every
    service already scoped by `userId`, so isolation needed no new access-control layer.
 2. **Google OAuth credentials:** user-provisioned externally (Google Cloud Console → APIs &
    Services → Credentials → OAuth 2.0 Client ID, redirect URI

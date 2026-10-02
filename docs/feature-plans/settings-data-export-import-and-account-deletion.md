@@ -198,13 +198,13 @@ That round-trip is a stated acceptance criterion.
 
 ### Envelope
 
-| field           | type                | notes                                                                                                  |
-| --------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `formatVersion` | number, literal `1` | version gate; import rejects anything else with "This file was made by a different version of Ledger." |
-| `exportedAt`    | ISO-8601 UTC string | metadata only, ignored on import                                                                       |
-| `user.email`    | string              | read-only metadata, ignored on import                                                                  |
-| `user.name`     | string or null      | read-only metadata, ignored on import                                                                  |
-| `data`          | object              | the 7 model arrays below                                                                               |
+| field           | type                | notes                                                                                                          |
+| --------------- | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `formatVersion` | number, literal `1` | version gate; import rejects anything else with "This file was made by a different version of Track a Loonie." |
+| `exportedAt`    | ISO-8601 UTC string | metadata only, ignored on import                                                                               |
+| `user.email`    | string              | read-only metadata, ignored on import                                                                          |
+| `user.name`     | string or null      | read-only metadata, ignored on import                                                                          |
+| `data`          | object              | the 7 model arrays below                                                                                       |
 
 `passwordHash` is never exported. **No model array carries `userId`** — it is
 meaningless in the file (import always writes the session's `userId`) and its presence
@@ -475,7 +475,7 @@ const [message, setMessage] = useState<string | null>(null); // error or success
 7. Network throw → `setConfirmOpen(false); setStatus('error'); setMessage('Could not reach the server. Check your connection and try again.')`.
 8. Non-OK response → `setConfirmOpen(false)`, then branch on status, since a `413` may arrive without a JSON body while `400` always carries `{ error: string }` per the route contract:
    - `413` → `` `That file is larger than the ${MAX_IMPORT_BYTES / (1024 * 1024)} MB import limit.` `` (derived from the constant, not a hardcoded "10").
-   - `400` → parse body, `typeof body?.error === 'string' ? body.error : "That file couldn't be imported. Check that it's an unedited Ledger export and try again."` (the `body.error` string is service/validator-owned — e.g. `"This file was made by a different version of Ledger."` or a Zod issue message — render it verbatim, do not restate or rephrase it client-side).
+   - `400` → parse body, `typeof body?.error === 'string' ? body.error : "That file couldn't be imported. Check that it's an unedited Track a Loonie export and try again."` (the `body.error` string is service/validator-owned — e.g. `"This file was made by a different version of Track a Loonie."` or a Zod issue message — render it verbatim, do not restate or rephrase it client-side).
    - anything else (`500`) → `'Something went wrong on our end. Try again.'`
      `setStatus('error')`, keep `file` selected (so the user doesn't have to re-pick to retry the same file after fixing something server-side, though in practice a rejected file usually needs editing outside the app).
 9. `200 { ok: true, counts }` → `setConfirmOpen(false); setStatus('success')`, build the message from `counts`, e.g. `"Import complete — replaced your data with 12 accounts, 340 transactions, 8 categories, 5 budgets, 3 rules, 2 import batches, 1 reimbursement link."` Reset the file input (`inputRef.current.value = ''`, `setFile(null)`) so a stale selection can't be re-submitted. **Call `router.refresh()`** (from `next/navigation`, already the codebase's post-mutation pattern — see `docs/feature-plans/confirm-dialogs.md`'s call-site description) so every other server-rendered surface (dashboard, accounts, transactions, budgets — all now showing deleted-then-replaced data) picks up the new state on next navigation. This is not optional: full-replace invalidates the whole app's server-rendered data, not just this card.
