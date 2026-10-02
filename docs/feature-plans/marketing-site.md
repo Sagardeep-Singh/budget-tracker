@@ -61,8 +61,10 @@ External links (all set from env/config, not hardcoded):
   (`content/plans.ts`): plan names, prices, limits and the comparison rows.
   Both the Home pricing summary and `/pricing` read from it, so they never
   disagree.
-- Feature tags ("Plus", "Full history on Plus", "Reminders on Plus") come from
-  the same file, keyed by feature id.
+- Feature tags ("Plus", "Paybacks on Plus", "Reminders on Plus", "Coming soon")
+  come from the same file, keyed by feature id.
+- Prices are shown in Canadian dollars (`C$`), with a "Prices in Canadian
+  dollars" line under the plan cards.
 - **The site must not advertise limits the app doesn't enforce yet.** See
   "Dependencies on the app".
 - The Sync plan stays out of the site until it's ready. Keep its data in
@@ -70,19 +72,46 @@ External links (all set from env/config, not hardcoded):
 
 Current plan content (from the design):
 
-| Feature                              | Free          | Plus ($3/mo) |
-| ------------------------------------ | ------------- | ------------ |
-| Accounts                             | 5             | 10           |
-| Transactions and CSV imports         | Unlimited     | Unlimited    |
-| Categorization rules                 | 25            | Unlimited    |
-| Rule import and export               | No            | Yes          |
-| Triage queue, budgets and overview   | Yes           | Yes          |
-| Trends history                       | Last 3 months | Full history |
-| Transfer matching and reimbursements | No            | Yes          |
-| AI categorization (your own key)     | No            | Yes          |
-| Push reminders                       | No            | Yes          |
-| Credit card statement cycles         | No            | Yes          |
-| Data export and account deletion     | Yes           | Yes          |
+| Feature                                                                | Free           | Plus (C$4/mo) |
+| ---------------------------------------------------------------------- | -------------- | ------------- |
+| Accounts                                                               | 2              | Unlimited     |
+| Visible history                                                        | Last 12 months | All           |
+| Manual transactions, CSV import, import undo                           | Yes            | Yes           |
+| Bank CSV presets (RBC, TD, Scotia, BMO, CIBC, Tangerine, Wealthsimple) | Coming soon    | Coming soon   |
+| Categories, rules, Categorize queue                                    | Yes            | Yes           |
+| Monthly budgets, Overview, drilldowns                                  | Yes            | Yes           |
+| Transfer matching                                                      | Yes            | Yes           |
+| AI suggestions (BYOK)                                                  | Yes            | Yes           |
+| Data export, account deletion                                          | Yes, always    | Yes, always   |
+| Spending trends                                                        | No             | Yes           |
+| Reimbursable expenses                                                  | No             | Yes           |
+| Credit card statement cycles                                           | No             | Yes           |
+| Push reminders                                                         | No             | Yes           |
+
+Pricing principles:
+
+- Never gate export or deletion. It's a trust signal, and AGPLv3 lets anyone
+  self-host anyway. We sell hosting and convenience.
+- Never delete or hide data on downgrade beyond the history window. Over-limit
+  accounts stay visible and editable; only creating new ones is blocked.
+- Self-hosted installs get everything. Billing is off when `STRIPE_SECRET_KEY`
+  is unset, the same way AI categorization disappears without
+  `SECRET_ENCRYPTION_KEY`.
+
+Running costs and break-even (monthly, rough):
+
+| Item                                 | Cost                   |
+| ------------------------------------ | ---------------------- |
+| Vercel Pro (Hobby is non-commercial) | about C$28             |
+| Postgres (Supabase, Neon, Prisma)    | C$0 to C$28            |
+| Brevo email (free tier, 300/day)     | C$0                    |
+| Domain                               | about C$2              |
+| **Total**                            | **about C$35 to C$60** |
+
+At C$4/month, break-even is about 9 to 15 paying users before payment fees.
+At a typical 2 to 5% free-to-paid conversion, that's roughly 200 to 750 active
+free users. Marginal cost per user is close to zero because AI categorization
+uses the user's own key.
 
 ## Design tokens
 
@@ -140,16 +169,19 @@ Free/Plus split. None of them is authorized by this plan:
   `Subscription` table). This is a schema change and needs explicit sign-off.
 - **Billing.** A payments provider (Stripe is the likely choice) with checkout,
   a customer portal and a webhook route that updates the user's plan.
-- **Limit enforcement in services.** Account count in `lib/services/accounts`,
-  rule count in the rules service, and the trends range limit. Plus-only
-  features: transfer matching, reimbursements, AI categorization, reminders,
-  statement cycles and rule import/export. Each should throw a typed error
-  that the UI turns into an upgrade prompt.
-- **Downgrade behavior** that matches the FAQ: extra accounts become read
-  only and extra rules stop running. Nothing is deleted.
-- **Self-hosting.** Decide whether limits apply when someone self-hosts.
-  The suggested approach is to enforce limits only when a billing env var is
-  set, so self-hosted instances stay unlimited.
+- **Limit enforcement in services.** Account creation blocked past 2 in
+  `lib/services/accounts`, and a 12-month visible history window applied to
+  transaction, overview and budget queries. Plus-only features: spending
+  trends, reimbursable expenses, credit card statement cycles and push
+  reminders. Each should throw a typed error that the UI turns into an
+  upgrade prompt.
+- **Downgrade behavior** that matches the FAQ: over-limit accounts stay
+  visible and editable, only creating new ones is blocked. History older than
+  12 months is hidden, never deleted.
+- **Self-hosting.** Billing and all limits are off when `STRIPE_SECRET_KEY` is
+  unset, so self-hosted installs get every feature.
+- **Bank CSV presets** for RBC, TD, Scotia, BMO, CIBC, Tangerine and
+  Wealthsimple. Shown as "Coming soon" on the site until they ship.
 
 Until those land, the site launches with one of these (open question 6):
 
@@ -212,11 +244,10 @@ Vitest: only if `plans.ts` gets helpers (for example, formatting limits).
    OS setting first?
 4. **Analytics.** None, or cookie-free analytics?
 5. **Legal copy.** Who writes the Privacy and Terms pages? They need to cover
-   payments once Plus is live.
+   payments (Stripe) and Canadian privacy law (PIPEDA) once Plus is live.
 6. **Launch order.** Launch with "Free during beta" before gating ships, or
    wait for billing?
-7. **Limit numbers.** Confirm 25 rules and 3 months of trends on Free.
-8. **Domain and trademark.** The product is now "Track a Loonie" (wordmark
+7. **Domain and trademark.** The product is now "Track a Loonie" (wordmark
    `trackaloonie`). Has the domain or trademark been checked?
 
 ## Non-goals
