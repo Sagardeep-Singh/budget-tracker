@@ -48,7 +48,7 @@ const toCents = (value: string | number): number => Math.round(Number(value) * 1
 /** The quick pills are shortcuts into the same `type` / `uncategorizedOnly`
  * filters the dialog edits, so the two can never disagree. A combination the
  * pills can't express (set from the dialog) leaves no pill highlighted. */
-/** Mobile quick-filter pills, each a preset of the plain `type`/`uncategorizedOnly` filters. */
+/** Mobile pills: presets of the `type`/`uncategorizedOnly` filters. */
 type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
 
 const QUICK_FILTERS: Record<QuickFilter, Pick<TransactionFilters, 'type' | 'uncategorizedOnly'>> = {
@@ -65,7 +65,6 @@ const activeQuickFilter = (filters: TransactionFilters): QuickFilter | null =>
       QUICK_FILTERS[key].uncategorizedOnly === filters.uncategorizedOnly,
   ) ?? null;
 
-/** The server's `toFixed(2)` totals as the numbers `TransactionTotals` renders. */
 const toTotals = (
   summary: TransactionsPageResult['summary'],
   count: number,
@@ -79,13 +78,7 @@ const toTotals = (
   reimbursementIncome: Number(summary.reimbursementIncome),
 });
 
-/**
- * Rows arrive newest-first across every loaded page, so grouping in arrival
- * order keys each day once — a Load more that lands mid-day appends into the
- * existing group instead of opening a duplicate header for the same date.
- * Keyed on the ISO day (UTC, same as the server's `dayTotals`); `formatDate`
- * is only the label.
- */
+/** Groups by UTC day; a page that lands mid-day appends to the existing group. */
 const groupByDay = (list: FrontendTransaction[]): [string, FrontendTransaction[]][] => {
   const groups = new Map<string, FrontendTransaction[]>();
   for (const t of list) {
@@ -96,11 +89,7 @@ const groupByDay = (list: FrontendTransaction[]): [string, FrontendTransaction[]
   return Array.from(groups.entries());
 };
 
-/**
- * `invalid-request` (a 400: our own params/cursor were rejected) must not be
- * retried verbatim; `network` (offline, aborted connection, 5xx) retries the
- * identical request.
- */
+/** A 400 must not be retried as-is; `network` errors retry the same request. */
 type FetchErrorKind = 'invalid-request' | 'network';
 const classifyFailure = (res: ApiFailure): FetchErrorKind =>
   res.status === 400 ? 'invalid-request' : 'network';
@@ -109,7 +98,7 @@ type Tree = 'desktop' | 'mobile';
 
 const plural = (n: number): string => (n === 1 ? '' : 's');
 
-/** Scope part of a request key (`<scope query>#<reloadNonce>`); `#` is always %-encoded inside the query. */
+/** Scope part of a request key (`<scope query>#<reloadNonce>`). */
 const scopeOf = (requestKey: string): string => requestKey.slice(0, requestKey.lastIndexOf('#'));
 
 export const TransactionsView = ({
@@ -118,9 +107,7 @@ export const TransactionsView = ({
   accounts,
   categories,
 }: {
-  /** server-rendered page 1 for `initialRequestKey` */
   initialPage: TransactionsPageResult;
-  /** the scope query string that produced `initialPage` */
   initialRequestKey: string;
   accounts: FrontendAccount[];
   categories: FrontendCategory[];
@@ -131,9 +118,7 @@ export const TransactionsView = ({
   const [dialogKey, setDialogKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [drawerKey, setDrawerKey] = useState(0);
-  // `?tx=<id>` (Overview's day panel links here) opens that transaction's
-  // drawer on arrival. Those links are scoped to the transaction's own day,
-  // so it lands on page 1.
+  // `?tx=<id>` opens that row's drawer; the link is scoped to its day, so it's on page 1.
   const [detail, setDetail] = useState<FrontendTransaction | null>(() => {
     const id = searchParams.get('tx');
     return id ? (initialPage.rows.find((t) => t.id === id) ?? null) : null;
@@ -148,9 +133,7 @@ export const TransactionsView = ({
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [matchDialogKey, setMatchDialogKey] = useState(0);
 
-  // --- server-paginated list state -------------------------------------------
-  // `pages` are the loaded pages for `pagesKey` (page 1 + every Load more).
-  // A request key is `<scope query>#<reloadNonce>`; mutations bump the nonce.
+  // Loaded pages for `pagesKey`. Key = `<scope query>#<reloadNonce>`; mutations bump the nonce.
   const [pages, setPages] = useState<TransactionsPageResult[]>([initialPage]);
   const [pagesKey, setPagesKey] = useState(`${initialRequestKey}#0`);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -170,15 +153,9 @@ export const TransactionsView = ({
   const desktopLoadMoreRef = useRef<HTMLDivElement>(null);
   const mobileLoadMoreRef = useRef<HTMLDivElement>(null);
 
-  // The SSR page is adopted once, on mount; after that the client owns every
-  // fetch. A server re-render with the SAME URL scope whose page 1 actually
-  // CHANGED, though, is a `router.refresh()` after a mutation made outside
-  // this component (the layout's add-transaction overlay, the form hook, the
-  // reimbursement panel), so it refetches the current scope. An identical
-  // re-render (opening/closing the `?overlay=add` overlay, a no-op refresh)
-  // is ignored so it can't collapse Load-more'd pages, and a re-render for a
-  // NEW URL scope is just the echo of our own filter/URL push, already
-  // fetched client-side: ignored too.
+  // The SSR page is adopted on mount; the client fetches after that. A server
+  // re-render with the same scope but a changed page 1 means a mutation elsewhere
+  // called `router.refresh()`, so refetch. Identical or new-scope re-renders are ignored.
   const [ssrSeen, setSsrSeen] = useState(() => ({
     page: initialPage,
     key: initialRequestKey,
@@ -199,11 +176,7 @@ export const TransactionsView = ({
   const filters = useMemo(() => parseTransactionFilters(searchParams), [searchParams]);
   const activeFilterCount = countActiveFilterGroups(filters);
 
-  // The search box is local state; once typing pauses for 300ms the value
-  // "settles" — it becomes part of the server request (no Apply step, but no
-  // request per keystroke either) and is pushed to the URL in the same beat.
-  // Filtering is a network round trip now, so it is deliberately debounced;
-  // the previous rows stay visible (dimmed) until the new ones land.
+  // Payee search settles after 300ms, then goes into the request and the URL.
   const [payeeDraft, setPayeeDraft] = useState(filters.payee);
   const [settledPayee, setSettledPayee] = useState(filters.payee);
   // Re-seeds `payeeDraft` when `filters.payee` changes from outside this
@@ -212,14 +185,8 @@ export const TransactionsView = ({
   // state to a prop change, rather than in an effect (which would commit
   // the stale draft for one extra frame first).
   const [payeeSyncedFrom, setPayeeSyncedFrom] = useState(filters.payee);
-  // Payee values we've pushed to the URL ourselves that it hasn't caught up
-  // to yet, oldest first. When the URL's payee lands on one of them it's the
-  // echo of our own debounced push completing, not an external change, and
-  // must not stomp on whatever the user has typed since (this used to happen:
-  // the URL round-trip for one keystroke could land after the user had
-  // already typed several more, snapping the input back mid-word). A queue,
-  // not just the last value: two quick settles (type, pause, clear) can both
-  // be in flight, and the older echo must not read as an external change.
+  // Payee values we pushed to the URL that it hasn't reflected yet. Their echo
+  // must not overwrite what the user has typed since. A queue, since several can be in flight.
   const [pendingPayeePushes, setPendingPayeePushes] = useState<string[]>([]);
   if (filters.payee !== payeeSyncedFrom) {
     setPayeeSyncedFrom(filters.payee);
@@ -232,18 +199,13 @@ export const TransactionsView = ({
       setPendingPayeePushes([]);
     }
   }
-  // What the URL's payee is, or will be once our pushes land — the debounce
-  // compares against this, never the possibly-stale `filters.payee`, or a
-  // settle that happens while an earlier push is in flight would be skipped.
+  // The URL's payee once our pending pushes land; the debounce compares against this.
   const payeeUrlTargetRef = useRef(filters.payee);
   useEffect(() => {
     if (pendingPayeePushes.length === 0) payeeUrlTargetRef.current = filters.payee;
   }, [filters.payee, pendingPayeePushes]);
 
-  // The native History API, not `router.replace`: the view fetches its own
-  // page from `/api/transactions` whenever the URL's filters change (below),
-  // so a server re-render per change would only duplicate that request.
-  // Next keeps `useSearchParams` in sync with replaceState.
+  // History API, not `router.replace`: the view fetches its own page, so a server render is wasted.
   const pushFilters = useCallback(
     (next: TransactionFilters): void => {
       const query = transactionFiltersToSearchParams(next).toString();
@@ -265,7 +227,7 @@ export const TransactionsView = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on payeeDraft changes; `filters`/`pushFilters` reacting here would restart the debounce on every unrelated filter change
   }, [payeeDraft]);
 
-  // Same 300ms settle for the mobile search box (it had none while it filtered in memory).
+  // Same 300ms settle for mobile search.
   const [settledMobileSearch, setSettledMobileSearch] = useState('');
   useEffect(() => {
     if (mobileSearch === settledMobileSearch) return;
@@ -348,8 +310,7 @@ export const TransactionsView = ({
     [filters, settledPayee, settledMobileSearch],
   );
   const requestKey = `${scopeKey}#${reloadNonce}`;
-  // Page 1 for the current key is in flight (or about to be): previous rows
-  // stay on screen, dimmed, until it lands.
+  // Page 1 for the current key is loading; old rows stay, dimmed.
   const pending = requestKey !== pagesKey && scopeError?.key !== requestKey;
   const currentScopeError = scopeError?.key === requestKey ? scopeError.kind : null;
 
@@ -357,8 +318,7 @@ export const TransactionsView = ({
     pagesKeyRef.current = pagesKey;
   }, [pagesKey]);
 
-  // Any request-key change fetches page 1 and REPLACES `pages` (never appends);
-  // a superseded request is aborted and its late response dropped.
+  // A new request key fetches page 1 and replaces `pages`; stale responses are dropped.
   useEffect(() => {
     if (requestKey === pagesKey) return;
     const key = requestKey;
@@ -382,8 +342,7 @@ export const TransactionsView = ({
         mobile: `${page.rows.length} of ${page.totalCount} shown.`,
       });
       if (scopeChanged) {
-        // back to the newest rows, but only if the list's top is scrolled
-        // past — never yank the filter controls out from under the user
+        // scroll to the top only if it's already scrolled past
         for (const el of [desktopListRef.current, mobileListRef.current]) {
           if (el && el.offsetParent !== null && el.getBoundingClientRect().top < 0) {
             el.scrollIntoView({ block: 'start' });
@@ -392,7 +351,7 @@ export const TransactionsView = ({
       }
     });
     return () => controller.abort();
-    // `scopeRetry` is a dependency only so "Try again" re-runs a failed fetch for the same key
+    // `scopeRetry` lets "Try again" re-run the same key
   }, [requestKey, pagesKey, scopeRetry]);
 
   const retryScope = (): void => {
@@ -405,7 +364,7 @@ export const TransactionsView = ({
 
   const loadMore = async (tree: Tree): Promise<void> => {
     if (moreError === 'invalid-request') {
-      // the server rejected our cursor: don't replay it — start over from page 1
+      // cursor rejected: restart from page 1
       setMoreError(null);
       setReloadNonce((n) => n + 1);
       return;
@@ -431,9 +390,7 @@ export const TransactionsView = ({
       desktop: message(pages[0].desktopCount),
       mobile: message(pages[0].totalCount),
     });
-    // Once the list is exhausted the button unmounts: move focus to the status
-    // line rather than letting it drop to <body>. Otherwise keep it on the
-    // button (disabling a focused button while loading can blur it).
+    // When the button unmounts, move focus to the status line instead of <body>.
     requestAnimationFrame(() => {
       const row = tree === 'desktop' ? desktopLoadMoreRef.current : mobileLoadMoreRef.current;
       const status = tree === 'desktop' ? desktopStatusRef.current : mobileStatusRef.current;
@@ -444,17 +401,15 @@ export const TransactionsView = ({
 
   const { summary, mobileSummary, desktopCount, totalCount, uncategorizedCount } = pages[0];
 
-  // Derived from `pages` only, so typing in a search box doesn't rebuild them.
+  // Only depends on `pages`, so typing doesn't rebuild it.
   const { rows, dayTotals, runningBalance, days } = useMemo(() => {
-    // Each page's dayTotals entry is the authoritative full-day total, so later
-    // pages overwrite rather than add. Every UTC day a page's rows touch has one.
+    // Each page's day totals are full-day, so later pages overwrite.
     const dayTotals = new Map<string, number>();
     for (const page of pages) {
       for (const d of page.dayTotals) dayTotals.set(d.day, Number(d.total));
     }
 
-    // Running balance, walked oldest-first within each page from that page's own
-    // server-computed opening total (in cents, so it can't drift).
+    // Walk each page oldest-first from its server opening balance, in cents.
     const runningBalance = new Map<string, number>();
     for (const page of pages) {
       let cents = toCents(page.runningBalanceStart);
@@ -890,8 +845,7 @@ export const TransactionsView = ({
                 categories={categories}
                 onDone={() => {
                   closeDetail();
-                  // an edit to a row past page 1 may leave the SSR page 1
-                  // unchanged, so don't rely on the refresh to notice it
+                  // an edit past page 1 may not change SSR page 1, so reload explicitly
                   setReloadNonce((n) => n + 1);
                 }}
               />

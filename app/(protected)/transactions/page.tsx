@@ -12,7 +12,7 @@ import { TransactionsView } from '@/components/transactions/transactions-view';
 import { ScreenHeader } from '@/components/nav/screen-header';
 import { DateRangePopover } from '@/components/dashboard/period-popover';
 
-/** App Router hands over plain values; the filter parser reads a URLSearchParams (first value wins). */
+/** First value wins for repeated params. */
 const toUrlSearchParams = (raw: Record<string, string | string[] | undefined>): URLSearchParams => {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(raw)) {
@@ -31,8 +31,7 @@ const TransactionsPage = async ({
 }): Promise<React.ReactElement> => {
   const session = await getServerAuthSession();
   const userId = session!.user.id;
-  // Page 1 of the URL's filters (the period selector writes `from`/`to`
-  // there too); mobile search is local view state, so a fresh load starts empty.
+  // mobile search is view state, so a fresh load starts without it
   const scope: TransactionScope = {
     filters: parseTransactionFilters(toUrlSearchParams(await searchParams)),
     mobileSearch: '',
@@ -48,8 +47,7 @@ const TransactionsPage = async ({
       <ScreenHeader
         title="Transactions"
         description="Every dollar in and out, in one ledger."
-        // Shallow: the view refetches its page from the API when the URL's
-        // `from`/`to` change, so no server render is needed.
+        // shallow: the view refetches on its own
         periodSlot={<DateRangePopover shallow />}
       />
       <TransactionsView

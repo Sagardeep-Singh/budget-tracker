@@ -315,10 +315,7 @@ export const listReimbursementCandidates = async (
   return candidates.slice(0, options.limit ?? DEFAULT_CANDIDATE_LIMIT);
 };
 
-/** Ids of the user's reimbursable expenses still awaiting money (PENDING or
- * PARTIAL), the server-side half of the Transactions page's "pending
- * reimbursements" filter. Status is derived from the linked total, which a
- * Prisma where-clause can't compare against, so it is resolved here first. */
+/** Ids of PENDING/PARTIAL reimbursable expenses. Status is derived, so Prisma can't filter on it. */
 export const listPendingReimbursementExpenseIds = async (userId: string): Promise<string[]> => {
   const expenses = await prisma.transaction.findMany({
     where: { userId, isReimbursable: true, reimbursementCompletedAt: null },

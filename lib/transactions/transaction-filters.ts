@@ -123,11 +123,8 @@ export const transactionsHref = (filters: Partial<TransactionFilters>): string =
 /** Every clause a transaction must pass to remain visible under the current
  * filters, including the period selector's `from`/`to` (the credit card
  * statement view writes into the same pair).
- *
- * No longer on the render path: the Transactions page filters server-side via
- * `buildTransactionWhere` in `lib/services/transactionsPage.ts`. Kept on
- * purpose as the executable reference semantics that function must reproduce
- * — `tests/unit/services/transactionsPage.parity.test.ts` diffs the two. */
+ * Off the render path; kept as the reference `buildTransactionWhere` is
+ * parity-tested against. */
 export const matchesTransactionFilters = (
   transaction: FrontendTransaction,
   filters: TransactionFilters,

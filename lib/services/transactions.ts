@@ -40,7 +40,6 @@ export type FrontendTransaction = {
   reimbursementIncomeLinkedTotal: string;
 };
 
-/** Exported for `lib/services/transactionsPage.ts` — one row shape for both read paths. */
 export const toFrontend = (tx: {
   id: string;
   accountId: string;
@@ -105,7 +104,6 @@ export const toFrontend = (tx: {
   };
 };
 
-/** Exported for `lib/services/transactionsPage.ts` — the relations `toFrontend` needs. */
 export const include = {
   account: { select: { name: true } },
   category: { select: { name: true } },

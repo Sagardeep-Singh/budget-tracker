@@ -35,7 +35,7 @@ export const GET = async (request: Request): Promise<NextResponse> => {
 
 const PAGE_QUERY_KEYS = Object.keys(transactionsPageQuerySchema.shape);
 
-/** `?paginated=1`: the Transactions page's envelope. Additive — the legacy array path above is unchanged. */
+/** `?paginated=1`: the Transactions page envelope. */
 const getPaginated = async (userId: string, params: URLSearchParams): Promise<NextResponse> => {
   const parsed = transactionsPageQuerySchema.safeParse(
     Object.fromEntries(PAGE_QUERY_KEYS.map((key) => [key, params.get(key) ?? undefined])),

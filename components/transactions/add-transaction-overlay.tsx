@@ -29,9 +29,7 @@ export const AddTransactionOverlay = ({
   // this identity — a new function on every render would tear down and
   // re-run that effect on any parent re-render (e.g. router.refresh()),
   // re-locking scroll and yanking focus back to the close button mid-entry.
-  // Drops only `overlay`, keeping the screen's own params (Transactions'
-  // period and filters). Read from `window.location` rather than
-  // `searchParams` so the callback's identity doesn't change with the URL.
+  // Drops only `overlay`. Reads `window.location` so the callback stays stable across URL changes.
   const close = useCallback((): void => {
     const params = new URLSearchParams(window.location.search);
     params.delete('overlay');

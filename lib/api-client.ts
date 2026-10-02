@@ -77,7 +77,7 @@ const request = async <T>(
   return { ok: true, status: response.status, data: parsed as T };
 };
 
-/** `signal` lets a caller abort a superseded read; an aborted request resolves as a `networkError`. */
+/** An aborted request resolves as a `networkError`. */
 export const getJSON = async <T>(
   url: string,
   options: { signal?: AbortSignal } = {},

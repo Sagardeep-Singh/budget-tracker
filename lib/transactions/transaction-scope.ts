@@ -1,37 +1,20 @@
 import type { TransactionFilters } from '@/lib/transactions/transaction-filters';
 
-/**
- * Pure (DB-free) definitions shared by the paginated read path: the request
- * scope, the total order pagination is built on, the opaque cursor codec and
- * the two search-shape predicates that decide whether a text term can be
- * handed to Prisma at all.
- *
- * Kept out of `lib/services/transactionsPage.ts` so the ordering/cursor rules
- * have one home that the service, the route and the tests all read from, and
- * so they are unit-testable without mocking Prisma.
- */
+/** DB-free scope, ordering and cursor rules for the paginated Transactions read. */
 
 export type TransactionScope = {
-  /** the desktop filter set, unchanged shape, straight off the URL */
   filters: TransactionFilters;
-  /** mobile search box: payee OR formatted-amount substring. `''` = no filter */
+  /** payee OR formatted-amount substring; `''` = none */
   mobileSearch: string;
 };
 
 export type TransactionCursor = { date: Date; id: string };
 
-/** Anything sortable/comparable by the `(date desc, id desc)` total order. */
 export type OrderedRow = { date: Date; id: string };
 
 /**
- * The one comparator behind the page `orderBy`, the keyset predicate, Mode B's
- * in-memory sort/slice and the strictly-older running-balance predicate.
- *
- * Sign convention, pinned because any inversion silently corrupts pagination:
- * it is a `.sort()` comparator for **newest first**, so
- * `compareTransactionOrder(a, b) > 0` means **`a` is older than `b`** — which
- * is exactly the "strictly older than the cursor" test Mode B filters on, and
- * mirrors `orderBy: [{ date: 'desc' }, { id: 'desc' }]`.
+ * Newest-first comparator, `(date desc, id desc)`, shared by `orderBy`, the
+ * keyset and Mode B. `> 0` means `a` is older than `b`.
  */
 export const compareTransactionOrder = (a: OrderedRow, b: OrderedRow): number => {
   const byDate = b.date.getTime() - a.date.getTime();
@@ -40,7 +23,7 @@ export const compareTransactionOrder = (a: OrderedRow, b: OrderedRow): number =>
   return a.id < b.id ? 1 : -1;
 };
 
-/** True when `row` sits strictly older than `cursor` in the total order above. */
+/** `row` is strictly older than `cursor`. */
 export const isOlderThanCursor = (row: OrderedRow, cursor: TransactionCursor): boolean =>
   compareTransactionOrder(row, cursor) > 0;
 
@@ -54,11 +37,10 @@ const toBase64Url = (value: string): string =>
 export const encodeTransactionCursor = (cursor: TransactionCursor): string =>
   toBase64Url(JSON.stringify({ d: cursor.date.toISOString(), i: cursor.id }));
 
-/** `null` on any malformed input (bad base64, bad JSON, missing/invalid fields). */
+/** `null` on malformed input. */
 export const decodeTransactionCursor = (raw: string): TransactionCursor | null => {
   if (!raw) return null;
-  // Reject anything outside the base64url alphabet up front: Buffer's base64
-  // decoder is lenient and would silently drop stray characters.
+  // Buffer's decoder silently drops stray characters
   if (!/^[A-Za-z0-9_-]+$/.test(raw)) return null;
   let parsed: unknown;
   try {
@@ -74,30 +56,12 @@ export const decodeTransactionCursor = (raw: string): TransactionCursor | null =
   return { date, id: i };
 };
 
-/**
- * Today's mobile search matches `Number(amount).toFixed(2).includes(term)`, and
- * `toFixed(2)` output only ever contains `[0-9.]` (amounts are positive; the
- * sign lives in `type`). So a term of only digits/dots is the exact set of
- * terms that *can* match the amount branch — not an approximation — and is the
- * set that has to be matched in JS rather than by a Prisma clause.
- */
+/** Digits/dots only: the exact set of terms that can match `amount.toFixed(2)`. */
 export const isAmountSubstringCandidate = (term: string): boolean => /^[0-9.]+$/.test(term.trim());
 
-/**
- * Prisma 6.19.3's `contains` compiles to `LIKE '%<param>%'` **without**
- * escaping LIKE metacharacters — probed against the local Postgres, see
- * `docs/feature-plans/transactions-server-side-pagination.md`
- * ("Probe result: Prisma 6.19.3 `contains` escaping"): `contains: '%'` matched
- * every row with a payee instead of the rows literally containing a percent
- * sign. Any term carrying `%` or `_` therefore has to be matched in JS to keep
- * `matchesTransactionFilters`' plain `String.includes` semantics.
- */
+/** Prisma `contains` doesn't escape LIKE `%`/`_`, so these terms are matched in JS. */
 export const needsExactStringMatch = (term: string): boolean =>
   term.includes('%') || term.includes('_');
 
-/**
- * UTC calendar day of an instant, as `YYYY-MM-DD`. Derived from the ISO string
- * so it agrees with both `formatDate`'s pinned `timeZone: 'UTC'` and the
- * client's own `t.date.slice(0, 10)` grouping, regardless of the host's `TZ`.
- */
+/** UTC calendar day as `YYYY-MM-DD`, independent of host TZ. */
 export const dayKey = (date: Date): string => date.toISOString().slice(0, 10);

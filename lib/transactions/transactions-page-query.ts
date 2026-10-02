@@ -1,21 +1,11 @@
 import { transactionFiltersToSearchParams } from '@/lib/transactions/transaction-filters';
 import type { TransactionScope } from '@/lib/transactions/transaction-scope';
 
-/** Decision 3: the Transactions page loads 50 rows at a time. */
 export const TRANSACTIONS_PAGE_SIZE = 50;
 
 /**
- * The scope half of a `GET /api/transactions?paginated=1` query string.
- *
- * The desktop filters reuse `transactionFiltersToSearchParams`, so they keep
- * the exact bookmarkable param names and default-omission rules the URL already
- * uses; mobile search is appended only when non-empty.
- *
- * Its `toString()` doubles as the Transactions view's request key: the server
- * page (`app/(protected)/transactions/page.tsx`) and the client view build the
- * same scope through this one function, so "is the SSR page still the page for
- * what's on screen?" is a plain string comparison rather than a second,
- * hand-rolled serialization that could drift.
+ * Scope part of the paginated query. Its `toString()` is also the view's
+ * request key, shared by the server page and the client.
  */
 export const transactionsPageSearchParams = (scope: TransactionScope): URLSearchParams => {
   const params = transactionFiltersToSearchParams(scope.filters);
@@ -23,7 +13,7 @@ export const transactionsPageSearchParams = (scope: TransactionScope): URLSearch
   return params;
 };
 
-/** Full API URL for one page of `scope`; `cursor` absent = first page. */
+/** API URL for one page; no `cursor` = first page. */
 export const transactionsPageUrl = (scopeKey: string, cursor?: string | null): string => {
   const params = new URLSearchParams(scopeKey);
   params.set('paginated', '1');

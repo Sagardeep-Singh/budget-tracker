@@ -24,23 +24,14 @@ import { summarizeTransactions } from '@/lib/transactions/transaction-summary';
 import type { TransactionsPageQuery } from '@/lib/validators/transactions';
 
 /**
- * The Transactions page's paginated read path: one page of rows plus every
- * full-scope aggregate the page renders (counts, summary, running-balance
- * opening total, per-day totals), all derived from ONE where-builder so the
- * page and its aggregates cannot drift apart.
- *
- * Money leaves this module as `toFixed(2)` strings summed in integer cents —
- * never a raw `Decimal`, never a float total — matching every other service's
- * serialization edge (see `FrontendTransaction.amount`).
- *
- * `listTransactions` in `lib/services/transactions.ts` is deliberately
- * untouched: the import-batch detail page keeps its plain-array contract.
+ * Paginated Transactions read: one page of rows plus the scope's aggregates,
+ * all from one where-builder so they can't drift. Money is summed in cents and
+ * returned as `toFixed(2)` strings.
  */
 
 export type TransactionsPageRequest = TransactionScope & {
-  /** page size; the validator clamps it to 1..100 */
   limit: number;
-  /** opaque cursor string from the previous page's `nextCursor`; absent = first page */
+  /** previous page's `nextCursor`; absent = first page */
   cursor?: string;
 };
 
@@ -50,33 +41,30 @@ export type TransactionSummary = {
   payments: string;
   transfers: string;
   reimbursementIncome: string;
-  /** credit - debit, precomputed so the client does no money arithmetic */
   net: string;
 };
 
-/** Signed day total, keyed by UTC `YYYY-MM-DD` (NOT `formatDate` output). */
+/** Signed day total, keyed by UTC `YYYY-MM-DD`. */
 export type DayTotal = { day: string; total: string };
 
 export type TransactionsPageResult = {
-  /** newest-first, `(date desc, id desc)`, at most `limit` items */
+  /** newest first: `(date desc, id desc)` */
   rows: FrontendTransaction[];
-  /** null when there is nothing older to load */
   nextCursor: string | null;
   hasMore: boolean;
-  /** signed cumulative total of every in-scope row strictly OLDER than this page's oldest row */
+  /** signed total of every in-scope row older than this page */
   runningBalanceStart: string;
-  /** full-scope row count (mobile params included) — the mobile count line */
+  /** includes mobile search */
   totalCount: number;
-  /** desktop-scope row count (mobile params omitted) — the "N transactions" label */
+  /** excludes mobile search */
   desktopCount: number;
-  /** desktop-scope count of rows with no category, ignoring the pill-controlled
-   * `type`/`uncategorizedOnly` filters — the mobile Uncategorized pill badge */
+  /** uncategorized rows, ignoring the pill filters (`type`/`uncategorizedOnly`) */
   uncategorizedCount: number;
-  /** desktop-scope totals, computed by `summarizeTransactions` (reimbursement-netted) */
+  /** excludes mobile search */
   summary: TransactionSummary;
-  /** full-scope totals (mobile search included) — the mobile totals card */
+  /** includes mobile search */
   mobileSummary: TransactionSummary;
-  /** full-day totals for every UTC day this page's rows touch, page-boundary independent */
+  /** full-day totals for each day this page touches */
   dayTotals: DayTotal[];
 };
 
@@ -92,13 +80,13 @@ const finiteAmount = (value: string | null): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** A payee term Prisma's `contains` can be trusted with (no LIKE metacharacters). */
+/** Payee term safe for Prisma `contains` (no LIKE metacharacters). */
 const prismaSafePayee = (filters: TransactionFilters): string | null => {
   const term = filters.payee.trim();
   return term && !needsExactStringMatch(term) ? term : null;
 };
 
-/** Mode A mobile search: a term that can only ever match the payee branch. */
+/** Mobile search term that can only match payee, so Prisma can handle it. */
 const prismaSafeMobileSearch = (mobileSearch: string): string | null => {
   const term = mobileSearch.trim();
   return term && !isAmountSubstringCandidate(term) && !needsExactStringMatch(term) ? term : null;
@@ -106,43 +94,30 @@ const prismaSafeMobileSearch = (mobileSearch: string): string | null => {
 
 export type BuildWhereOptions = {
   mobile: boolean;
-  /** required when `filters.pendingReimbursementsOnly` is set */
+  /** required with `pendingReimbursementsOnly` */
   pendingReimbursementIds?: string[];
 };
 
-/** True when some text term must be matched in JS rather than by a Prisma clause. */
+/** A text term must be matched in JS (Mode B). */
 const needsModeB = (scope: TransactionScope): boolean =>
   (scope.filters.payee.trim() !== '' && !prismaSafePayee(scope.filters)) ||
   (scope.mobileSearch.trim() !== '' && !prismaSafeMobileSearch(scope.mobileSearch));
 
-/** The scope with the mobile pills' `type`/`uncategorizedOnly` filters cleared,
- * so the Uncategorized badge doesn't drop to its own subset when a pill is on. */
+/** Scope without the pill filters, so the Uncategorized badge ignores them. */
 const withoutPillFilters = (scope: TransactionScope): TransactionScope => ({
   ...scope,
   filters: { ...scope.filters, type: null, uncategorizedOnly: false },
 });
 
 /**
- * The one predicate behind the page query and every aggregate.
- * `mobile: false` omits `mobileSearch` — the desktop scope.
+ * The predicate behind the page query and every aggregate. `mobile: false`
+ * omits mobile search (the desktop scope).
  *
- * Every constraint lands in a single `AND` array (never top-level keys):
- * `payee` is constrained by both the desktop filter and mobile search, and
- * `categoryId` by both `categoryIds` and `uncategorizedOnly` — top-level keys
- * would silently overwrite one another.
- *
- * Text terms Prisma cannot express faithfully are OMITTED here and matched in JS
- * by `getTransactionsPage` (Mode B): an amount-shaped mobile search (it has to
- * match `Number(amount).toFixed(2)` as a string), and any term containing `%`/`_`
- * (Prisma 6.19.3's `contains` does not escape LIKE metacharacters — see the
- * "Probe result" section of `docs/feature-plans/transactions-server-side-pagination.md`).
- * {@link matchesDeferredPayee} is the JS half for the desktop payee.
- *
- * `pendingReimbursementsOnly` depends on a derived status (linked total vs
- * expected amount) Prisma can't compare, so the caller resolves the matching
- * ids first ({@link listPendingReimbursementExpenseIds}) and passes them in.
- *
- * No `skippedAt` clause, deliberately: skipped transactions stay visible (Decision 9).
+ * - Clauses go in one `AND` array; top-level keys would overwrite each other.
+ * - Terms Prisma can't express (amount-shaped search, `%`/`_`) are left out and
+ *   matched in JS by Mode B.
+ * - Pending reimbursement status is derived, so the caller passes matching ids.
+ * - No `skippedAt` clause: skipped rows stay visible.
  */
 export const buildTransactionWhere = (
   userId: string,
@@ -155,10 +130,9 @@ export const buildTransactionWhere = (
   const payee = prismaSafePayee(filters);
   if (payee) and.push({ payee: { contains: payee, mode: 'insensitive' } });
   if (filters.accountIds.length > 0) and.push({ accountId: { in: filters.accountIds } });
-  // `in` never matches NULL — exactly "no category never matches an active categoryIds filter"
+  // `in` never matches NULL, so uncategorized rows are excluded
   if (filters.categoryIds.length > 0) and.push({ categoryId: { in: filters.categoryIds } });
 
-  // day-inclusive `to`: strictly before the NEXT day's UTC midnight
   const dates = rangeToDates({
     from: parseDateParam(filters.from),
     to: parseDateParam(filters.to),
@@ -189,11 +163,7 @@ export const buildTransactionWhere = (
   return and.length > 0 ? { userId, AND: and } : { userId };
 };
 
-/**
- * JS half of the desktop payee filter: `true` when {@link buildTransactionWhere}
- * already handled it in Prisma (or there is no payee filter), otherwise the same
- * case-insensitive `String.includes` `matchesTransactionFilters` uses.
- */
+/** JS half of the payee filter; `true` when Prisma already applied it. */
 export const matchesDeferredPayee = (
   payee: string | null,
   filters: TransactionFilters,
@@ -203,7 +173,6 @@ export const matchesDeferredPayee = (
   return (payee ?? '').toLowerCase().includes(term.toLowerCase());
 };
 
-/** Maps the validated query onto the service request (pure shape conversion). */
 export const toTransactionsPageRequest = (
   query: TransactionsPageQuery,
 ): TransactionsPageRequest => ({
@@ -226,12 +195,12 @@ export const toTransactionsPageRequest = (
   cursor: query.cursor,
 });
 
-/** Rows strictly older than `cursor` in the `(date desc, id desc)` order. */
+/** Rows strictly older than `cursor`. */
 const olderThan = (cursor: TransactionCursor): Prisma.TransactionWhereInput => ({
   OR: [{ date: { lt: cursor.date } }, { date: cursor.date, id: { lt: cursor.id } }],
 });
 
-/** The columns `summarizeTransactions` needs, selected without the display relations. */
+/** Columns `summarizeTransactions` needs, without display relations. */
 const SUMMARY_SELECT = {
   amount: true,
   type: true,
@@ -259,12 +228,7 @@ type SummaryRow = {
 const sumLinks = (links: { amount: unknown }[]): string =>
   fromCents(links.reduce((sum, l) => sum + toCents(l.amount), 0));
 
-/**
- * Totals through the same `summarizeTransactions` the client used before
- * pagination, so Debit stays netted of reimbursements exactly as Overview's
- * Out is. It needs per-row reimbursement fields, so this reads lean rows over
- * the whole scope rather than a `groupBy`.
- */
+/** Reimbursement-netted totals; needs per-row fields, so no `groupBy`. */
 const summarizeRows = (rows: SummaryRow[]): TransactionSummary => {
   const totals = summarizeTransactions(
     rows.map((r) => ({
@@ -293,7 +257,7 @@ const summarizeRows = (rows: SummaryRow[]): TransactionSummary => {
   };
 };
 
-/** Totals plus the row count, both from one lean scan of the scope. */
+/** Totals and row count from one scan. */
 const summarize = async (
   where: Prisma.TransactionWhereInput,
 ): Promise<{ summary: TransactionSummary; count: number }> => {
@@ -309,7 +273,7 @@ const toDayTotals = (byDay: Map<string, number>): DayTotal[] =>
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
     .map(([day, cents]) => ({ day, total: fromCents(cents) }));
 
-/** Inclusive start / exclusive end of the UTC days a newest-first page spans. */
+/** `[start, end)` of the UTC days a page spans. */
 const pageDayWindow = (rows: { date: Date }[]): { start: Date; end: Date } => {
   const start = new Date(`${dayKey(rows[rows.length - 1].date)}T00:00:00.000Z`);
   const end = new Date(new Date(`${dayKey(rows[0].date)}T00:00:00.000Z`).getTime() + DAY_MS);
@@ -321,7 +285,6 @@ type PageAggregates = Pick<
   'totalCount' | 'desktopCount' | 'uncategorizedCount' | 'summary' | 'mobileSummary'
 >;
 
-/** The page envelope both modes share once they've picked their rows. */
 const toPageResult = (
   rows: Parameters<typeof toFrontend>[0][],
   page: { hasMore: boolean; runningBalanceCents: number; byDay: Map<string, number> },
@@ -341,11 +304,7 @@ const toPageResult = (
 
 const EMPTY_PAGE = { hasMore: false, runningBalanceCents: 0, byDay: new Map<string, number>() };
 
-/**
- * Mode A — every clause is a Prisma clause. The page query runs alongside the
- * counts and summary; the running-balance and day-total aggregates depend on
- * the page's own rows, so they are a second phase (skipped for an empty page).
- */
+/** Mode A: everything in Prisma. Balance and day totals need the page rows, so they run second. */
 const getPageModeA = async (
   userId: string,
   request: TransactionsPageRequest,
@@ -428,12 +387,8 @@ type ScanRow = SummaryRow & {
 };
 
 /**
- * Mode B — a text term Prisma can't express faithfully is active (amount-shaped
- * mobile search, or a `%`/`_` term). One lean scan over the desktop-scope
- * Prisma predicate, the remaining text predicates in JS, the page
- * window taken with the same comparator as Mode A's keyset, then only the page
- * is hydrated. Every aggregate is folded in JS from the scan — no second scan,
- * no `count`/`groupBy`.
+ * Mode B: one lean scan of the scope, text terms and aggregates in JS, then
+ * only the page rows are hydrated.
  */
 const getPageModeB = async (
   userId: string,
@@ -441,9 +396,7 @@ const getPageModeB = async (
   cursor: TransactionCursor | null,
   pendingReimbursementIds: string[] | undefined,
 ): Promise<TransactionsPageResult> => {
-  // Scanned without the pill-controlled `type`/`uncategorizedOnly` filters so
-  // the Uncategorized badge can be counted from the same scan; they're
-  // re-applied in JS for the desktop scope below.
+  // Pill filters are skipped here so the same scan counts the badge; applied in JS below.
   const scan = (await prisma.transaction.findMany({
     where: buildTransactionWhere(userId, withoutPillFilters(request), {
       mobile: false,
@@ -454,7 +407,7 @@ const getPageModeB = async (
 
   const { type, uncategorizedOnly } = request.filters;
   const searchLower = request.mobileSearch.trim().toLowerCase();
-  // sorted here rather than by Postgres, so the order is exactly the keyset comparator's
+  // sorted in JS so the order matches the keyset comparator exactly
   const pillFree = scan
     .filter((r) => matchesDeferredPayee(r.payee, request.filters))
     .sort(compareTransactionOrder);
@@ -463,7 +416,7 @@ const getPageModeB = async (
   );
   const full = desktop.filter((r) => {
     if (!searchLower) return true;
-    // byte-identical to the mobile search this replaces: payee OR formatted amount
+    // payee OR formatted amount
     return (
       (r.payee ?? '').toLowerCase().includes(searchLower) ||
       Number(r.amount).toFixed(2).includes(searchLower)
@@ -487,7 +440,7 @@ const getPageModeB = async (
     where: { userId, id: { in: pageRows.map((r) => r.id) } },
     include,
   });
-  // `in` doesn't promise order; re-impose the scan's comparator order explicitly
+  // `in` doesn't preserve order
   const position = new Map(pageRows.map((r, i) => [r.id, i]));
   const rows = hydrated
     .filter((r) => position.has(r.id))

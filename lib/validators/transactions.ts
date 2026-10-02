@@ -128,14 +128,8 @@ const lenientFlag = z
   .transform((v) => v === 'true');
 
 /**
- * `GET /api/transactions?paginated=1` — the Transactions page's paginated read.
- * Additive alongside {@link listTransactionsQuerySchema}, which is untouched.
- *
- * The desktop filter fields and mobile search are LENIENT: each ends in
- * `.catch(<default>)` so a hand-edited or stale bookmark degrades to "no
- * filter" instead of a 400 — the same contract `parseTransactionFilters`
- * documents for the URL. `limit` and `cursor` are STRICT: our own client
- * generates them, so a malformed value is a bug worth surfacing as a 400.
+ * `GET /api/transactions?paginated=1`. Filters are lenient (bad values mean
+ * "no filter"); `limit` and `cursor` are strict, since our client sends them.
  */
 export const transactionsPageQuerySchema = z.object({
   from: lenientDate,
