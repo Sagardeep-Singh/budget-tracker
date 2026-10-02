@@ -259,7 +259,7 @@ Not legal or tax advice. Confirm with an accountant before launch.
 - [x] software-architect: confirm schema and gate placement
 - [ ] ui-designer: Plan section, upgrade prompt, locked Trends ranges, trial
       countdown, pricing page, Canada-only signup state, banner
-- [ ] tester: unit and e2e test plans (`paid-plan-free-tier-test-plan.md`)
+- [x] tester: unit and e2e test plans (`paid-plan-free-tier-test-plan.md`)
 - [ ] Schema migration for `Subscription`, `StripeEvent` and
       `User.trialReminderSentAt`
 - [ ] `entitlements.ts` + `PlanRequiredError` with tests
