@@ -4,11 +4,11 @@
 
 ## Goal
 
-A public, user-focused marketing site for Ledger: what it does, how it's
+A public, user-focused marketing site for Track a Loonie: what it does, how it's
 built, and what it costs. It lives in its **own repo** and deploys on its own,
 separate from the app in this repo.
 
-Design source: the "Ledger Marketing Site" canvas (claude.ai artifact
+Design source: the "Track a Loonie Marketing Site" canvas (claude.ai artifact
 `RiEhFZy1vb82UHAQdirowc`). The chosen pages are **Home (Bento, dark first)**
 and **Pricing**. The "Earlier directions" row on the canvas is reference only.
 
@@ -28,7 +28,7 @@ them once and checking for drift (see "Design tokens").
 
 | Area      | Decision                                                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Repo      | New repo, working name `ledger-site` under the same GitHub owner                                                             |
+| Repo      | New repo, working name `trackaloonie-site` under the same GitHub owner                                                       |
 | License   | Code under MIT. Copy, logo and brand assets "all rights reserved" via a `NOTICE`/README section (open question 1)            |
 | Framework | Next.js (App Router) with `output: 'export'`, TypeScript, Tailwind CSS v4. Same stack as the app, so no new tooling to learn |
 | Hosting   | Vercel, static. Apex domain for the site, `app.` subdomain for the app (open question 2)                                     |
@@ -95,7 +95,7 @@ Current plan content (from the design):
 - Shared visual pieces rebuilt in the site: logo mark, ring SVG, pill button,
   card, chip and Plus tag. Copy the logic from `components/ui/logo-mark.tsx`
   and `components/ui/ring.tsx` instead of importing it.
-- If the two drift often, extract a tiny `@ledger/tokens` package later. Not
+- If the two drift often, extract a tiny `@trackaloonie/tokens` package later. Not
   needed for v1.
 
 ## Component breakdown (site repo)
@@ -159,7 +159,7 @@ Until those land, the site launches with one of these (open question 6):
 ## Checklist
 
 - [ ] **Stage 0: decisions.** Answer the open questions below.
-- [ ] **Stage 1: repo setup.** Create `ledger-site`, add the license and brand
+- [ ] **Stage 1: repo setup.** Create `trackaloonie-site`, add the license and brand
       notice, Next.js static export, Tailwind v4, ESLint, Prettier, Vitest,
       Playwright, a `CLAUDE.md` mirroring this repo's conventions, and a CI
       workflow (format check, lint, build, Playwright).
@@ -216,8 +216,8 @@ Vitest: only if `plans.ts` gets helpers (for example, formatting limits).
 6. **Launch order.** Launch with "Free during beta" before gating ships, or
    wait for billing?
 7. **Limit numbers.** Confirm 25 rules and 3 months of trends on Free.
-8. **Product name.** "Ledger" is used throughout. Is it final, and has the
-   domain or trademark been checked?
+8. **Domain and trademark.** The product is now "Track a Loonie" (wordmark
+   `trackaloonie`). Has the domain or trademark been checked?
 
 ## Non-goals
 
