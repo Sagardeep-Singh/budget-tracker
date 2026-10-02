@@ -7,7 +7,6 @@ import {
 import {
   decodeTransactionCursor,
   encodeTransactionCursor,
-  type QuickFilter,
 } from '@/lib/transactions/transaction-scope';
 
 const { prismaMock } = vi.hoisted(() => ({
@@ -33,9 +32,7 @@ const scope = (
   extra: Partial<Omit<Scope, 'filters'>> = {},
 ): Scope => ({
   filters: { ...DEFAULT_TRANSACTION_FILTERS, ...filters },
-  period: null,
   mobileSearch: '',
-  quickFilter: 'all',
   ...extra,
 });
 
@@ -176,23 +173,6 @@ describe('buildTransactionWhere', () => {
     ]);
   });
 
-  it('adds the period as its own gte/lt entries, same shape as from/to, alongside them', () => {
-    const start = new Date('2026-06-05T00:00:00.000Z');
-    const end = new Date('2026-07-05T00:00:00.000Z');
-    expect(clauses(scope({}, { period: { start, end } }))).toEqual([
-      { date: { gte: start } },
-      { date: { lt: end } },
-    ]);
-    expect(
-      clauses(scope({ from: '2026-06-10', to: '2026-06-20' }, { period: { start, end } })),
-    ).toEqual([
-      { date: { gte: new Date('2026-06-10T00:00:00.000Z') } },
-      { date: { lt: new Date('2026-06-21T00:00:00.000Z') } },
-      { date: { gte: start } },
-      { date: { lt: end } },
-    ]);
-  });
-
   it('ignores a malformed from/to (lenient: a stale bookmark degrades to no filter)', () => {
     expect(where(scope({ from: 'garbage', to: '2026-13-45' }))).toEqual({ userId: 'user-1' });
   });
@@ -243,40 +223,20 @@ describe('buildTransactionWhere', () => {
         hidePayments: true,
         uncategorizedOnly: true,
       },
-      {
-        period: { start: new Date('2026-01-01'), end: new Date('2026-02-01') },
-        mobileSearch: 'Tea',
-        quickFilter: 'spending',
-      },
+      { mobileSearch: 'Tea' },
     );
     expect(JSON.stringify(where(everything, true))).not.toContain('skippedAt');
     expect(JSON.stringify(where(everything, false))).not.toContain('skippedAt');
   });
 
-  it('omits mobileSearch and quickFilter from the desktop scope regardless of value', () => {
-    expect(where(scope({}, { mobileSearch: 'foo', quickFilter: 'spending' }), false)).toEqual({
+  it('omits mobileSearch from the desktop scope regardless of value', () => {
+    expect(where(scope({}, { mobileSearch: 'foo' }), false)).toEqual({
       userId: 'user-1',
     });
   });
 
-  it('maps each quick filter in the mobile scope', () => {
-    const qf = (quickFilter: QuickFilter): unknown[] => clauses(scope({}, { quickFilter }), true);
-    expect(qf('uncategorized')).toEqual([{ categoryId: null }]);
-    expect(qf('spending')).toEqual([{ type: 'EXPENSE' }]);
-    expect(qf('income')).toEqual([{ type: 'INCOME' }]);
-    expect(qf('all')).toEqual([]);
-  });
-
-  it('lets uncategorizedOnly and the uncategorized pill co-exist', () => {
-    expect(
-      clauses(scope({ uncategorizedOnly: true }, { quickFilter: 'uncategorized' }), true),
-    ).toEqual([{ categoryId: null }, { categoryId: null }]);
-  });
-
-  it('keeps the desktop type filter under mobile: true when the pill is "all"', () => {
-    expect(clauses(scope({ type: 'INCOME' }, { quickFilter: 'all' }), true)).toEqual([
-      { type: 'INCOME' },
-    ]);
+  it('keeps the desktop type filter under mobile: true', () => {
+    expect(clauses(scope({ type: 'INCOME' }), true)).toEqual([{ type: 'INCOME' }]);
   });
 
   it('adds a non-amount mobile search as a second, independent payee clause', () => {
@@ -408,17 +368,11 @@ describe('getTransactionsPage — Mode A', () => {
   });
 
   it('short-circuits an empty page but still computes the scope aggregates', async () => {
+    // the page past a stale cursor is empty while the scope still has rows
     mockModeA([], [dbRow({ id: 's', date: '2026-06-01', amount: 40, type: 'INCOME' })]);
-    // full scope empty, desktop scope not (quick filter narrows it to nothing)
-    prismaMock.transaction.count
-      .mockResolvedValueOnce(0) // full scope
-      .mockResolvedValueOnce(7) // desktop scope
-      .mockResolvedValueOnce(2); // desktop uncategorized
+    prismaMock.transaction.count.mockResolvedValueOnce(2); // desktop uncategorized
 
-    const result = await getTransactionsPage('user-1', {
-      ...scope({}, { quickFilter: 'uncategorized' }),
-      limit: 50,
-    });
+    const result = await getTransactionsPage('user-1', { ...scope(), limit: 50 });
 
     expect(result).toMatchObject({
       rows: [],
@@ -426,8 +380,8 @@ describe('getTransactionsPage — Mode A', () => {
       hasMore: false,
       runningBalanceStart: '0.00',
       dayTotals: [],
-      totalCount: 0,
-      desktopCount: 7,
+      totalCount: 1,
+      desktopCount: 1,
       uncategorizedCount: 2,
     });
     expect(result.summary.credit).toBe('40.00');
@@ -569,44 +523,45 @@ describe('getTransactionsPage — Mode A', () => {
     });
   });
 
-  it('reuses the full-scope count when the mobile params are at their defaults', async () => {
-    prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(1));
-    prismaMock.transaction.count.mockResolvedValueOnce(10).mockResolvedValueOnce(3);
+  it('derives both counts from one desktop summary scan when mobile search is empty', async () => {
+    mockModeA(rowsDescending(1), rowsDescending(10));
+    prismaMock.transaction.count.mockResolvedValueOnce(3);
 
     const result = await getTransactionsPage('user-1', { ...scope(), limit: 50 });
 
-    expect(prismaMock.transaction.count).toHaveBeenCalledTimes(2);
+    expect(prismaMock.transaction.count).toHaveBeenCalledTimes(1);
+    expect(summaryCalls()).toHaveLength(1);
     expect(result.totalCount).toBe(10);
     expect(result.desktopCount).toBe(10);
     expect(result.uncategorizedCount).toBe(3);
   });
 
-  it('runs the desktop-scope count and summary separately once a mobile param is set', async () => {
-    prismaMock.transaction.findMany.mockResolvedValue(rowsDescending(1));
-    prismaMock.transaction.count
-      .mockResolvedValueOnce(6) // full scope (spending only)
-      .mockResolvedValueOnce(10) // desktop scope
-      .mockResolvedValueOnce(1); // desktop uncategorized
+  it('runs the desktop-scope and mobile-scope summaries separately once mobile search is set', async () => {
+    const search = { payee: { contains: 'Coffee', mode: 'insensitive' } };
+    prismaMock.transaction.findMany.mockImplementation(async (args: FindManyArgs) => {
+      if (args.include) return rowsDescending(1);
+      return (args.where as Record<string, unknown>).AND ? rowsDescending(6) : rowsDescending(10);
+    });
+    prismaMock.transaction.count.mockResolvedValueOnce(1);
 
     const result = await getTransactionsPage('user-1', {
-      ...scope({}, { quickFilter: 'spending' }),
+      ...scope({}, { mobileSearch: 'Coffee' }),
       limit: 50,
     });
 
-    expect(prismaMock.transaction.count).toHaveBeenCalledTimes(3);
     expect(result.totalCount).toBe(6);
     expect(result.desktopCount).toBe(10);
-    const calls = prismaMock.transaction.count.mock.calls.map(([a]) => a);
-    expect(calls[0]).toEqual({ where: { userId: 'user-1', AND: [{ type: 'EXPENSE' }] } });
-    expect(calls[1]).toEqual({ where: { userId: 'user-1' } });
-    expect(calls[2]).toEqual({ where: { AND: [{ userId: 'user-1' }, { categoryId: null }] } });
-    // the desktop summary has no quick-filter clause; the mobile one does
+    expect(result.uncategorizedCount).toBe(1);
+    expect(prismaMock.transaction.count.mock.calls.map(([a]) => a)).toEqual([
+      { where: { AND: [{ userId: 'user-1' }, { categoryId: null }] } },
+    ]);
+    // the desktop summary has no mobile-search clause; the mobile one does
     expect(summaryCalls().map((c) => c.where)).toEqual([
       { userId: 'user-1' },
-      { userId: 'user-1', AND: [{ type: 'EXPENSE' }] },
+      { userId: 'user-1', AND: [search] },
     ]);
     // while rows and the running balance use the mobile-inclusive scope
-    expect(pageCall().where).toEqual({ userId: 'user-1', AND: [{ type: 'EXPENSE' }] });
+    expect(pageCall().where).toEqual({ userId: 'user-1', AND: [search] });
   });
 
   it('counts the Uncategorized badge without the pill-controlled type/uncategorizedOnly filters', async () => {
@@ -618,7 +573,7 @@ describe('getTransactionsPage — Mode A', () => {
     });
 
     const calls = prismaMock.transaction.count.mock.calls.map(([a]) => a);
-    expect(calls[1]).toEqual({
+    expect(calls[0]).toEqual({
       where: { AND: [{ userId: 'user-1', AND: [{ isTransfer: false }] }, { categoryId: null }] },
     });
   });
@@ -762,14 +717,15 @@ describe('getTransactionsPage — Mode B', () => {
     expect(result.rows.map((r) => r.id)).toEqual(['p', 'a']);
   });
 
-  it('hydrates by userId + id list with an explicit order, and re-imposes comparator order', async () => {
+  it('hydrates by userId + id list, unsorted, and re-imposes comparator order', async () => {
     mockScan(amounts);
     const result = await getTransactionsPage('user-1', {
       ...scope({}, { mobileSearch: '12.50' }),
       limit: 50,
     });
     expect(hydrateCall().where).toEqual({ userId: 'user-1', id: { in: ['r3', 'r1'] } });
-    expect(hydrateCall().orderBy).toEqual([{ date: 'desc' }, { id: 'desc' }]);
+    expect(hydrateCall().orderBy).toBeUndefined();
+    expect(scanCall().orderBy).toBeUndefined();
     // the mock hydrated r1 before r3; the response is still newest-first
     expect(result.rows.map((r) => r.id)).toEqual(['r3', 'r1']);
   });
@@ -842,23 +798,6 @@ describe('getTransactionsPage — Mode B', () => {
       reimbursementIncome: '1000.00',
       net: '9.00',
     });
-  });
-
-  it('applies the quick filter in JS and keeps it out of the desktop-scope counts', async () => {
-    const rows = [
-      dbRow({ id: 'c', date: '2026-06-15T00:00:00.000Z', amount: '5.00', categoryId: 'cat' }),
-      dbRow({ id: 'u', date: '2026-06-14T00:00:00.000Z', amount: '5.00' }),
-      dbRow({ id: 'i', date: '2026-06-13T00:00:00.000Z', amount: '5.00', type: 'INCOME' }),
-    ];
-    mockScan(rows);
-    const result = await getTransactionsPage('user-1', {
-      ...scope({}, { mobileSearch: '5', quickFilter: 'spending' }),
-      limit: 50,
-    });
-    expect(result.rows.map((r) => r.id)).toEqual(['c', 'u']);
-    expect(result.totalCount).toBe(2);
-    expect(result.desktopCount).toBe(3);
-    expect(result.uncategorizedCount).toBe(2);
   });
 
   it('re-applies the type filter in JS but counts Uncategorized without it', async () => {

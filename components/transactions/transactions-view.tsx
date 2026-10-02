@@ -31,7 +31,6 @@ import {
   transactionFiltersToSearchParams,
   type TransactionFilters,
 } from '@/lib/transactions/transaction-filters';
-import type { QuickFilter } from '@/lib/transactions/transaction-scope';
 import type { TransactionSummary } from '@/lib/transactions/transaction-summary';
 import {
   transactionsPageSearchParams,
@@ -49,6 +48,9 @@ const toCents = (value: string | number): number => Math.round(Number(value) * 1
 /** The quick pills are shortcuts into the same `type` / `uncategorizedOnly`
  * filters the dialog edits, so the two can never disagree. A combination the
  * pills can't express (set from the dialog) leaves no pill highlighted. */
+/** Mobile quick-filter pills, each a preset of the plain `type`/`uncategorizedOnly` filters. */
+type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
+
 const QUICK_FILTERS: Record<QuickFilter, Pick<TransactionFilters, 'type' | 'uncategorizedOnly'>> = {
   all: { type: null, uncategorizedOnly: false },
   uncategorized: { type: null, uncategorizedOnly: true },
@@ -341,10 +343,7 @@ export const TransactionsView = ({
     () =>
       transactionsPageSearchParams({
         filters: { ...filters, payee: settledPayee },
-        period: null,
         mobileSearch: settledMobileSearch,
-        // the pills are plain `type`/`uncategorizedOnly` filters now, already in `filters`
-        quickFilter: 'all',
       }).toString(),
     [filters, settledPayee, settledMobileSearch],
   );
@@ -443,32 +442,32 @@ export const TransactionsView = ({
     });
   };
 
-  const rows = pages.flatMap((p) => p.rows);
   const { summary, mobileSummary, desktopCount, totalCount, uncategorizedCount } = pages[0];
 
-  // Each page's dayTotals entry is the authoritative full-day total, so later
-  // pages overwrite rather than add.
-  const dayTotals = new Map<string, number>();
-  for (const page of pages) {
-    for (const d of page.dayTotals) dayTotals.set(d.day, Number(d.total));
-  }
-  const dayTotalOf = (day: string, dayRows: FrontendTransaction[]): number =>
-    dayTotals.get(day) ??
-    dayRows.reduce((sum, t) => sum + (t.type === 'INCOME' ? 1 : -1) * Number(t.amount), 0);
-
-  // Running balance, walked oldest-first within each page from that page's own
-  // server-computed opening total (in cents, so it can't drift).
-  const runningBalance = new Map<string, number>();
-  for (const page of pages) {
-    let cents = toCents(page.runningBalanceStart);
-    for (let i = page.rows.length - 1; i >= 0; i--) {
-      const t = page.rows[i];
-      cents += t.type === 'INCOME' ? toCents(t.amount) : -toCents(t.amount);
-      runningBalance.set(t.id, cents / 100);
+  // Derived from `pages` only, so typing in a search box doesn't rebuild them.
+  const { rows, dayTotals, runningBalance, days } = useMemo(() => {
+    // Each page's dayTotals entry is the authoritative full-day total, so later
+    // pages overwrite rather than add. Every UTC day a page's rows touch has one.
+    const dayTotals = new Map<string, number>();
+    for (const page of pages) {
+      for (const d of page.dayTotals) dayTotals.set(d.day, Number(d.total));
     }
-  }
 
-  const days = groupByDay(rows);
+    // Running balance, walked oldest-first within each page from that page's own
+    // server-computed opening total (in cents, so it can't drift).
+    const runningBalance = new Map<string, number>();
+    for (const page of pages) {
+      let cents = toCents(page.runningBalanceStart);
+      for (let i = page.rows.length - 1; i >= 0; i--) {
+        const t = page.rows[i];
+        cents += t.type === 'INCOME' ? toCents(t.amount) : -toCents(t.amount);
+        runningBalance.set(t.id, cents / 100);
+      }
+    }
+
+    const rows = pages.flatMap((p) => p.rows);
+    return { rows, dayTotals, runningBalance, days: groupByDay(rows) };
+  }, [pages]);
 
   const renderLoadMore = (tree: Tree): React.ReactElement => (
     <div
@@ -631,7 +630,7 @@ export const TransactionsView = ({
           </p>
         ) : (
           days.map(([day, dayRows]) => {
-            const dayTotal = dayTotalOf(day, dayRows);
+            const dayTotal = dayTotals.get(day) ?? 0;
             return (
               <div key={day} className="mt-5.5" data-testid="transaction-day-desktop">
                 <div className="flex items-baseline gap-3 px-0.5 pb-2">
@@ -803,7 +802,7 @@ export const TransactionsView = ({
             </p>
           ) : (
             days.map(([day, dayRows]) => {
-              const dayTotal = dayTotalOf(day, dayRows);
+              const dayTotal = dayTotals.get(day) ?? 0;
               return (
                 <div key={day} className="mt-5">
                   <div className="flex items-baseline justify-between gap-2.5 px-0.5 pb-2">

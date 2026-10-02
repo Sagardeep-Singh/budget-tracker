@@ -11,18 +11,11 @@ import type { TransactionFilters } from '@/lib/transactions/transaction-filters'
  * so they are unit-testable without mocking Prisma.
  */
 
-/** Mobile quick-filter pills. Mirrors the pill set in `transactions-view.tsx`. */
-export type QuickFilter = 'all' | 'uncategorized' | 'spending' | 'income';
-
 export type TransactionScope = {
   /** the desktop filter set, unchanged shape, straight off the URL */
   filters: TransactionFilters;
-  /** the Period Picker's `[start, end)` window; `null` = All time */
-  period: { start: Date; end: Date } | null;
   /** mobile search box: payee OR formatted-amount substring. `''` = no filter */
   mobileSearch: string;
-  /** mobile quick-filter pills */
-  quickFilter: QuickFilter;
 };
 
 export type TransactionCursor = { date: Date; id: string };

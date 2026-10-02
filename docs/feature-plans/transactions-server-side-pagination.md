@@ -2091,3 +2091,12 @@ Main shipped several client-side Transactions features while this PR was open (#
 - [x] Current-month default (#74, `proxy.ts`): e2e specs now pass explicit `from`/`to` where they depend on older rows.
 - [x] `?tx=` deep link (#80): the drawer opens from page 1's rows. Those links are scoped to the transaction's day, so it lands on page 1.
 - [x] Add-transaction overlay: the open link (`AddTransactionLink`) and `close` now keep the current params. With the period in the URL, a bare `?overlay=add` swapped the scope and collapsed the loaded pages (AC 10).
+
+## Simplify pass (2026-10-01)
+
+- [x] Dropped the dead `period` and `quickFilter` scope fields. No caller sent them after #75. Removed them from `TransactionScope`, the validator (`periodStart`/`periodEnd`/`quickFilter`, plus both refines), `transactionsPageSearchParams`, `toTransactionsPageRequest` and `buildTransactionWhere`, and dropped the Mode B pill filter. `QuickFilter` now lives in the view, as the pill preset type.
+- [x] `from`/`to` bounds now go through `parseDateParam` + `rangeToDates` (`lib/period-selection.ts`), and the validator's date regex is replaced by `parseDateParam`. `fromCents` is shared from `lib/services/reimbursements.ts`.
+- [x] Mode A derives `desktopCount`/`totalCount` from the summary scans' row counts, which drops two `count` queries per request. The only count left is `uncategorizedCount`.
+- [x] Mode A/B routing is one predicate (`needsModeB` via `prismaSafePayee`/`prismaSafeMobileSearch`), and both modes build their envelope through `toPageResult`. Mode B no longer asks Postgres to sort the scan or the hydrate, because both are re-sorted in JS.
+- [x] View: `rows`/`dayTotals`/`runningBalance`/`days` are memoized on `pages`. The unreachable client-side day-total fallback is removed.
+- [ ] Follow-up (contract change): skip the full-scope aggregates on cursor pages. The client reads them only from `pages[0]`.

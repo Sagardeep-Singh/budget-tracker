@@ -17,9 +17,7 @@ const { toTransactionsPageRequest } = await import('@/lib/services/transactionsP
 
 const scope = (overrides: Partial<TransactionScope> = {}): TransactionScope => ({
   filters: DEFAULT_TRANSACTION_FILTERS,
-  period: null,
   mobileSearch: '',
-  quickFilter: 'all',
   ...overrides,
 });
 
@@ -44,16 +42,9 @@ describe('transactionsPageSearchParams', () => {
     expect(params.get('hideTransfers')).toBe('true');
   });
 
-  it('adds period and mobile params only when non-default', () => {
-    const start = new Date('2026-06-05T00:00:00.000Z');
-    const end = new Date('2026-07-05T00:00:00.000Z');
-    const params = transactionsPageSearchParams(
-      scope({ period: { start, end }, mobileSearch: '12.5', quickFilter: 'income' }),
-    );
-    expect(params.get('periodStart')).toBe(start.toISOString());
-    expect(params.get('periodEnd')).toBe(end.toISOString());
+  it('adds mobile search only when non-empty', () => {
+    const params = transactionsPageSearchParams(scope({ mobileSearch: '12.5' }));
     expect(params.get('mobileSearch')).toBe('12.5');
-    expect(params.get('quickFilter')).toBe('income');
     expect(transactionsPageSearchParams(scope({ mobileSearch: '   ' })).has('mobileSearch')).toBe(
       false,
     );
@@ -64,12 +55,7 @@ describe('transactionsPageSearchParams', () => {
       filters: parseTransactionFilters(
         new URLSearchParams('accountIds=a&from=2026-06-01&to=2026-06-30&type=EXPENSE&amountMin=5'),
       ),
-      period: {
-        start: new Date('2026-06-05T00:00:00.000Z'),
-        end: new Date('2026-07-05T00:00:00.000Z'),
-      },
       mobileSearch: 'tea',
-      quickFilter: 'uncategorized',
     });
     const params = new URL(
       transactionsPageUrl(transactionsPageSearchParams(original).toString(), 'abc'),

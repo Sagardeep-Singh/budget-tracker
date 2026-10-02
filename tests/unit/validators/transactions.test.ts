@@ -159,6 +159,8 @@ describe('transactionsPageQuerySchema', () => {
       expect(result[key] ?? null).toBeNull();
     }
     expect(result).toEqual({
+      from: null,
+      to: null,
       accountIds: [],
       categoryIds: [],
       payee: '',
@@ -167,7 +169,6 @@ describe('transactionsPageQuerySchema', () => {
       uncategorizedOnly: false,
       pendingReimbursementsOnly: false,
       mobileSearch: '',
-      quickFilter: 'all',
       limit: 50,
     });
   });
@@ -178,7 +179,6 @@ describe('transactionsPageQuerySchema', () => {
       to: '2026/06/01',
       type: 'BOTH',
       hideTransfers: 'yes',
-      quickFilter: 'everything',
       payee: 'x'.repeat(200),
     });
     expect(result).toMatchObject({
@@ -186,7 +186,6 @@ describe('transactionsPageQuerySchema', () => {
       to: null,
       type: null,
       hideTransfers: false,
-      quickFilter: 'all',
       payee: '',
     });
   });
@@ -207,17 +206,5 @@ describe('transactionsPageQuerySchema', () => {
     expect(transactionsPageQuerySchema.safeParse({ limit: '101' }).success).toBe(false);
     expect(transactionsPageQuerySchema.safeParse({ limit: 'ten' }).success).toBe(false);
     expect(transactionsPageQuerySchema.parse({ limit: '25' }).limit).toBe(25);
-  });
-
-  it('requires periodStart and periodEnd together, start before end', () => {
-    const start = '2026-06-01T00:00:00.000Z';
-    const end = '2026-07-01T00:00:00.000Z';
-    expect(transactionsPageQuerySchema.safeParse({ periodStart: start }).success).toBe(false);
-    expect(
-      transactionsPageQuerySchema.safeParse({ periodStart: end, periodEnd: start }).success,
-    ).toBe(false);
-    const ok = transactionsPageQuerySchema.parse({ periodStart: start, periodEnd: end });
-    expect(ok.periodStart?.toISOString()).toBe(start);
-    expect(ok.periodEnd?.toISOString()).toBe(end);
   });
 });

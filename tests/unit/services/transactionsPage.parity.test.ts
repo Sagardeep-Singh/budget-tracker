@@ -137,7 +137,7 @@ const serverMatches = (rows: Row[], filters: TransactionFilters): string[] => {
     .map((r) => r.id);
   const where = buildTransactionWhere(
     'user-1',
-    { filters, period: null, mobileSearch: '', quickFilter: 'all' },
+    { filters, mobileSearch: '' },
     { mobile: false, pendingReimbursementIds },
   );
   return rows

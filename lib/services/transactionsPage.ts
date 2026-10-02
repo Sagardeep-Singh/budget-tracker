@@ -1,7 +1,11 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { ServiceValidationError } from '@/lib/services/common';
-import { listPendingReimbursementExpenseIds, toCents } from '@/lib/services/reimbursements';
+import {
+  fromCents,
+  listPendingReimbursementExpenseIds,
+  toCents,
+} from '@/lib/services/reimbursements';
 import { include, toFrontend, type FrontendTransaction } from '@/lib/services/transactions';
 import {
   compareTransactionOrder,
@@ -15,6 +19,7 @@ import {
   type TransactionScope,
 } from '@/lib/transactions/transaction-scope';
 import type { TransactionFilters } from '@/lib/transactions/transaction-filters';
+import { parseDateParam, rangeToDates } from '@/lib/period-selection';
 import { summarizeTransactions } from '@/lib/transactions/transaction-summary';
 import type { TransactionsPageQuery } from '@/lib/validators/transactions';
 
@@ -77,18 +82,9 @@ export type TransactionsPageResult = {
 
 const ORDER_BY: Prisma.TransactionOrderByWithRelationInput[] = [{ date: 'desc' }, { id: 'desc' }];
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-const fromCents = (cents: number): string => (cents / 100).toFixed(2);
 const signedCents = (type: string, amount: unknown): number =>
   type === 'INCOME' ? toCents(amount) : -toCents(amount);
-
-/** UTC midnight of a `YYYY-MM-DD` string, or `null` when it isn't a real day. */
-const utcDay = (value: string | null): Date | null => {
-  if (!value || !ISO_DAY.test(value)) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) || dayKey(date) !== value ? null : date;
-};
 
 const finiteAmount = (value: string | null): number | null => {
   if (value === null) return null;
@@ -114,6 +110,11 @@ export type BuildWhereOptions = {
   pendingReimbursementIds?: string[];
 };
 
+/** True when some text term must be matched in JS rather than by a Prisma clause. */
+const needsModeB = (scope: TransactionScope): boolean =>
+  (scope.filters.payee.trim() !== '' && !prismaSafePayee(scope.filters)) ||
+  (scope.mobileSearch.trim() !== '' && !prismaSafeMobileSearch(scope.mobileSearch));
+
 /** The scope with the mobile pills' `type`/`uncategorizedOnly` filters cleared,
  * so the Uncategorized badge doesn't drop to its own subset when a pill is on. */
 const withoutPillFilters = (scope: TransactionScope): TransactionScope => ({
@@ -123,13 +124,12 @@ const withoutPillFilters = (scope: TransactionScope): TransactionScope => ({
 
 /**
  * The one predicate behind the page query and every aggregate.
- * `mobile: false` omits `mobileSearch`/`quickFilter` — the desktop scope.
+ * `mobile: false` omits `mobileSearch` — the desktop scope.
  *
- * Every constraint lands in a single `AND` array (never top-level keys): `date`
- * is constrained by both `from`/`to` and `period`, `payee` by both the desktop
- * filter and mobile search, `categoryId` by both `categoryIds` and the
- * uncategorized flags, and `type` by both the type filter and the quick-filter
- * pills — top-level keys would silently overwrite one another.
+ * Every constraint lands in a single `AND` array (never top-level keys):
+ * `payee` is constrained by both the desktop filter and mobile search, and
+ * `categoryId` by both `categoryIds` and `uncategorizedOnly` — top-level keys
+ * would silently overwrite one another.
  *
  * Text terms Prisma cannot express faithfully are OMITTED here and matched in JS
  * by `getTransactionsPage` (Mode B): an amount-shaped mobile search (it has to
@@ -149,7 +149,7 @@ export const buildTransactionWhere = (
   scope: TransactionScope,
   options: BuildWhereOptions,
 ): Prisma.TransactionWhereInput => {
-  const { filters, period } = scope;
+  const { filters } = scope;
   const and: Prisma.TransactionWhereInput[] = [];
 
   const payee = prismaSafePayee(filters);
@@ -158,15 +158,13 @@ export const buildTransactionWhere = (
   // `in` never matches NULL — exactly "no category never matches an active categoryIds filter"
   if (filters.categoryIds.length > 0) and.push({ categoryId: { in: filters.categoryIds } });
 
-  const from = utcDay(filters.from);
-  if (from) and.push({ date: { gte: from } });
-  const to = utcDay(filters.to);
   // day-inclusive `to`: strictly before the NEXT day's UTC midnight
-  if (to) and.push({ date: { lt: new Date(to.getTime() + DAY_MS) } });
-  if (period) {
-    and.push({ date: { gte: period.start } });
-    and.push({ date: { lt: period.end } });
-  }
+  const dates = rangeToDates({
+    from: parseDateParam(filters.from),
+    to: parseDateParam(filters.to),
+  });
+  if (dates.gte) and.push({ date: { gte: dates.gte } });
+  if (dates.lt) and.push({ date: { lt: dates.lt } });
 
   if (filters.type) and.push({ type: filters.type });
   const amountMin = finiteAmount(filters.amountMin);
@@ -184,9 +182,6 @@ export const buildTransactionWhere = (
   }
 
   if (options.mobile) {
-    if (scope.quickFilter === 'uncategorized') and.push({ categoryId: null });
-    if (scope.quickFilter === 'spending') and.push({ type: 'EXPENSE' });
-    if (scope.quickFilter === 'income') and.push({ type: 'INCOME' });
     const search = prismaSafeMobileSearch(scope.mobileSearch);
     if (search) and.push({ payee: { contains: search, mode: 'insensitive' } });
   }
@@ -204,7 +199,7 @@ export const matchesDeferredPayee = (
   filters: TransactionFilters,
 ): boolean => {
   const term = filters.payee.trim();
-  if (!term || !needsExactStringMatch(term)) return true;
+  if (!term || prismaSafePayee(filters)) return true;
   return (payee ?? '').toLowerCase().includes(term.toLowerCase());
 };
 
@@ -226,12 +221,7 @@ export const toTransactionsPageRequest = (
     uncategorizedOnly: query.uncategorizedOnly,
     pendingReimbursementsOnly: query.pendingReimbursementsOnly,
   },
-  period:
-    query.periodStart && query.periodEnd
-      ? { start: query.periodStart, end: query.periodEnd }
-      : null,
   mobileSearch: query.mobileSearch,
-  quickFilter: query.quickFilter,
   limit: query.limit,
   cursor: query.cursor,
 });
@@ -303,10 +293,16 @@ const summarizeRows = (rows: SummaryRow[]): TransactionSummary => {
   };
 };
 
-const summarize = async (where: Prisma.TransactionWhereInput): Promise<TransactionSummary> =>
-  summarizeRows(
-    (await prisma.transaction.findMany({ where, select: SUMMARY_SELECT })) as SummaryRow[],
-  );
+/** Totals plus the row count, both from one lean scan of the scope. */
+const summarize = async (
+  where: Prisma.TransactionWhereInput,
+): Promise<{ summary: TransactionSummary; count: number }> => {
+  const rows = (await prisma.transaction.findMany({
+    where,
+    select: SUMMARY_SELECT,
+  })) as SummaryRow[];
+  return { summary: summarizeRows(rows), count: rows.length };
+};
 
 const toDayTotals = (byDay: Map<string, number>): DayTotal[] =>
   [...byDay.entries()]
@@ -320,12 +316,30 @@ const pageDayWindow = (rows: { date: Date }[]): { start: Date; end: Date } => {
   return { start, end };
 };
 
-const EMPTY_PAGE_TAIL = {
-  nextCursor: null,
-  hasMore: false,
-  runningBalanceStart: '0.00',
-  dayTotals: [] as DayTotal[],
+type PageAggregates = Pick<
+  TransactionsPageResult,
+  'totalCount' | 'desktopCount' | 'uncategorizedCount' | 'summary' | 'mobileSummary'
+>;
+
+/** The page envelope both modes share once they've picked their rows. */
+const toPageResult = (
+  rows: Parameters<typeof toFrontend>[0][],
+  page: { hasMore: boolean; runningBalanceCents: number; byDay: Map<string, number> },
+  aggregates: PageAggregates,
+): TransactionsPageResult => {
+  const oldest = rows[rows.length - 1];
+  return {
+    rows: rows.map(toFrontend),
+    nextCursor:
+      page.hasMore && oldest ? encodeTransactionCursor({ date: oldest.date, id: oldest.id }) : null,
+    hasMore: page.hasMore,
+    runningBalanceStart: fromCents(page.runningBalanceCents),
+    dayTotals: toDayTotals(page.byDay),
+    ...aggregates,
+  };
 };
+
+const EMPTY_PAGE = { hasMore: false, runningBalanceCents: 0, byDay: new Map<string, number>() };
 
 /**
  * Mode A — every clause is a Prisma clause. The page query runs alongside the
@@ -342,7 +356,7 @@ const getPageModeA = async (
     mobile: true,
     pendingReimbursementIds,
   });
-  const mobileDefaults = request.mobileSearch.trim() === '' && request.quickFilter === 'all';
+  const mobileDefaults = request.mobileSearch.trim() === '';
   const desktopWhere = mobileDefaults
     ? where
     : buildTransactionWhere(userId, request, { mobile: false, pendingReimbursementIds });
@@ -351,27 +365,29 @@ const getPageModeA = async (
     pendingReimbursementIds,
   });
 
-  const [found, totalCount, desktopCountOrNull, uncategorizedCount, summary, mobileSummaryOrNull] =
-    await Promise.all([
-      prisma.transaction.findMany({
-        where: cursor ? { AND: [where, olderThan(cursor)] } : where,
-        include,
-        orderBy: ORDER_BY,
-        take: request.limit + 1,
-      }),
-      prisma.transaction.count({ where }),
-      mobileDefaults ? Promise.resolve(null) : prisma.transaction.count({ where: desktopWhere }),
-      prisma.transaction.count({ where: { AND: [pillFreeWhere, { categoryId: null }] } }),
-      summarize(desktopWhere),
-      mobileDefaults ? Promise.resolve(null) : summarize(where),
-    ]);
-  const desktopCount = desktopCountOrNull ?? totalCount;
-  const mobileSummary = mobileSummaryOrNull ?? summary;
+  const [found, uncategorizedCount, desktop, mobileOrNull] = await Promise.all([
+    prisma.transaction.findMany({
+      where: cursor ? { AND: [where, olderThan(cursor)] } : where,
+      include,
+      orderBy: ORDER_BY,
+      take: request.limit + 1,
+    }),
+    prisma.transaction.count({ where: { AND: [pillFreeWhere, { categoryId: null }] } }),
+    summarize(desktopWhere),
+    mobileDefaults ? Promise.resolve(null) : summarize(where),
+  ]);
+  const mobile = mobileOrNull ?? desktop;
 
   const hasMore = found.length > request.limit;
   const rows = hasMore ? found.slice(0, request.limit) : found;
-  const base = { totalCount, desktopCount, uncategorizedCount, summary, mobileSummary };
-  if (rows.length === 0) return { rows: [], ...EMPTY_PAGE_TAIL, ...base };
+  const base = {
+    totalCount: mobile.count,
+    desktopCount: desktop.count,
+    uncategorizedCount,
+    summary: desktop.summary,
+    mobileSummary: mobile.summary,
+  };
+  if (rows.length === 0) return toPageResult([], EMPTY_PAGE, base);
 
   const oldest = rows[rows.length - 1];
   const window = pageDayWindow(rows);
@@ -401,14 +417,7 @@ const getPageModeA = async (
     byDay.set(key, (byDay.get(key) ?? 0) + signedCents(r.type, r._sum.amount ?? 0));
   }
 
-  return {
-    rows: rows.map(toFrontend),
-    nextCursor: hasMore ? encodeTransactionCursor({ date: oldest.date, id: oldest.id }) : null,
-    hasMore,
-    runningBalanceStart: fromCents(runningBalanceCents),
-    dayTotals: toDayTotals(byDay),
-    ...base,
-  };
+  return toPageResult(rows, { hasMore, runningBalanceCents, byDay }, base);
 };
 
 type ScanRow = SummaryRow & {
@@ -421,7 +430,7 @@ type ScanRow = SummaryRow & {
 /**
  * Mode B — a text term Prisma can't express faithfully is active (amount-shaped
  * mobile search, or a `%`/`_` term). One lean scan over the desktop-scope
- * Prisma predicate, the remaining text/quick-filter predicates in JS, the page
+ * Prisma predicate, the remaining text predicates in JS, the page
  * window taken with the same comparator as Mode A's keyset, then only the page
  * is hydrated. Every aggregate is folded in JS from the scan — no second scan,
  * no `count`/`groupBy`.
@@ -441,11 +450,11 @@ const getPageModeB = async (
       pendingReimbursementIds,
     }),
     select: { id: true, date: true, payee: true, categoryId: true, ...SUMMARY_SELECT },
-    orderBy: ORDER_BY,
   })) as ScanRow[];
 
   const { type, uncategorizedOnly } = request.filters;
   const searchLower = request.mobileSearch.trim().toLowerCase();
+  // sorted here rather than by Postgres, so the order is exactly the keyset comparator's
   const pillFree = scan
     .filter((r) => matchesDeferredPayee(r.payee, request.filters))
     .sort(compareTransactionOrder);
@@ -453,9 +462,6 @@ const getPageModeB = async (
     (r) => (!type || r.type === type) && (!uncategorizedOnly || !r.categoryId),
   );
   const full = desktop.filter((r) => {
-    if (request.quickFilter === 'uncategorized' && r.categoryId) return false;
-    if (request.quickFilter === 'spending' && r.type !== 'EXPENSE') return false;
-    if (request.quickFilter === 'income' && r.type !== 'INCOME') return false;
     if (!searchLower) return true;
     // byte-identical to the mobile search this replaces: payee OR formatted amount
     return (
@@ -475,12 +481,11 @@ const getPageModeB = async (
   const after = cursor ? full.filter((r) => isOlderThanCursor(r, cursor)) : full;
   const pageRows = after.slice(0, request.limit);
   const hasMore = after.length > request.limit;
-  if (pageRows.length === 0) return { rows: [], ...EMPTY_PAGE_TAIL, ...base };
+  if (pageRows.length === 0) return toPageResult([], EMPTY_PAGE, base);
 
   const hydrated = await prisma.transaction.findMany({
     where: { userId, id: { in: pageRows.map((r) => r.id) } },
     include,
-    orderBy: ORDER_BY,
   });
   // `in` doesn't promise order; re-impose the scan's comparator order explicitly
   const position = new Map(pageRows.map((r, i) => [r.id, i]));
@@ -501,24 +506,7 @@ const getPageModeB = async (
     }
   }
 
-  return {
-    rows: rows.map(toFrontend),
-    nextCursor: hasMore ? encodeTransactionCursor({ date: oldest.date, id: oldest.id }) : null,
-    hasMore,
-    runningBalanceStart: fromCents(runningBalanceCents),
-    dayTotals: toDayTotals(byDay),
-    ...base,
-  };
-};
-
-/** True when some text term must be matched in JS rather than by a Prisma clause. */
-const needsModeB = (request: TransactionScope): boolean => {
-  const payee = request.filters.payee.trim();
-  const search = request.mobileSearch.trim();
-  return (
-    (payee !== '' && needsExactStringMatch(payee)) ||
-    (search !== '' && (isAmountSubstringCandidate(search) || needsExactStringMatch(search)))
-  );
+  return toPageResult(rows, { hasMore, runningBalanceCents, byDay }, base);
 };
 
 export const getTransactionsPage = async (

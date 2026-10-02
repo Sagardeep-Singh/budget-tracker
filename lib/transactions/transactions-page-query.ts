@@ -9,7 +9,7 @@ export const TRANSACTIONS_PAGE_SIZE = 50;
  *
  * The desktop filters reuse `transactionFiltersToSearchParams`, so they keep
  * the exact bookmarkable param names and default-omission rules the URL already
- * uses; the period and mobile params are appended only when non-default.
+ * uses; mobile search is appended only when non-empty.
  *
  * Its `toString()` doubles as the Transactions view's request key: the server
  * page (`app/(protected)/transactions/page.tsx`) and the client view build the
@@ -19,12 +19,7 @@ export const TRANSACTIONS_PAGE_SIZE = 50;
  */
 export const transactionsPageSearchParams = (scope: TransactionScope): URLSearchParams => {
   const params = transactionFiltersToSearchParams(scope.filters);
-  if (scope.period) {
-    params.set('periodStart', scope.period.start.toISOString());
-    params.set('periodEnd', scope.period.end.toISOString());
-  }
   if (scope.mobileSearch.trim()) params.set('mobileSearch', scope.mobileSearch);
-  if (scope.quickFilter !== 'all') params.set('quickFilter', scope.quickFilter);
   return params;
 };
 

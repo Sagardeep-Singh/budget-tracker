@@ -58,7 +58,7 @@ export type FrontendReimbursementPendingSummary = {
 /** Money is a Decimal in Prisma — never compare two of them with `===`. */
 export const toCents = (value: unknown): number => Math.round(Number(value) * 100);
 
-const fromCents = (cents: number): string => (cents / 100).toFixed(2);
+export const fromCents = (cents: number): string => (cents / 100).toFixed(2);
 
 export const deriveReimbursementStatus = (args: {
   isReimbursable: boolean;

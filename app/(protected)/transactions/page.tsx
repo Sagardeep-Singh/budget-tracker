@@ -35,9 +35,7 @@ const TransactionsPage = async ({
   // there too); mobile search is local view state, so a fresh load starts empty.
   const scope: TransactionScope = {
     filters: parseTransactionFilters(toUrlSearchParams(await searchParams)),
-    period: null,
     mobileSearch: '',
-    quickFilter: 'all',
   };
   const [initialPage, accounts, categories] = await Promise.all([
     getTransactionsPage(userId, { ...scope, limit: TRANSACTIONS_PAGE_SIZE }),
